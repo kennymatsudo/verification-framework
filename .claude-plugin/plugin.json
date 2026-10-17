@@ -1,0 +1,9 @@
+{
+  "name": "verification-framework",
+  "description": "Agent skills for proving a change works on the running app, not just in tests.",
+  "author": {
+    "name": "Kenny Matsudo"
+  },
+  "repository": "https://github.com/kennymatsudo/verification-framework",
+  "license": "MIT"
+}

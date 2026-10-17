@@ -1,0 +1,405 @@
+# Use the verification framework
+
+The verification framework is a set of agent skills that let an AI agent prove a code change works on your real, running app, and say plainly when it cannot. A skill is a set of written instructions an AI agent loads to do one kind of job. Use the framework when passing unit tests is not enough, because the change crosses a database, another service, a browser, or anything else a unit test replaces with a stand-in.
+
+The skills build and maintain a verification harness in your app's repository. A harness is a folder that holds everything the agent needs to test your app: how to start it, which behaviors to check, the programs that check them, and a saved record of every run. See the [README](README.md) to install the skills, and [Harness internals](docs/internals.md) for how the files and scripts work underneath.
+
+## Understand what "Verified" means
+
+The framework reports every behavior it tests as Verified, Failed, or Not verified. Verified is a strong claim, and the harness backs it with four guarantees:
+
+- The check ran on the real app, not a copy with its outside systems faked.
+- The result names the exact version of the code it tested, in every repository the app runs. A version is a Git commit, a short code such as `a1b2c3d` that names one saved snapshot of the code. The result also says whether there were edits not yet saved as a commit.
+- The check was shown to fail when the behavior was broken on purpose. This is called a planned break. A check that keeps passing while the feature is broken cannot tell working code from broken code, so the harness does not trust a check until it has seen it fail.
+- The run left a record file, called an evidence file, that anyone can open or rerun.
+
+A script in the harness, `check.py`, rejects any Verified result that its records do not support. See [Understand how a behavior earns "Verified"](docs/internals.md#understand-how-a-behavior-earns-verified) for a step-by-step example.
+
+A harness can start with nothing checked. Setup only proves the app can be started and inspected. Checks are added afterward, one behavior at a time, and anything without a check is reported as Not verified, never as passing.
+
+## Walk through a first session
+
+This example sets up a harness for a store app called storefront, adds a check for paying with a saved card, then verifies a change. The messages shown are examples of what the agent says. Every message that needs an answer ends with a `Needs you:` line holding one question and a recommended answer.
+
+### 1. Set up the harness
+
+In the app's repository, ask the agent:
+
+```text
+/setup-verification Set up verification for this app.
+```
+
+The agent reads the project's startup scripts and documentation to learn how the app starts. It asks only what it could not find, one question at a time. Before it starts anything, it tells you what it will run and what it will not:
+
+```text
+I found how to start your app: `docker compose up` in dev/. I'll start it myself, then build and test a readiness check against it.
+It may ask you to approve a cloud login. I won't run `make seed`, which writes to the shared staging database.
+
+Needs you: may I start the app? I recommend yes; nothing outside your machine changes. Then I'll start it and build the check.
+```
+
+After you approve, it creates a folder such as `.agents/skills/verify-storefront/` and builds the doctor. The doctor is a command that checks whether the app is running and which version of the code it is running, without changing anything. The agent proves the doctor works by running it twice: once with the app running, where it must say ready, and once with the app stopped, where it must say not ready. If you started the app yourself and stopping it would disturb your work, the agent skips the second run and says so.
+
+Setup ends with a short message saying the harness is ready, and suggests two next steps: run the new `verify-storefront` skill on its own to see what it can check, or add checks for a feature that works today.
+
+### 2. Add checks for a feature
+
+Ask:
+
+```text
+/add-feature-checks Add checks for paying with a saved card.
+```
+
+Before building anything, the agent shows a preview of what it will prove:
+
+```text
+Build saved-card payment on main (storefront 4f2a9c1)
+
+Will prove: a returning shopper can pay with a saved card (checkout.saved-card)
+How: submits checkout through the real checkout API with a saved card; reads back the order and payment records from the database
+Won't prove: what the confirmation screen shows
+Sources: launch checklist, row 4
+
+Needs you: should a saved card that has expired be rejected before checkout? I recommend yes (launch checklist, row 6). Then I'll build the check with that case.
+```
+
+`checkout.saved-card` is the behavior's ID, a short name the harness uses for it everywhere. The agent asks about expected behavior only when your requirements or earlier answers do not settle it. It never decides product behavior from the code alone, because code shows what the app does, not what it should do.
+
+The agent then writes the check. A second agent, which never sees the first agent's reasoning, compares the check with the agreed preview before it runs. Then the agent proves the check can fail:
+
+```text
+Planned break: skip saving the payment record in billing/charge.py.
+```
+
+It makes that change in a throwaway copy of the repository, never in your own folder, runs the check there, confirms it fails, and deletes the copy. The final report says how many behaviors are now Verified and, for each one, what was broken to prove its check.
+
+### 3. Verify a change
+
+After changing the saved-card code on a branch, ask:
+
+```text
+Use verify-storefront to verify my saved-card change.
+```
+
+`verify-storefront` is the skill setup created for this app. The agent works out which behaviors the change could affect, shows a preview in the same format as above, and runs the doctor to make sure the running app is on your branch's code. It runs each check, records the results, and reports:
+
+```text
+Saved-card change verified on add-saved-cards (storefront 9e1d0b7): 1 Verified, 1 Not verified
+
+- A returning shopper can pay with a saved card (checkout.saved-card): Verified.
+- An expired saved card is rejected (checkout.saved-card-expired): Not verified. No check yet.
+```
+
+A behavior with no check is reported as Not verified with the reason. The agent can build the missing check during the same run, within the scope you agreed to, unless you asked to use existing checks only.
+
+## Choose a skill
+
+Not sure which one you need? Type `/verification-framework` followed by what you want, in your own words. It looks at what the repo already has, such as whether a harness exists or setup stopped partway, picks a playbook, and runs the matching skills in order. When it needs to do something you didn't ask for first, such as setting up before it can verify, it shows the steps and waits for your yes. For anything with real side effects, the skill it runs still asks first.
+
+Otherwise, start with setup-verification. After that, use the app's own verify skill for everyday work and the others when you need them:
+
+| What you want | Skill | Example request |
+| --- | --- | --- |
+| Not sure which skill you need | verification-framework | "Did my change work?", "are our checks fake?", "what can this do?" |
+| Create a harness, or finish one whose setup stopped | setup-verification | "Set up verification for this repo", "resume setup" |
+| Add checks or tools for a behavior | add-feature-checks | "Add checks for checkout", "add a way to look up an order", "what should we add next?" |
+| Verify a change or a feature in this app | verify-\<app\>, made by setup | "Use verify-storefront to verify my change", "verify every checkout behavior" |
+| Find what the harness does not check, and what no longer matches the app | audit-coverage | "Audit coverage", "what aren't we checking?", "does every requirement have a check?" |
+| Find checks that would still pass if the behavior broke | audit-weak-checks | "Audit weak checks", "are our tests fake?" |
+| Understand what the harness checks and how far to trust a pass | explain-harness | "Can I trust these checks?", "how is checkout checked?" |
+| Look for bugs nobody wrote a check for | explore-bugs | "Run a round of exploratory testing" |
+| Test a teammate's pull request on the real app | verify-pr | "Verify PR #123" |
+
+Install verify-change and add-feature-checks alongside setup-verification. verify-change holds the steps every app's verify skill follows, and add-feature-checks builds checks when verification finds one missing.
+
+verification-framework, setup-verification, the two audits, explore-bugs, and verify-pr run only when you call them by name, such as `/setup-verification` in Claude Code. The app's verify skill, verify-change, and add-feature-checks can also be started by the agent on its own, so an agent that just changed the app can verify its work. So can explain-harness, which only reads, so a teammate asking "why should I trust this pass?" gets it without knowing its name. When you call verification-framework, it can run any of them for you, because your call is the request.
+
+```mermaid
+flowchart LR
+  start[verification-framework<br/>picks and runs the skills below] -.-> setup
+  setup[setup-verification<br/>proves the app can start] --> harness[(Harness<br/>settings, checks,<br/>results, records)]
+  build[add-feature-checks<br/>builds checks and proves they can fail] --> harness
+  user[Your change or feature] --> app[verify-&lt;app&gt;<br/>everyday entry point]
+  app --> verify[verify-change<br/>shared verification steps]
+  verify -->|check missing| build
+  verify --> harness
+  coverage[audit-coverage<br/>what has no check?] --> harness
+  audit[audit-weak-checks<br/>can each check fail?] --> harness
+  explore[explore-bugs<br/>finds new bugs] --> harness
+  pr[verify-pr<br/>tests a teammate's PR] --> harness
+  explain[explain-harness<br/>how far can I trust it?] --> harness
+```
+
+## Set up a harness
+
+setup-verification creates a harness, or resumes one whose setup stopped, and proves the app can be started and inspected. It does not create any feature checks.
+
+It goes through these steps:
+
+1. It works out which app to cover from your request and the project's configuration. In a repository holding several apps, it finds the one you named. If the app's code lives in other repositories, it follows the references to them. When two harnesses or apps could match, it asks which.
+2. It confirms verify-change is installed, then creates the harness folder right away, with its setup marked unfinished. Progress is saved from the first step, so a later session can pick up where this one stopped.
+3. A second agent reads the startup scripts, required tools, ways to tell the app is ready, related repositories, and where requirements are written. It only reads and changes nothing. You are asked only what the project could not answer, and you confirm any step that needs a person or has an effect outside your machine.
+4. The agent shows the setup note from the walkthrough above: how it will start the app, what needs you, and what it will not run.
+5. It fills in the harness's settings and creates the app's verify skill, an empty feature list, the doctor, a guide to the harness's commands, and a folder for records. It does not edit your Git ignore files or decide which harness files your team keeps in Git.
+6. It starts the app the way the project normally does, or asks you to start it when only a person can, and proves the doctor works. Setup is marked ready only after the doctor's output is saved and `check.py` passes.
+
+At the end, it asks permission to add one line to your project's agent instructions pointing to the harness's command guide, so any agent debugging the app can find the commands. If you decline, the guide still exists, and the report says other agents will not find it on their own.
+
+### When setup stops
+
+Setup stops and saves what it learned, rather than guessing, in these cases:
+
+- It cannot find how to start the app. It says where it looked and asks how you normally run it.
+- It finds several ways to start the app. It explains the difference and asks which matches how you work.
+- A related repository is missing, or a step needs your personal login. It asks for the location or the action. It never asks for or saves passwords or other secret values.
+- There is no way to run the app locally. It asks whether there is an existing environment you want to use, or whether you want help creating one. Creating an environment is separate work. A shared environment needs your approval for anything the agent does there, and it must be able to report which code it is running.
+
+Run setup-verification again to resume. It reads its saved notes, checks that they are still true, and continues from the saved next step. It does not reuse approvals you gave in an earlier session.
+
+While setup is unfinished, every other skill stops at the start with the reason setup stopped and the step that would resume it.
+
+### Harness files
+
+| File | What it holds |
+| --- | --- |
+| `settings.md` | This app's repositories and the commands that start, check, and inspect it |
+| `status.md` | Setup notes and the latest result for each behavior |
+| `features/` | One file per feature, listing its behaviors and how each is proven |
+| `tools.md` | A guide to every command in the harness, usable outside verification too |
+| `scripts/` | The doctor, the checks, and the app's other tools, plus four framework scripts copied unchanged |
+| `evidence/` | The record of every check run, and the doctor's proof |
+| `rules.md` | The shared rules every harness follows, copied unchanged |
+| `SKILL.md` | The app's verify skill, which points verify-change at this harness |
+
+Do not edit `rules.md` or the four framework scripts (`check.py`, `code_state.py`, `replay.py`, `clip.py`) inside a harness. They are identical in every harness, so they can be replaced with a newer version in one step and anyone who knows one harness can read another. Your team decides how long to keep records and whether to store them in Git. See [Harness internals](docs/internals.md#harness-layout) for every file.
+
+## Add checks for a feature
+
+add-feature-checks builds the programs that test a behavior and proves each one can fail. Use it in a harness whose setup is finished.
+
+Name what you want, such as "add checks for checkout" or "let agents look up an order". The agent shows a preview first, as in the walkthrough: the behaviors in plain words, how it will use the app, what it will read back to judge the result, what it will not prove, and the requirements or answers that set the expected behavior. The agreed plan is saved in the feature's file, with links to those sources.
+
+Ask "what should we add next?" to get three to five suggestions to choose from. The agent looks at the harness and at recent bug reports in your issue tracker, if one is connected, and recommends one. It builds nothing until you pick.
+
+The agent can build five kinds of tool:
+
+| Tool | What it does |
+| --- | --- |
+| Check | Uses the app the way a user would, then reads back every result to judge it. Not trusted until it has failed on a planned break. |
+| Probe | Answers a question about the app's current data, such as `probe order o_123`, and changes nothing. |
+| Action | Does something a user or operator would do, through the same button or web address they use. An action that affects anything outside your machine or anything shared refuses to run without `--user-approved`. |
+| Invariant | A rule that must always hold no matter what happened, such as "a paid order has exactly one payment", written as code so every check and probe judges it the same way. |
+| Scenario | A check that walks a whole user journey across several features. |
+
+Every tool reads results directly from the database, the raw web response, or the screen, never through the app's own code. If a tool asked the app's code whether an order was paid, a bug in that code could make a broken feature look fine.
+
+Before each planned break, the agent tells you `Planned break: <the change>`. It makes the change in a throwaway copy of the repository and removes the copy afterward. If a step that caught the break is later renamed, removed, or changed, the planned break is run again.
+
+The report opens with how many behaviors are now Verified. Then it gives one line per behavior: what was broken to prove its check, or why it is not proven yet. It also names any expectation the agent changed in a check after you agreed to the plan, and any test data left somewhere shared, such as a test payment account. Commands, versions, and workarounds go in the harness files, not the report.
+
+A check for behavior your team wants but has not built yet stays in the harness and keeps failing, with the ticket that tracks the work. add-feature-checks does not build the feature itself.
+
+## Verify a change
+
+Use the app's verify skill, such as `verify-storefront`, to verify a change or a whole feature:
+
+- "Use verify-storefront to verify my saved-card change."
+- "Use verify-storefront to verify every checkout behavior."
+
+The app's verify skill points verify-change at the right harness. verify-change does the work, and calling it directly runs the same steps, no broader. Call it directly when the app has no verify skill: "Use verify-change with .agents/skills/verify-storefront to verify my saved-card change."
+
+With no change or feature named, verify-change lists what the harness can check, with each behavior's latest result, and marks the ones your current changes touch. It runs nothing until you pick. An agent verifying its own change names the change and skips the list.
+
+verify-change goes through these steps:
+
+1. It runs `check.py`. If setup is unfinished, it reports why and stops.
+2. It traces your change through the code to find every behavior it could affect, including other features that use the changed code. It shows the preview and asks about expected behavior only when your request and requirements leave it open.
+3. For a behavior with no check, it shows what it would build and has add-feature-checks build it, within the scope you agreed to. If you asked for existing checks only, a missing check stays a reported gap. Anything that needs your answer, a permission you have not given, or a much larger scope pauses the work that depends on it, while unrelated checks keep going.
+4. It runs the doctor. It tests only an app that is ready and running your requested version in every repository the behavior depends on. If the app is not running, it starts it only when the harness's settings allow, and asks you when starting needs a login, a prompt, or your approval. If the app is running other code, it stops and says so, rather than restarting an app it did not start.
+5. It runs each behavior's check and confirms the check actually tests the agreed behavior. It never swaps in a different route to the same result, and it never treats a failing check as a missing one.
+6. If your change adds or alters a behavior, it updates that feature's file in the same change.
+7. It records each result with the version tested, confirms every Verified result against its record with `check.py`, and stops only the processes it started.
+
+The report uses the same wording for each behavior as the preview did, and puts what went wrong before what passed. A Failed behavior that was recorded on video links its replay page. After a passing check that drove a screen, the agent offers to cut a short video clip of the changed behavior for your pull request, or, when this computer cannot make clips, shows how to install the tools for it.
+
+### Choose one harness or several
+
+Start with one harness for the app or system you want to verify. One harness can cover many features and code spread across several repositories. Separate folders, services, or test entry points do not need separate harnesses.
+
+Use separate harnesses for apps that are run separately, with different scopes and different startup or access needs. For example, a commerce repository could hold:
+
+```text
+commerce/
+├── apps/
+│   ├── storefront/
+│   └── admin/
+├── services/orders/
+└── .agents/skills/
+    ├── verify-storefront/
+    └── verify-admin/
+```
+
+- `verify-storefront` covers shopping, checkout, and order confirmation, as a shopper uses them through the storefront and the orders service.
+- `verify-admin` covers staff order search, refunds, and permissions, as staff use them through the admin app and the same orders service.
+
+The two harnesses can share a probe that looks up an order. A change to the shared orders service may need checks from both, so name both apps when you ask for verification. A pass in storefront does not show that admin works.
+
+### Choose where a check starts
+
+One harness can hold checks that start at different points. For an app with a web page, a gateway in front of it, and a server behind that:
+
+- A check that starts in the browser uses the page the way a user does, then reads what the page shows and what was stored. It can prove a user completes the task and sees the right result.
+- A check that starts at the gateway calls its web address directly, then reads the response and what was stored. It can prove the gateway and server behave correctly, but not what the user sees.
+
+For a change to how the gateway routes requests, ask for the gateway checks. For a change to the checkout experience, ask for the browser journey. The preview always names where the check starts and what it cannot show. Nothing picks between these automatically, so name the one you want.
+
+### Understand levels of proof
+
+The framework sorts proof into four levels. Each level proves more than the one before and costs more to run. A check uses the lowest level that can prove the behavior, and every result names its level.
+
+| Level | Who can run it | What it can prove |
+| --- | --- | --- |
+| 1. Unit | The agent, always | The code's own logic, with outside systems replaced by stand-ins |
+| 2. Local read | The agent, once the doctor says the app is ready | What the running app has already stored, read with probes |
+| 3. Real system | The agent, only with your approval | Behavior that reaches a real outside or shared system, such as a payment provider |
+| 4. Human action | You, or an operator's real tools | Anything only a person can start |
+
+A level cannot prove anything about a system it replaced with a stand-in. When a behavior needs a higher level than the run could use, it is reported as Not verified, with the level that would settle it. See the [rules](skills/setup-verification/references/rules.md#lanes), which call these levels lanes.
+
+## Understand what you can trust
+
+explain-harness is for someone who didn't build the harness and didn't watch it run. It only reads: it never starts the app, runs a check, or edits a file. It answers the same five questions for every check:
+
+1. Does it do what a user does?
+2. Does it look at the result itself, rather than asking the app?
+3. Have we seen it catch a problem? Someone broke the app on purpose and the check failed.
+4. Did it run on the code you care about?
+5. Can you see the proof?
+
+Ask with no question and it walks one real check through those five, tallies where trust is weakest, and suggests two or three things to ask next. Name a feature or a pass and it answers for just those checks. Ask for a page to share and it writes one HTML page outside the repo. It points a weak check to audit-weak-checks and a missing one to add-feature-checks.
+
+## Keep the harness honest
+
+A harness can drift from the app over time: features change, checks get edited, and new bugs appear that no check covers. Four skills look for this. Each ends with a short report, and each asks before committing, posting, or running anything that affects something outside your machine.
+
+### Find what has no check
+
+audit-coverage answers "does this harness cover the app as it is today?" It:
+
+1. Runs `check.py` and fixes any formatting problems in the feature files.
+2. If the app has a written requirements source, splits each requirement into its smallest testable parts and matches each one to a check. A requirement with no check gets a new behavior marked "No check yet".
+3. Has one agent per feature read the app's code, without running or editing anything, to find where the feature files no longer match it.
+4. Runs every feature's checks on the real app, and runs the planned break again for any check whose code changed since it was proven.
+
+Each problem it finds is sorted into one of three groups. A feature file that describes the app wrongly gets fixed. A tool that cannot test working behavior gets fixed and rerun. A bug in the app gets reported with its record, never hidden. The audit ends as clean, changed, or blocked. It proposes edits to your requirements document rather than making them.
+
+### Find checks that cannot fail
+
+audit-weak-checks answers "would each check go red if the behavior it guards broke?" It never runs the app or touches shared systems. It:
+
+- Makes each rule-checking function in a throwaway copy always answer "nothing is wrong", then runs the unit tests to see whether any test notices.
+- Looks for tests that check nothing, tests that are switched off, and checks that were removed or weakened since the last audit.
+- Has one set of agents look for problems and a separate set confirm each one without seeing how it was found.
+
+It fixes clear-cut problems in your working copy, with a test shown failing before the fix and passing after, and leaves them uncommitted. Its report offers to commit them under a title that starts with `Audit harness checks`, so the next audit knows where to start. It never relaxes a test to make it pass.
+
+### Look for bugs nobody wrote down
+
+explore-bugs runs one round of exploratory testing. A round picks one kind of change and tries three to six new cases of it on the real app. The kinds are:
+
+- Timing: two actions at once, a slow response, a retry.
+- Order: acting after a task ended, or before a record exists.
+- Identity: a second tab, a second account, an admin acting as a user.
+- Input shape: empty, very long, or unusual text, or odd files.
+- Lifecycle: reloading mid-task, a session expiring, a restart between steps.
+- External side: what an outside system can do on its end, such as sending the same event twice.
+- Code reading: reading recent changes to find paths no check covers.
+
+The harness needs at least three invariants, the always-true rules described above, so the round can judge states no one predicted. If it has fewer, explore-bugs offers to have add-feature-checks build them.
+
+A suspected bug is confirmed by running it again and pointing to the line of code that causes it. When that is not possible, it is run three times and a separate agent tries to explain it away. Each confirmed bug becomes a failing check, and the agent drafts an issue for your tracker, filed only when you say yes.
+
+Each round starts with no memory of earlier ones, so the round is saved to a ledger, a running log the next round reads first so it does not repeat work. After three rounds in a row find nothing new, the next round reads recent code changes instead of trying more variations. explore-bugs never reports "no bugs found". It reports what it covered.
+
+Now and then, run a calibration round to test the loop itself. A separate agent plants a known bug without saying where, and the round has to find it.
+
+### Test a teammate's pull request
+
+verify-pr tests a pull request on the real app. It lists every fix and test case the pull request claims and sorts each one:
+
+- Add: the result depends on two or more parts of the system agreeing, and no current check covers it.
+- Already covered: an existing check proves it, and will be rerun on the pull request's code.
+- Add with a missing step: it belongs in the harness, but no current check reaches that situation yet.
+- Skip: one part of the system decides the result alone, so that part's own unit tests are the right place for it.
+
+You approve the list. The agent builds only the approved checks, runs them on the pull request's code, and sorts each failure. It might be a defect in the pull request, a failure already tracked elsewhere, a problem in the harness, a flaky run, or a failure it cannot place yet. It drafts a comment for the pull request and posts it only when you say so.
+
+## Read results
+
+### Read a message
+
+Every skill writes its messages the same way. A message is a question, a plan for you to approve, or a report.
+
+- A message that needs your answer ends with a short `Needs you:` line: one question, the recommended answer with its reason or source, and what the agent does next. Nothing comes after it, so the last line of a message always tells you whether the agent is waiting on you. In a report, that line opens with the outcome. When your agent can show a list of choices, a question with a few known answers appears as that list, with the recommended choice first.
+- A message with no `Needs you:` line is for information only.
+- A preview always has the same lines, in this order: Will prove, How, Won't prove, Gaps, and Sources. A line with nothing to say is left out, and the whole preview fits in 12 lines.
+- A report opens with the outcome, puts what went wrong before what passed, and gives only what you need to act on. Versions, commands, and record paths stay in the harness's `status.md`.
+
+### Read a verdict
+
+Every behavior is reported as one of three verdicts:
+
+- Verified: its check passed on the named version, and the check was shown to fail on a planned break. The result names the check, its level, where it started, its record, and the code version.
+- Failed: a step of its check failed. The result names the step and what it found, with a replay page when the run was recorded.
+- Not verified: it was not proven, with the reason. The reason is a missing check, or a blocker such as a missing account and what was tried.
+
+Keep these limits in mind when reading results:
+
+- A pass counts only for the version it ran on. A pass on `main` says nothing about your branch.
+- A check that reads only stored data does not prove what the user saw on screen.
+- A run that only looked around or stopped early has no verdict. It is never a pass.
+- A check marked `Not break-tested` has not been shown to fail, so its passes cannot be trusted yet.
+
+Feature files describe what the app should do. `status.md` records what happened on each run, including known failures, passes that can mislead, and cases nobody has tested. Read it first.
+
+### Watch a recorded run
+
+A check that uses a screen records a video. It keeps the video when the run fails or when you ask. Each run's record notes when every step began and when each pass or fail was decided, so the video can be cut by step.
+
+- `scripts/replay.py <record>` makes a replay page. The page opens on each failed step, with a button that plays the moment it happened, captions under the video, and the run's full timeline.
+- `scripts/clip.py <record> --steps 2-3` cuts those steps into a short MP4 with captions, ready to attach to a pull request.
+- `scripts/clip.py --check` says whether this computer can make clips, and how to install what is missing. Clips need ffmpeg, a common video tool, and captions need Chrome, Chromium, or Edge. See the README's [Requirements](README.md#requirements).
+
+Agents do not watch the video. A failed step also saves a screenshot and the page's text at that moment, and the run saves the browser's errors and failed requests with their times. An agent works out the failure from those first, then from a few still images: `scripts/clip.py <record> --frames failed` saves images from just before, at, and just after each failure. The replay page and clips are for people.
+
+## Use the tools outside verification
+
+The harness's tools are ordinary command-line programs in your project's language, kept in the harness's `scripts/` folder. Use them while debugging, without starting a verification skill. For example, a probe answers "what state is order o_123 in?" without hand-writing a database query.
+
+`tools.md` describes each command: when to use it, how to run it, what it needs, what it is allowed to change, what its output means, and what it cannot show. Every command answers `--help` without connecting to anything or changing anything.
+
+Tools reuse what your project already has. Checks can call existing project commands instead of copying them, and new tools use your project's database drivers and connection settings. They need no extra server or special command format.
+
+add-feature-checks suggests a layout for this code: one module that connects to your systems, one that reads results, one for invariants, one wrapper for each system a user touches, a shared recorder that writes each run's record, and thin commands on top. A project that already organizes this code its own way keeps its layout.
+
+A probe's answer describes the app's current data. It is not a Verified result on its own, because nothing proved a check behind it can fail.
+
+## Glossary
+
+- Verification harness: the `verify-<app>/` folder in your repository that holds the app's settings, feature list, checks, results, tool guide, tools, and records.
+- Repository: one Git project folder. An app may run code from several.
+- Commit: one saved snapshot of the code in Git, named by a short code such as `a1b2c3d`.
+- Settings: the harness's `settings.md`, which records everything specific to one app: its repositories, where its requirements are written, and the commands that start, check, and inspect it.
+- App verify skill: the skill setup creates for one app, such as `verify-storefront`. It is the everyday way to verify a change to that app, and it points verify-change at the app's harness.
+- verify-change: the shared skill that holds the verification steps every app's verify skill follows.
+- Feature map: the files in `features/` that list each feature users see, the behaviors in it, and how each behavior is proven.
+- Sub-feature: one behavior a user would notice, such as paying with a saved card, with a short ID such as `checkout.saved-card`.
+- Check: a program that uses the app the way a user would, then reads back what happened to judge the result.
+- Evidence file: the saved record of one check run, with each step's result and the code version tested.
+- Planned break: the smallest deliberate change that makes a behavior wrong, made in a throwaway copy of the code to show that its check fails.
+- Doctor: a command that reports whether the app is running and ready to test, and which code it is running, without changing anything.
+- Probe: a command that answers a question about the app's current data without changing anything.
+- Action: a command that does something a user or operator would do, through the same entry point they use.
+- Invariant: a rule that must always hold no matter what happened, written as code.
+- Lane: one of the four levels of proof: unit, local read, real system, or human action.
+- Results file: `status.md` in the harness, with the latest result for each behavior, known failures, passes that can mislead, and cases nobody has tested.

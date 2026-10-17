@@ -1,0 +1,16 @@
+{
+  "name": "verification-framework",
+  "owner": {
+    "name": "Kenny Matsudo"
+  },
+  "metadata": {
+    "description": "Agent skills for proving a change works on the running app, not just in tests."
+  },
+  "plugins": [
+    {
+      "name": "verification-framework",
+      "source": "./",
+      "description": "Agent skills for proving a change works on the running app, not just in tests."
+    }
+  ]
+}

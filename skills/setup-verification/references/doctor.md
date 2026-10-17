@@ -1,0 +1,13 @@
+# Build and prove the doctor
+
+Build from the start command and ready signal found in discovery. Use the project's language and clients, with the new command in the harness's `scripts/` directory. Keep connection setup (settings, credentials, base URLs, clients) in its own module, unless the project already has one, so later tools reuse it. Resolve every repo in `settings.md`. For each running component, establish the loaded version from immutable build metadata or a recorded process launch and source state. A health endpoint that recomputes the checkout's current Git metadata does not establish loaded code. If the running version cannot be established, exit 2 and leave setup incomplete; recording a caveat is not readiness proof.
+
+Report each process, its ports and auth, and every running repo's commit, branch, dirty state, and whether the commit is on its relevant default branch, as the shared rules define them. Take each checkout's Git state from the harness's `scripts/code_state.py`, for example by saving its output in a launch record and comparing that with a fresh run. Compare loaded code with the checkout under test and fail readiness for a stale process or a different checkout. Reuse existing version sources and startup tools; do not change product code to add them during setup.
+
+Judge readiness only from how the instance was started and what it reports: its process, ports, auth, loaded code, and the configuration it was launched with, such as its database path. Leave out signals that depend on the app doing its work, such as which files the process holds open, whether a background worker is busy, or whether queued jobs drain. Those are product behavior: when a bug breaks them, the doctor says not ready, and every check stops instead of failing on the bug.
+
+Publish its command and working directory in `tools.md`. Run --help without service access and check its documented output and failure meanings.
+
+**Proof:** run it against the app started the real way (exit 0) and with the app stopped or on a wrong port (exit 1 with a reason). Show both outputs and retain them in `evidence/`, creating the directory if absent. If the real start needs a human, prove it against the instance the user started. If stopping that instance would disturb them, show only the first output and say the second was not run. Stop only processes this run started, by their recorded PIDs.
+
+Before marking setup ready, read the doctor's version checks against the actual version source. Confirm every dependent repo is covered and stale or unknown loaded code cannot produce the Ready line. A failing version check is a setup blocker, not a misleading-pass note to carry into ready setup.
