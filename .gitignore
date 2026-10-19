@@ -1,0 +1,35 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python (skill scripts)
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Secrets
+.env
+.env.*
+
+# Local agent settings and skill test output
+.claude/settings.local.json
+AGENTS.local
+AGENTS.local.md
+.local/
+*.log
+
+# Practice-repo runs and their design doc stay on the maintainer's machine;
+# pilot notes live under .local/pilots/.
+/dogfood/
+/docs/dogfood.md

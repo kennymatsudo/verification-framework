@@ -1,0 +1,15 @@
+# Build and prove the doctor
+
+Build from the start command and ready signal found in discovery. Use the project's language and clients, with the new command in the harness's `scripts/` directory. Keep connection setup (settings, credentials, base URLs, clients) in its own module, unless the project already has one, so later tools reuse it. Resolve every repo in `settings.md`. For each running component, establish the loaded version from immutable build metadata or a recorded process launch and source state. A health endpoint that recomputes the checkout's current Git metadata does not establish loaded code. If the running version cannot be established, exit 2 and leave setup incomplete; recording a caveat is not readiness proof.
+
+Report each process, its ports and auth, and every running repo's commit, branch, dirty state, and whether the commit is on its relevant default branch, as the shared rules define them. Take each checkout's Git state from the harness's `scripts/framework/code_state.py`, for example by saving its output in a launch record and comparing that with a fresh run. Compare loaded code with the checkout under test, including `dirty_hash` for uncommitted code, and fail readiness for a stale process, changed fingerprint, or a different checkout. Every tool that reads a launch record resolves its paths against the checkout the tool runs from, never an absolute path saved at launch, so a second copy of the repo, such as a worktree, reads its own database and files, never the first copy's. Reuse existing version sources and startup tools; do not change product code to add them during setup.
+
+Judge readiness only from how the instance was started and what it reports: its process, ports, auth, loaded code, and the configuration it was launched with, such as its database path. Leave out signals that depend on the app doing its work, such as which files the process holds open, whether a background worker is busy, or whether queued jobs drain. Those are product behavior: when a bug breaks them, the doctor says not ready, and every check stops instead of failing on the bug.
+
+Run --help without service access and check its documented output and failure meanings.
+
+Build Stop with Start when the harness starts the app, as the Doctor section of `rules.md` describes.
+
+**Proof:** run it against the app started the real way (exit 0), then after Stop or on a wrong port (exit 1 with a reason). Then start again, kill the server so its launch record is left behind, and show that Start replaces the record. Show the outputs and retain them in `evidence/`, creating the directory if absent. If the real start needs a human, prove it against the instance the user started. If stopping that instance would disturb them, show only the first output and say the second was not run.
+
+Before marking setup ready, read the doctor's version checks against the actual version source. Confirm every dependent repo is covered and stale or unknown loaded code cannot produce the Ready line.
