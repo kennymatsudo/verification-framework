@@ -336,7 +336,7 @@ def check_rules(harness_dir, errors):
     if version != RULES_VERSION:
         errors.append(
             f"rules.md is Rules version {version} but scripts/framework/ is version {RULES_VERSION}; "
-            "copy both unchanged from the same framework version"
+            "run setup-verification to bring the harness's framework copies up to date"
         )
     elif rules_sha256(data) != RULES_SHA256:
         errors.append("rules.md was edited; restore it unchanged from setup-verification and put app specifics in settings.md")

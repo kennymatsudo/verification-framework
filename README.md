@@ -35,6 +35,8 @@ The plugin lists each skill with a `verification-framework:` prefix, so the star
 
 If you install skills one at a time, install verify-change, add-feature-checks, and add-tools along with setup-verification. The skill that setup generates depends on all three. verification-framework runs only installed skills, and when its plan needs one that is missing, it stops and prints the install line.
 
+To update, run `npx skills update`, or `claude plugin marketplace update verification-framework` and then `claude plugin update verification-framework@verification-framework`. Updating the skills leaves each harness's own copies of the shared rules and scripts as they were, so run setup-verification in each repo with a harness to bring those up to date.
+
 To check the install, run `/verification-framework` and ask "what can this framework do?". It lists its playbooks, one line each, and asks which to run.
 
 ## Try it
@@ -56,7 +58,7 @@ If you don't know which skill you need, start with verification-framework.
 | Skill | What it does |
 | --- | --- |
 | [verification-framework](skills/verification-framework/SKILL.md) | Takes any request, looks at what the repo has, and runs the matching skills in order |
-| [setup-verification](skills/setup-verification/SKILL.md) | Creates or resumes a harness and proves the app's environment is ready |
+| [setup-verification](skills/setup-verification/SKILL.md) | Creates, resumes, or updates a harness and proves the app's environment is ready |
 | [add-feature-checks](skills/add-feature-checks/SKILL.md) | Agrees on expected behavior, builds checks, and proves each catches a deliberate break |
 | [add-tools](skills/add-tools/SKILL.md) | Adds a probe or action apart from any check and proves it on the real app |
 | [verify-change](skills/verify-change/SKILL.md) | Previews, runs the checks a change touches on the requested version, and records results |

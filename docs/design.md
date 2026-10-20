@@ -160,7 +160,7 @@ Hiding it would make the app's verify skill the one way a person starts verifica
 
 Setup copies `rules.md` and five scripts unchanged and fills two templates, the same way every run. A setup script that does this would guarantee "unchanged" and shorten setup's step 2.
 
-Nothing updates a harness when the framework changes; `validate.py` only reports a `rules.md` from another version ([ADR 0021](adr/0021-check-the-rules-copy.md)). The pilot was updated by hand. Setup, run on an existing harness, could reuse the same script to refresh `rules.md`, the shared scripts, and the generated verify skill.
+Setup, run on an existing harness, replaces `rules.md` and the shared scripts by hand when they differ from its own. A script would make that copy exact, and could also refresh the generated verify skill, which nothing updates today.
 
 ### Run checks from a trusted copy
 

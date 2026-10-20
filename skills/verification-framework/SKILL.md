@@ -27,6 +27,7 @@ Match the request to one playbook:
 | Playbook | When | Steps |
 | --- | --- | --- |
 | Set up | "Set up verification", "resume setup" | setup-verification, then offer add-feature-checks for one feature the person names |
+| Update | "Update the harness", "I updated the framework" | setup-verification, asked only to update, then offer setup-verification again to prove readiness |
 | Verify a change | "Did my change work?", "verify checkout" | The app's verify skill, `<harness>/SKILL.md`, which follows verify-change and sends missing checks to add-feature-checks |
 | Add checks | "Add checks for search", "what should we check next?" | add-feature-checks |
 | Add tools | "Add this script as a tool", "let agents look up an order" | add-tools |

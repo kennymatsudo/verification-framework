@@ -1,8 +1,9 @@
 ---
 name: setup-verification
 description: >-
-  Create or resume an app's verification harness and prove its environment is
-  ready. Use for "set up verification for this app" or "resume verification setup".
+  Create, resume, or update an app's verification harness and prove its
+  environment is ready. Use for "set up verification for this app", "resume
+  verification setup", or "update the harness" after updating the framework.
   Ends with a ready harness, even with no feature checks. Use add-feature-checks
   to create checks for a behavior, add-tools to add probes and actions, and
   audit-coverage to keep them current.
@@ -19,13 +20,19 @@ Start from the app or system the user named; for a named feature, find the app t
 
 Glob `verify-*/rules.md` in the skills directories of the current folder and each folder above it up to the repo's top level, nearest first (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) and read each candidate's app scope. Don't use an unrelated harness just because it is the only one. When the target or harness is still ambiguous, ask one question with a recommendation.
 
-For a matching harness, read its Setup record in `status.md` following `references/setup.md`.
+For a matching harness, first bring its framework copies up to date: `rules.md` and the five scripts step 2 copies into `scripts/framework/`. Compare each with this skill's copy and act on the first case that fits:
+
+- **Harness on a newer Rules version than `references/rules.md`:** stop and tell the user to update the installed framework skills, since copying would downgrade the harness.
+- **Same Rules version, different `rules.md` content:** the copy was edited. Show the difference and ask before restoring it; app specifics belong in `settings.md`.
+- **Otherwise:** copy every file that differs, unchanged.
+
+When the user asked only to update the harness, run its `validate.py` and stop there: the update is done without starting the app. Otherwise read its Setup record in `status.md` following `references/setup.md`.
 
 - **No matching harness:** start one, then steps 3 to 5.
 - **Incomplete setup:** resume steps 3 to 5; a missing startup command is a discovery gap.
 - **Ready harness:** run its doctor and report readiness.
 
-Done when the target and harness are established, or the reply names the ambiguity and the answer needed.
+Done when the target and harness are established and an existing harness's framework copies match this skill's, or the reply names the ambiguity, edit, or version gap and the answer needed.
 
 ## 2. Start the harness
 
@@ -71,4 +78,4 @@ Done when Status is `ready`, doctor proof is inspectable, and `validate.py` exit
 - Add levels of proof, extra skills, or workflow rules only when the user asks for them.
 - Create no feature tools or checks during setup. Do not change Git ignore files or decide which harness artifacts the team tracks.
 
-Reply: in the Messages shape from `references/rules.md`. When ready: one line saying the harness is ready and every verification run first checks the app is up and running the right code; any fix the user needs on their own machine, one line; then `Next:` with two bullets, each skill written the way the user's agent invokes it: the app's verify skill, run alone to see what the harness can check or with a named change, and add-feature-checks with a feature that works today. Add nothing else: the doctor's proof and limits are in `status.md` and `tools.md`. When blocked: what blocks setup and what resumes it. If the project-instruction pointer isn't wired, end with it as the `Needs you` question, below the `Next:` bullets.
+Reply: in the Messages shape from `references/rules.md`. When step 1 updated framework copies, open with one line naming the files replaced and any Rules version change. After an update-only request: that line, `validate.py`'s result, and a `Next:` bullet to run setup-verification again to prove readiness. When ready: one line saying the harness is ready and every verification run first checks the app is up and running the right code; any fix the user needs on their own machine, one line; then `Next:` with two bullets, each skill written the way the user's agent invokes it: the app's verify skill, run alone to see what the harness can check or with a named change, and add-feature-checks with a feature that works today. Add nothing else: the doctor's proof and limits are in `status.md` and `tools.md`. When blocked: what blocks setup and what resumes it. If the project-instruction pointer isn't wired, end with it as the `Needs you` question, below the `Next:` bullets.

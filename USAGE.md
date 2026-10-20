@@ -101,7 +101,7 @@ Otherwise, start with setup-verification. After that, use the app's own verify s
 | What you want | Skill | Example request |
 | --- | --- | --- |
 | Not sure which skill you need | verification-framework | "Did my change work?", "are our checks fake?", "what can this do?" |
-| Create a harness, or finish one whose setup stopped | setup-verification | "Set up verification for this repo", "resume setup" |
+| Create a harness, finish one whose setup stopped, or update one after updating the framework | setup-verification | "Set up verification for this repo", "resume setup", "update the harness" |
 | Add checks for a behavior | add-feature-checks | "Add checks for checkout", "what should we add next?" |
 | Add a probe or action on its own, from scratch or from a script or request you found | add-tools | "Add this script as a tool", "add a way to look up an order" |
 | Verify a change or a feature in this app | verify-\<app\>, made by setup | "Use verify-storefront to verify my change", "verify every checkout behavior" |
@@ -184,6 +184,12 @@ Setup stops and saves what it learned, rather than guessing, when:
 Run setup-verification again to resume. It reads its saved notes, checks that they are still true, and continues from the saved next step. It does not reuse approvals you gave in an earlier session.
 
 While setup is unfinished, every other skill stops at the start with the reason setup stopped and the step that would resume it.
+
+### Update a harness after updating the framework
+
+Each harness keeps its own copy of the shared rules and the framework scripts, and updating the skills leaves those copies alone. Run setup-verification in the repo after every framework update. Before anything else, it replaces each copy that differs from the installed framework's, names the files it replaced, and runs `validate.py`. When you asked only to update, it stops there without starting the app. Otherwise it goes on to resume setup or prove readiness as usual.
+
+It stops instead of copying in two cases. If the harness's rules are newer than the installed skills, it asks you to update the skills. If the harness's rules were edited, it shows the edit and asks before restoring the shared version, since anything specific to one app belongs in `settings.md`.
 
 ### Harness files
 
