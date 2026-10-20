@@ -6,6 +6,7 @@ Usage:
   clip.py EVIDENCE_FILE                     list the run's steps and when each began
   clip.py EVIDENCE_FILE --steps 2-3         cut steps 2 through 3 into an MP4
   clip.py EVIDENCE_FILE --steps 2 --no-captions
+  clip.py EVIDENCE_FILE --steps 2-3 --demo  cut a short, captionless demo to post on a PR
   clip.py EVIDENCE_FILE --frames failed     stills before, at, and after each failed step
   clip.py EVIDENCE_FILE --frames 2          stills across step 2
 
@@ -24,6 +25,11 @@ Playwright's headless shell, then the usual install locations, then
 Playwright's full browsers) and laid over the
 video by ffmpeg. With no browser, an ffmpeg with the subtitles filter draws
 them instead. With neither, pass --no-captions. Frames need no captions.
+
+A demo shows a reviewer the behavior with nothing in the way: no captions,
+each stretch where the picture holds still cut to a second, the last frame
+held so the result stays on screen, and scaled and compressed to fit GitHub's
+smallest video upload limit.
 
 Needs ffmpeg and ffprobe, from PATH or the FFMPEG and FFPROBE variables. A clip
 or a frame shows a behavior; the run's steps are the proof.
@@ -54,6 +60,15 @@ FRAMES_PER_STEP = 4
 CAPTION_HEIGHT = 64
 FONT_SIZE = 26
 BROWSER_SECONDS = 60
+# A demo keeps this much of each still stretch, so a result shows long enough to read without the wait around it.
+DEMO_STILL_SECONDS = 1.0
+# How different two frames may be and still count as still. Loose enough that a blinking text cursor holds still.
+DEMO_STILL_NOISE = 0.003
+DEMO_HOLD_SECONDS = 1.5
+DEMO_MAX_WIDTH = 1280
+# GitHub's smallest video upload limit, on free plans.
+DEMO_MAX_BYTES = 10_000_000
+DEMO_QUALITIES = ("28", "34", "40")
 # H.264 in MP4 plays inline on GitHub, in chat tools, and in every browser.
 # CRF 28 keeps a minute of mostly still UI to a few MB with readable text.
 ENCODE = ["-c:v", "libx264", "-preset", "slow", "-crf", "28", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an"]
@@ -288,6 +303,56 @@ def subtitles(caption_cues, width, height):
     return "\n".join(lines) + "\n"
 
 
+def video_duration(ffprobe, video):
+    result = subprocess.run(
+        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(video)], capture_output=True, text=True,
+    )
+    try:
+        return float(json.loads(result.stdout)["format"]["duration"])
+    except (json.JSONDecodeError, KeyError, ValueError) as error:
+        raise ClipError(f"ffprobe cannot read {video}: {result.stderr.strip()}") from error
+
+
+def still_stretches(ffmpeg, video, duration):
+    """(start, end) of each stretch where the picture holds still longer than DEMO_STILL_SECONDS, found by ffmpeg's freezedetect."""
+    result = subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostats", "-i", str(video), "-vf", f"freezedetect=n={DEMO_STILL_NOISE}:d={DEMO_STILL_SECONDS}",
+         "-an", "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise ClipError(f"ffmpeg could not look for still stretches: {result.stderr.strip()}")
+    starts = [float(at) for at in re.findall(r"freeze_start: ([\d.]+)", result.stderr)]
+    ends = [float(at) for at in re.findall(r"freeze_end: ([\d.]+)", result.stderr)]
+    # A stretch still at the end of the video gets a start and no end.
+    return list(zip(starts, ends + [duration] * (len(starts) - len(ends))))
+
+
+def kept_spans(stills, duration):
+    """The parts of a clip a demo keeps: all of it, except each still stretch past its first DEMO_STILL_SECONDS."""
+    spans, cursor = [], 0.0
+    for still_start, still_end in stills:
+        if still_end - still_start > DEMO_STILL_SECONDS:
+            spans.append((cursor, still_start + DEMO_STILL_SECONDS))
+            cursor = still_end
+    spans.append((cursor, duration))
+    return [(start, end) for start, end in spans if end - start > 0.05]
+
+
+def demo_filter(spans):
+    """Join the kept spans, scale down to DEMO_MAX_WIDTH, and hold the last frame."""
+    parts = [f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[p{index}]" for index, (start, end) in enumerate(spans)]
+    joined = "".join(f"[p{index}]" for index in range(len(spans))) + f"concat=n={len(spans)}:v=1:a=0"
+    scale = f"scale='trunc(min({DEMO_MAX_WIDTH},iw)/2)*2':-2"
+    return ";".join([*parts, f"{joined},{scale},tpad=stop_mode=clone:stop_duration={DEMO_HOLD_SECONDS}[out]"])
+
+
+def encode_at(quality):
+    arguments = list(ENCODE)
+    arguments[arguments.index("-crf") + 1] = quality
+    return arguments
+
+
 def run_ffmpeg(ffmpeg, arguments, scratch):
     result = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *arguments], capture_output=True, text=True, cwd=scratch)
     if result.returncode != 0:
@@ -338,6 +403,40 @@ def cut(evidence_path, spec, captions=True):
     return target
 
 
+def demo(evidence_path, spec):
+    """Cut the steps spec names into a demo MP4 in the run's folder: no captions, still stretches shortened, and small enough to post.
+
+    Returns the MP4's path.
+    """
+    record = load(evidence_path)
+    video = recorded_video(record, evidence_path)
+    first, last, start, end = step_window(steps(record), spec)
+    ffmpeg = require_tool("ffmpeg", "FFMPEG")
+    ffprobe = require_tool("ffprobe", "FFPROBE")
+    target = evidence_path.with_suffix("") / clip_name(record, steps(record), first, last, demo=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    window = ["-ss", f"{start:.2f}", "-i", str(video)] + (["-t", f"{end - start:.2f}"] if end is not None else [])
+    with tempfile.TemporaryDirectory() as scratch:
+        # Cut the window first at near-lossless quality, so still stretches are timed from the clip's start.
+        steps_video = Path(scratch, "steps.mp4")
+        run_ffmpeg(ffmpeg, [*window, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-an", str(steps_video)], scratch)
+        duration = video_duration(ffprobe, steps_video)
+        graph = demo_filter(kept_spans(still_stretches(ffmpeg, steps_video, duration), duration))
+        output = Path(scratch, "demo.mp4")
+        for quality in DEMO_QUALITIES:
+            run_ffmpeg(ffmpeg, ["-i", str(steps_video), "-filter_complex", graph, "-map", "[out]", *encode_at(quality), str(output)], scratch)
+            if output.stat().st_size <= DEMO_MAX_BYTES:
+                break
+        else:
+            raise ClipError(
+                f"the demo is {output.stat().st_size / 1e6:.1f} MB at the lowest quality, over GitHub's "
+                f"{DEMO_MAX_BYTES / 1e6:g} MB upload limit; cut fewer steps"
+            )
+        shutil.move(str(output), target)
+    write_recordings(evidence_path)
+    return target
+
+
 def write_recordings(evidence_path):
     """Rewrite the harness's recordings.html with replay.py, which every harness keeps beside this script.
 
@@ -353,14 +452,15 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "step"
 
 
-def clip_name(record, run_steps, first, last):
-    """Build a shareable MP4 name from the check, steps, first label, and start time."""
+def clip_name(record, run_steps, first, last, demo=False):
+    """Build a shareable MP4 name from the check, steps, first label, whether it is a demo, and start time."""
     label = re.sub(r"^\s*step\s*\d+\s*[:.)-]?\s*", "", run_steps[first - 1]["label"], flags=re.IGNORECASE)
     digits = re.sub(r"\D", "", str(record.get("started_at") or ""))
     parts = [
         slug(str(record["check"])) if record.get("check") else "",
         f"step-{first}" if first == last else f"steps-{first}-to-{last}",
         slug(label) if label.strip() else "",
+        "demo" if demo else "",
         f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}-{digits[8:12]}" if len(digits) >= 12 else "",
     ]
     return "-".join(part for part in parts if part) + ".mp4"
@@ -453,6 +553,10 @@ def main():
     action.add_argument("--steps", help="a step number or range to cut into an MP4, such as 2-3")
     action.add_argument("--frames", metavar="STEP|failed", help="write stills across one step, or around each failed step")
     parser.add_argument("--no-captions", action="store_true", help="cut the MP4 without the caption bar")
+    parser.add_argument(
+        "--demo", action="store_true",
+        help="with --steps, cut a demo to post on a PR: no captions, still stretches cut to a second, last frame held, under GitHub's upload limit",
+    )
     args = parser.parse_args()
     if args.check:
         lines, complete = capabilities()
@@ -460,10 +564,14 @@ def main():
         return 0 if complete else 1
     if args.evidence is None:
         parser.error("give an evidence file, or --check")
+    if args.demo and not args.steps:
+        parser.error("--demo needs --steps")
     try:
         if args.frames:
             for path, seconds, label in frames(args.evidence, args.frames):
                 print(f"{path}  {seconds:.1f}s  {label}")
+        elif args.demo:
+            print(demo(args.evidence, args.steps))
         elif args.steps:
             print(cut(args.evidence, args.steps, captions=not args.no_captions))
         else:

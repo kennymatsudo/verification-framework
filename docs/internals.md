@@ -113,7 +113,9 @@ Before a harness can verify anything, setup must prove the app can be started an
 
 Every skill first finds a harness by looking in the project's skill folders for a `verify-*` folder that contains `rules.md`. With one match, the skill uses it. With several, it asks which one. With none, it stops and names setup-verification, the skill that creates a harness.
 
-Every skill that reads a harness then runs the harness's `scripts/framework/validate.py` before doing anything else. The first thing `validate.py` looks at is whether setup finished. It reads two places:
+Every skill that reads a harness then runs the harness's `scripts/framework/validate.py` before doing anything else. The first thing `validate.py` looks at is the harness's `rules.md`. Its `Rules version: <n>` line must match the version `validate.py` was written for, and the file's SHA-256 hash, a fingerprint that changes when any byte changes, must match the one `validate.py` carries. Line endings are normalized first, so a Git checkout that converts them is not an edit. A different version means the harness's framework files came from different framework versions; a different hash at the same version means someone edited the rules. Either is an error, exit code 1, reported even when setup is unfinished, because a harness whose rules were changed can't be trusted to mean what the rules say.
+
+Next, `validate.py` checks whether setup finished. It reads two places:
 
 - `settings.md` must contain `- Status: incomplete` or `- Status: ready` under a `## Setup` heading.
 - `status.md` must contain exactly one section titled `## Setup: <harness folder name>`, such as `## Setup: verify-shop`. That section has six filled lines: Target (what app is covered), Findings (what setup learned, with sources), Looked in (where it searched), Blocker (what stops setup), Next action (what would let it continue), and Doctor proof (where the doctor's successful output is saved).
@@ -434,6 +436,7 @@ The replay page links back to the recordings page and to the raw video file. Ope
 
 - `clip.py <evidence file>` lists each step's number, time range, and label.
 - `clip.py <evidence file> --steps 2-3` makes a short MP4 video of steps 2 and 3, starting half a second before step 2, for attaching to a pull request. Its name says what it shows on its own: the check, the steps, the first step's label without its `Step N:` prefix, and when the run started, such as `checkout-pay-steps-2-to-3-customer-pays-2026-10-03-1402.mp4`.
+- `clip.py <evidence file> --steps 2-3 --demo` makes a demo of those steps for a reviewer, named like a clip with `demo` before the time. It has no captions. Each stretch where the picture holds still for more than a second, measured by ffmpeg's freeze detection, is cut to its first second, so a page load or a wait shows only briefly. The last frame is held for 1.5 seconds so the result stays on screen. It is scaled to at most 1280 pixels wide and compressed harder until it fits in 10 MB, GitHub's smallest video upload limit; if it still doesn't fit, it stops and says to cut fewer steps.
 - `clip.py <evidence file> --frames failed` saves three still images per failed step: 3 seconds before the failure, at it, and 1 second after.
 - `clip.py <evidence file> --frames 2` saves four still images spread across step 2. For the last step, it assumes the step lasted 10 seconds, because the evidence does not record the video's length.
 - `clip.py --check` reports whether this computer can make still images, clips, and captions, and prints how to install anything missing. It exits with 1 when something is missing.

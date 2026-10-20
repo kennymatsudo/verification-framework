@@ -18,7 +18,9 @@ Use the harness directory supplied by the app skill or the user; otherwise glob 
 
 Read its `settings.md` and these `rules.md` sections: Harness layout, Verification plan, Setup, Code under test, Lanes, Doctor, Checks, Messages, and Reporting. Lazy-load the rest: Actions before a recipe that takes an action, Evidence before diagnosing a failed step or cutting a clip, Feature map before editing a feature file. Then read `status.md` for known failures, misleading passes, and untested cases. Run `<harness>/scripts/framework/validate.py` before startup; if it stops on incomplete setup, report its blocker and next action, name setup-verification to resume, and stop. Every path below is relative to this app harness, never this skill's directory.
 
-Done when one harness is selected and its rules, settings, and current results have been read, or the run stopped with a named blocker.
+Copy the harness directory to a temporary folder outside it, leaving out `evidence/`, `recordings.html`, and `__pycache__` folders, which runs rewrite. A copy works whether or not the harness is tracked by Git, and step 5 compares against it.
+
+Done when one harness is selected, its rules, settings, and current results have been read, and its copy is taken, or the run stopped with a named blocker.
 
 ## 2. Show what will be proved
 
@@ -34,7 +36,7 @@ Done when the user has picked from the list, or has seen the scope and evidence 
 
 For each missing proof, show what needs building and its evidence limits. Unless the request is existing-checks-only, load add-feature-checks by name with this harness, the affected IDs, acceptance sources, agreed plan, and this run's action permissions; it owns construction, independent review, and planned-break proof. Ask before dependent work when acceptance is unresolved, permissions are missing, or building would materially widen scope. If add-feature-checks is unavailable, report the installation dependency and keep that behavior Not verified. A blocked or undecided proof never blocks independent recipes.
 
-After the handoff, reread the changed feature files, settings, and results. After builder cleanup, rerun the doctor and every new or changed recipe on the requested checkout and version before the final verdict; neither a scratch pass nor the builder's run counts. If building stays blocked, keep the gap and next action explicit instead of handing off the same blocker again.
+After the handoff, reread the changed feature files, settings, and results, and replace the step 1 copy with a fresh one, since the handoff's edits are expected. After builder cleanup, rerun the doctor and every new or changed recipe on the requested checkout and version before the final verdict; neither a scratch pass nor the builder's run counts. If building stays blocked, keep the gap and next action explicit instead of handing off the same blocker again.
 
 Done when each missing proof has a usable recipe or a named gap, the existing-checks-only restriction is honored, and verification can resume without assuming a scratch result applies.
 
@@ -57,7 +59,9 @@ Root-cause a failure before calling it a product bug; a run that never reached t
 
 When a check that drives a screen passed, run `<harness>/scripts/framework/clip.py --check`. If clips work here, prepare an offer to rerun it with `VERIFY_KEEP_RECORDING=1` and cut a clip of the changed behavior for the developer to attach to the PR; otherwise prepare the install line it printed. Never install a tool unasked.
 
-Done when every listed ID has a result and evidence, or a reason it was not verified.
+After the last check, diff the harness against the copy, with the same folders left out. Any difference is an edit made outside the add-feature-checks handoff: handle it as the harness's Reporting section says.
+
+Done when every listed ID has a result and evidence, or a reason it was not verified, and the harness diff is empty or its edits are handled.
 
 ## 6. Keep the map true
 
@@ -67,7 +71,7 @@ Done when the feature map describes the changed behavior and the map check passe
 
 ## 7. Record and clean up
 
-Record results in `status.md` as the harness's Reporting section describes, including its `validate.py --require-evidence` run. Clean up only what this run created, stopping instances it started with the Stop command; name anything still open.
+Record results in `status.md` as the harness's Reporting section describes, including its `validate.py --require-evidence` run. Clean up only what this run created, stopping instances it started with the Stop command, and remove the harness copy; name anything still open.
 
 Done when the results are recorded and pass `validate.py --require-evidence`, evidence remains inspectable, and every process or resource this run created is cleaned up or named as still open.
 
@@ -78,4 +82,4 @@ Done when the results are recorded and pass `validate.py --require-evidence`, ev
 - Ask before committing, pushing, posting, filing, or running anything with a real or shared side effect.
 - Never forge an event the real system would produce, and never loosen a check to turn a run green.
 
-Reply: in the harness's Messages shape, each affected sub-feature as Verified, Failed, or Not verified in the preview's behavior wording; behaviors whose existing checks still pass share one line. When proof was built, one line per new check naming, in a few words each, the breaks it failed on. Each Failed line with a recording links its replay page. When any run kept a recording, add one line: `Recordings: <full path to recordings.html>`. When step 5 prepared a clip offer, make it the `Needs you` question. Add nothing else: commands, versions, evidence paths, and cleanup belong in `status.md`.
+Reply: in the harness's Messages shape. When step 5 found harness edits, open with the `Harness edited during this run` line. Then each affected sub-feature as Verified, Failed, or Not verified in the preview's behavior wording; behaviors whose existing checks still pass share one line. When proof was built, one line per new check naming, in a few words each, the breaks it failed on. Each Failed line with a recording links its replay page. When any run kept a recording, add one line: `Recordings: <full path to recordings.html>`. When step 5 prepared a clip offer, make it the `Needs you` question. Add nothing else: commands, versions, evidence paths, and cleanup belong in `status.md`.

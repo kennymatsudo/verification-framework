@@ -66,8 +66,14 @@ class StepsTest(unittest.TestCase):
         started = dict(RECORD, started_at="2026-10-03T14:02:11Z")
         self.assertEqual(clip.clip_name(started, run_steps, 2, 2), "checkout-pay-step-2-customer-pays-2026-10-03-1402.mp4")
         self.assertEqual(clip.clip_name(started, run_steps, 1, 3), "checkout-pay-steps-1-to-3-customer-fills-the-cart-2026-10-03-1402.mp4")
+        self.assertEqual(clip.clip_name(started, run_steps, 2, 2, demo=True), "checkout-pay-step-2-customer-pays-demo-2026-10-03-1402.mp4")
         unnumbered = [dict(run_steps[0], label="Adds an item to the cart")]
         self.assertEqual(clip.clip_name({"check": "cart-add"}, unnumbered, 1, 1), "cart-add-step-1-adds-an-item-to-the-cart.mp4")
+
+    def test_a_demo_keeps_the_first_second_of_each_long_still_stretch(self):
+        self.assertEqual(clip.kept_spans([], 5.0), [(0.0, 5.0)])
+        self.assertEqual(clip.kept_spans([(1.0, 4.0), (5.0, 5.8)], 8.0), [(0.0, 2.0), (4.0, 8.0)], "a short still stays whole")
+        self.assertEqual(clip.kept_spans([(2.0, 8.0)], 8.0), [(0.0, 3.0)], "a still that runs to the end is cut after its first second")
 
     def test_frames_across_a_step_are_spread_inside_it(self):
         times = [round(seconds, 2) for seconds, _, _ in clip.frame_times(RECORD, "2")]
@@ -154,13 +160,13 @@ class StepsTest(unittest.TestCase):
 
 @unittest.skipUnless(FFMPEG and FFPROBE, "needs ffmpeg and ffprobe")
 class CutTest(unittest.TestCase):
-    def make_run(self, directory):
+    def make_run(self, directory, source="testsrc=size=320x240:rate=10:duration=10"):
         (Path(directory) / "rules.md").write_text("# Verification rules\n")
         evidence = Path(directory) / "evidence" / "checkout-pay" / "1.json"
         video = evidence.with_suffix("") / "video.mp4"
         video.parent.mkdir(parents=True)
         subprocess.run(
-            [FFMPEG, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=10:duration=10",
+            [FFMPEG, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", source,
              "-pix_fmt", "yuv420p", str(video)],
             check=True,
         )
@@ -183,6 +189,18 @@ class CutTest(unittest.TestCase):
             width, height, duration = self.probe(target)
             self.assertEqual((width, height), (320, 240))
             self.assertAlmostEqual(duration, 3.5, delta=0.3)
+
+    def test_a_demo_drops_the_still_wait_holds_the_result_and_has_no_captions(self):
+        # Moves for 4 seconds, then holds still for 6.
+        source = "testsrc=size=320x240:rate=10:duration=4,tpad=stop_mode=clone:stop_duration=6"
+        with tempfile.TemporaryDirectory() as directory:
+            target = clip.demo(self.make_run(directory, source), "2-3")
+            self.assertEqual(target.name, "checkout-pay-steps-2-to-3-customer-pays-demo.mp4")
+            width, height, duration = self.probe(target)
+            self.assertEqual((width, height), (320, 240))
+            # 0.5 seconds moving, 1 second of the still stretch, then the held last frame, instead of 6.5 seconds.
+            expected = 0.5 + clip.DEMO_STILL_SECONDS + clip.DEMO_HOLD_SECONDS
+            self.assertAlmostEqual(duration, expected, delta=0.3)
 
     def test_browser_captions_add_a_bar_under_the_page(self):
         if not clip.find_browser():

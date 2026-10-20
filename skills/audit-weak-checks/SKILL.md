@@ -23,6 +23,8 @@ The harness is the repo's end-to-end verification layer: one setup-verification 
 
 From the harness's docs and agent instructions, find where its check code and unit tests live, the unit suite command, how checks are named, the rules it promises (the harness's `rules.md`, or its trust or verification doc), any coverage map or status file, and the docs and skills that tell agents what counts as proof. Use those names in every command below.
 
+For a harness setup-verification built, first run its `scripts/framework/validate.py`. If it reports an edited `rules.md` or one from another framework version, stop: the rules the audit would hold checks to are not the framework's. If it stops on incomplete setup, report its blocker and next action, name setup-verification to resume, and stop. Any other error is a lead for the finders.
+
 Then run, in parallel where possible, keeping each output:
 
 - The unit suite. If it fails, stop and report the failing tests; an audit of a red suite measures nothing.
@@ -33,7 +35,7 @@ Then run, in parallel where possible, keeping each output:
 - For other languages, do the same by hand: the repo's mutation tool scoped to the check functions if it has one, else the same all-clear stubs, and `git diff` since the last audit for removed assertions and new skips.
 - Every probe and scenario runner's `--help`, for the commands and names that exist today.
 
-Done when the suite is green and you hold each output, or the reason one could not run.
+Done when `validate.py` passed its rules and setup checks for a framework harness, the suite is green, and you hold each output, or the reason one could not run.
 
 ## 2. Find, in parallel
 

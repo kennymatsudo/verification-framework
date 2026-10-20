@@ -62,6 +62,7 @@ def make_harness(root):
     harness = root / ".agents" / "skills" / "verify-app"
     (harness / "features").mkdir(parents=True)
     (harness / "evidence" / "checkout-pay").mkdir(parents=True)
+    shutil.copy(REFERENCES / "rules.md", harness / "rules.md")
     (harness / "tools.md").write_text("# App tools\n")
     (harness / "README.md").write_text("# Verify app\n")
     (harness / "status.md").write_text(setup_record(harness.name))
@@ -77,6 +78,35 @@ def run_check(harness, *flags):
     with patch.object(sys, "argv", [str(SCRIPT), str(harness), *flags]), contextlib.redirect_stdout(output):
         result = validate.main()
     return result, output.getvalue()
+
+
+class RulesCopyTest(unittest.TestCase):
+    def test_shipped_hash_matches_the_reference_rules(self):
+        actual = validate.rules_sha256((REFERENCES / "rules.md").read_bytes())
+        self.assertEqual(validate.RULES_SHA256, actual, f"set RULES_SHA256 in validate.py to {actual}")
+
+    def test_edited_or_other_version_rules_fail_before_the_setup_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            (harness / "settings.md").write_text(SETTINGS.replace("Status: ready", "Status: incomplete"))
+            rules = harness / "rules.md"
+            original = rules.read_text()
+
+            rules.write_text(original.replace("unchanged", "as you see fit", 1))
+            result, output = run_check(harness)
+            self.assertEqual(result, 1, output)
+            self.assertIn("rules.md was edited", output)
+            self.assertNotIn("STOPPED", output)
+
+            rules.write_text(original.replace("Rules version: 1", "Rules version: 0"))
+            result, output = run_check(harness)
+            self.assertEqual(result, 1, output)
+            self.assertIn("rules.md is Rules version 0 but scripts/framework/ is version 1", output)
+
+            rules.write_bytes(original.encode().replace(b"\n", b"\r\n"))
+            self.assertIn(b"\r\n", rules.read_bytes())
+            result, output = run_check(harness)
+            self.assertNotIn("rules.md", output)
 
 
 class FeatureIndexTest(unittest.TestCase):
@@ -289,6 +319,7 @@ class SetupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             harness = Path(directory) / "verify-app"
             harness.mkdir()
+            shutil.copy(REFERENCES / "rules.md", harness / "rules.md")
             (harness / "settings.md").write_text("# Settings\n\n## Setup\n\n- Status: incomplete\n")
             (harness / "status.md").write_text(setup_record(
                 harness.name,

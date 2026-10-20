@@ -3,7 +3,8 @@
 
 Usage: validate.py [HARNESS_DIR] [--require-evidence] [--run-help]
 
-HARNESS_DIR defaults to the harness this script sits in, at scripts/framework/. Exits 0 when the map is
+HARNESS_DIR defaults to the harness this script sits in, at scripts/framework/. The harness's
+rules.md must be the copy this script ships with, by Rules version and hash. Exits 0 when the map is
 valid, 1 when it has errors, 2 when it cannot run. Evidence age is reported as
 warnings only; evidence retention and Git tracking belong to the team.
 Every current Verified line in status.md's Latest results must agree with the evidence
@@ -23,6 +24,7 @@ harness script is an error: tools read credentials from the project's connection
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -31,6 +33,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+RULES_VERSION = "1"
+RULES_SHA256 = "dd37895360a04f28d8c2a333704f181a7b7deebc71f87bf503f5b05aed14ce6a"
+RULES_VERSION_LINE = re.compile(r"^Rules version: (\S+)$", re.MULTILINE)
 SUB_FEATURE = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): \S")
 PROOF = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): (.+)$")
 INDEX_LINK = re.compile(r"\]\(([^)#]+\.md)\)")
@@ -311,6 +316,30 @@ def credential_errors(harness_dir):
                     errors.append(f"{where}:{number} holds what looks like {kind}; read it from the project's connection settings")
                     break
     return errors
+
+
+def rules_sha256(data):
+    """SHA-256 of a rules file's bytes."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def check_rules(harness_dir, errors):
+    """Check that the harness's rules.md is the copy this script ships with."""
+    rules = harness_dir / "rules.md"
+    if not rules.is_file():
+        errors.append("rules.md is missing; copy it unchanged from setup-verification")
+        return
+    # Normalize line endings so a Git checkout's conversion is not an edit.
+    data = rules.read_bytes().replace(b"\r\n", b"\n")
+    match = RULES_VERSION_LINE.search(data.decode())
+    version = match.group(1) if match else "none"
+    if version != RULES_VERSION:
+        errors.append(
+            f"rules.md is Rules version {version} but scripts/framework/ is version {RULES_VERSION}; "
+            "copy both unchanged from the same framework version"
+        )
+    elif rules_sha256(data) != RULES_SHA256:
+        errors.append("rules.md was edited; restore it unchanged from setup-verification and put app specifics in settings.md")
 
 
 def check_setup(harness_dir, errors):
@@ -695,6 +724,7 @@ def main():
 
     project = project_root(args.harness_dir)
     errors = []
+    check_rules(args.harness_dir.resolve(), errors)
     incomplete_setup = check_setup(args.harness_dir.resolve(), errors)
     if errors:
         for error in errors:

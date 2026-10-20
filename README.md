@@ -1,42 +1,18 @@
 # verification-framework
 
-Agent skills for proving a change works on the running app, not just in tests. They use the [Agent Skills](https://agentskills.io) format and work with Claude Code, Codex, Cursor, and any other agent the `skills` CLI supports.
+Agent skills that prove a code change works on your real, running app, not just in unit tests. They use the [Agent Skills](https://agentskills.io) format and work with Claude Code, Codex, Cursor, and any other agent the `skills` CLI supports.
 
-The skills build and run a verification harness in each app's repo. A harness is one folder with the app's settings, feature map, results, tool guide, tools, and evidence, in the same layout for every app. It keeps requirements, feature claims, and current results apart. Every result names the behavior and the code versions actually tested, in every repo the app runs from.
+Use them when passing unit tests is not enough: the change crosses a database, another service, a browser, or anything else a unit test replaces with a stand-in.
 
-See [USAGE.md](USAGE.md) to set up a harness, verify changes, and keep the harness honest. See [docs/internals.md](docs/internals.md) for the file formats and scripts.
+## How it works
 
-## Skills
+The skills build and run a verification harness in your app's repo. A harness is one folder holding how to start the app, which behaviors to check, the programs that check them, a guide to those tools, and a record of every run. Requirements, what each feature should do, and the latest results live in separate files. Every harness has the same layout, so anyone who knows one can read another.
 
-If you don't know which skill you need, start with verification-framework.
+Every result names the behavior and the code version it tested, in every repo the app runs from. A behavior is reported Verified only when its check ran on the real app and had already been shown to fail when the behavior was broken on purpose. Anything without that proof is Not verified, never a pass.
 
-| Skill | What it does |
-| --- | --- |
-| [verification-framework](skills/verification-framework/SKILL.md) | Takes any request, looks at what the repo already has, and runs the matching skills in order. |
-| [setup-verification](skills/setup-verification/SKILL.md) | Creates or resumes a harness and proves the app's environment is ready. Feature coverage can start empty. |
-| [add-feature-checks](skills/add-feature-checks/SKILL.md) | Agrees on expected behavior, builds feature checks, and proves those checks catch a deliberate break. |
-| [add-tools](skills/add-tools/SKILL.md) | Adds a probe or action before or apart from any check, from the app's code or a script or request found elsewhere. Proves it on the real app and publishes it for later checks and agents. |
-| [verify-change](skills/verify-change/SKILL.md) | Previews the behaviors and what the evidence cannot show, checks setup, delegates missing proof, runs checks on the requested version, and records results. The app's generated verify skill hands its work here. |
-| [audit-coverage](skills/audit-coverage/SKILL.md) | Finds requirements and features with no check and checks that no longer match the code or the running app. Fixes the harness's own files. |
-| [explore-bugs](skills/explore-bugs/SKILL.md) | Runs one round of exploratory testing to find bugs nobody wrote down. Confirms each bug, turns it into a failing check, and keeps a searchable ledger of rounds and of test data as soon as it's created. |
-| [verify-pr](skills/verify-pr/SKILL.md) | Verifies a teammate's PR on the real app. Lists its claims and the changes its description leaves out, builds checks for the ones that belong in the harness, runs them on the PR's code, sorts the failures, and drafts a PR comment. |
-| [audit-weak-checks](skills/audit-weak-checks/SKILL.md) | Sweeps the harness for checks and tests that would still pass if what they guard broke, confirms each finding independently, and fixes the clear-cut ones, leaving the fixes uncommitted. |
-| [explain-harness](skills/explain-harness/SKILL.md) | Explains to a teammate who didn't build the harness what it checks and how far to trust each pass, one level of detail at a time. Read-only. |
+[USAGE.md](USAGE.md) walks through setting up a harness, adding checks, verifying a change, and keeping the harness honest. [docs/internals.md](docs/internals.md) describes the files and scripts underneath.
 
-## Requirements
-
-| Need | Required | Used for |
-| --- | --- | --- |
-| Git | Yes | Code versions in evidence, and scratch worktrees for planned breaks |
-| Python 3 | Yes | The harness's `validate.py`, `code_state.py`, `break_session.py`, `replay.py`, and `clip.py`, which use only the standard library |
-| ffmpeg | Optional | Still frames for agents and video clips for PRs, from recorded runs. Without it, agents diagnose from the failure's snapshot and logs |
-| Chrome, Chromium, or Edge | Optional | Captions on clips. An ffmpeg with the subtitles filter also works. Without either, cut clips with `--no-captions` |
-
-Install the optional tools with `brew install ffmpeg` and `brew install --cask google-chrome` on macOS, the package manager's `ffmpeg` and `chromium` on Linux, or `winget install Gyan.FFmpeg` and `winget install Google.Chrome` on Windows. In a harness, `scripts/framework/clip.py --check` reports what the current machine can make and prints the install line for anything missing. Agents never install these on their own.
-
-What the app itself needs to run, such as its database or a login, is recorded in its harness during setup.
-
-## Install the skills
+## Install
 
 With the [`skills` CLI](https://skills.sh), for any supported agent:
 
@@ -57,15 +33,55 @@ As a Claude Code plugin:
 
 The plugin lists each skill with a `verification-framework:` prefix, so the starting skill is `/verification-framework:verification-framework`.
 
-When you install skills one at a time, install verify-change, add-feature-checks, and add-tools along with setup-verification, because the skill setup generates depends on all three. verification-framework runs only installed skills. If its plan needs one that is missing, it stops and prints the install line.
+If you install skills one at a time, install verify-change, add-feature-checks, and add-tools along with setup-verification. The skill that setup generates depends on all three. verification-framework runs only installed skills, and when its plan needs one that is missing, it stops and prints the install line.
 
 To check the install, run `/verification-framework` and ask "what can this framework do?". It lists its playbooks, one line each, and asks which to run.
 
-## Understand what setup adds to an app repo
+## Try it
 
-Setup creates a small `verify-<app>` skill in the app's repo, such as `verify-storefront`. It names the app and its harness, then hands the work to verify-change. The app's commands live in the harness's settings, not in the skill.
+In your app's repo:
 
-Run add-feature-checks to add checks directly. verify-change also runs it for missing proof within the requested scope. Evidence stays inside the harness. The team decides what to track in Git.
+```text
+/setup-verification Set up verification for this app.
+```
+
+Setup reads how your app starts, asks only what it could not find, and proves the app can be started and inspected. It leaves a small `verify-<app>` skill in the repo, such as `verify-storefront`, that names the app and its harness and hands the work to verify-change. The app's commands live in the harness's settings, not in the skill.
+
+From there, run add-feature-checks to add checks for a feature, and the `verify-<app>` skill to verify a change. verify-change also builds missing checks within the requested scope. Evidence stays inside the harness, and your team decides what to track in Git.
+
+## Skills
+
+If you don't know which skill you need, start with verification-framework.
+
+| Skill | What it does |
+| --- | --- |
+| [verification-framework](skills/verification-framework/SKILL.md) | Takes any request, looks at what the repo has, and runs the matching skills in order |
+| [setup-verification](skills/setup-verification/SKILL.md) | Creates or resumes a harness and proves the app's environment is ready |
+| [add-feature-checks](skills/add-feature-checks/SKILL.md) | Agrees on expected behavior, builds checks, and proves each catches a deliberate break |
+| [add-tools](skills/add-tools/SKILL.md) | Adds a probe or action apart from any check and proves it on the real app |
+| [verify-change](skills/verify-change/SKILL.md) | Previews, runs the checks a change touches on the requested version, and records results |
+| [audit-coverage](skills/audit-coverage/SKILL.md) | Finds requirements and features with no check, and checks that no longer match the app |
+| [audit-weak-checks](skills/audit-weak-checks/SKILL.md) | Finds checks and tests that would still pass if what they guard broke, and fixes the clear ones |
+| [explore-bugs](skills/explore-bugs/SKILL.md) | Runs one round of exploratory testing and turns each confirmed bug into a failing check |
+| [verify-pr](skills/verify-pr/SKILL.md) | Tests a teammate's PR, or several across repos together, on the real app, sorts the failures, and drafts a comment with a demo video |
+| [explain-harness](skills/explain-harness/SKILL.md) | Tells a teammate what the harness checks and how far to trust each pass. Read-only |
+
+[Choose a skill](USAGE.md#choose-a-skill) in USAGE.md has example requests for each.
+
+## Requirements
+
+| Need | Required | Used for |
+| --- | --- | --- |
+| Git | Yes | Code versions in evidence, scratch worktrees for planned breaks |
+| Python 3 | Yes | The five framework scripts, standard library only |
+| ffmpeg | Optional | Still frames for agents and video clips for PRs, from recorded runs |
+| Chrome, Chromium, or Edge | Optional | Captions on clips |
+
+The five scripts are `validate.py`, `code_state.py`, `break_session.py`, `replay.py`, and `clip.py`. Without ffmpeg, agents diagnose from the failure's snapshot and logs. Without a browser, an ffmpeg with the subtitles filter also draws captions, and with neither you can cut clips with `--no-captions`.
+
+Install the optional tools with `brew install ffmpeg` and `brew install --cask google-chrome` on macOS, the package manager's `ffmpeg` and `chromium` on Linux, or `winget install Gyan.FFmpeg` and `winget install Google.Chrome` on Windows. In a harness, `scripts/framework/clip.py --check` reports what this machine can make and prints the install line for anything missing. Agents never install these on their own.
+
+What the app itself needs to run, such as its database or a login, is recorded in its harness during setup.
 
 ## License
 

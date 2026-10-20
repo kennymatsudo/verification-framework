@@ -96,12 +96,6 @@ Old runs could be kept as read-only history in `status.md` rather than converted
 
 Planned-break evidence matches a passing run by check identity and stable step names. A changed assertion with the same name still depends on the agent rerunning its break. Before fingerprinting checks, define which reads and invariants belong to the check, how unrelated edits affect proof, and whether content changes invalidate it. This changes what proof remains usable, so settle it in a new ADR before implementation.
 
-### Flag harness edits made during a run
-
-An agent facing a failing check can loosen the check instead of fixing the code, and models attempt this far more often when a task can't be finished honestly. Proposed: verify-change records the harness's state when a run starts. If any harness file changed outside add-feature-checks, the report opens with "harness edited during this run" and the diff.
-
-A fuller defense runs checks from a trusted copy and replays the saved planned break when a check changes, as mutation-testing tools like PIT do. It waits until this flag fires in practice.
-
 ### Ask for the requirements source when setup can't find it
 
 audit-coverage's requirements pass runs only when `settings.md` names a requirements source, and nobody is asked for one. Setup's discovery subagent looks and writes `none` when it finds nothing, which is likely when requirements live in a doc or ticket outside the repo. The pass is then skipped on every run. Proposed:
@@ -145,6 +139,8 @@ ADRs 0011, 0012, and 0013 are proposed and wait on the tests under Open question
 - [0018: Run planned breaks through a session script](adr/0018-run-planned-breaks-through-a-session-script.md)
 - [0019: A skill that adds tools on their own](adr/0019-a-skill-that-adds-tools-on-their-own.md)
 - [0020: A runs page that leads with each check's latest run](adr/0020-a-runs-page-that-leads-with-each-checks-latest-run.md)
+- [0021: Check the rules copy](adr/0021-check-the-rules-copy.md)
+- [0022: Flag harness edits made during a run](adr/0022-flag-harness-edits-made-during-a-run.md)
 
 ## Parked ideas
 
@@ -164,4 +160,8 @@ Hiding it would make the app's verify skill the one way a person starts verifica
 
 Setup copies `rules.md` and five scripts unchanged and fills two templates, the same way every run. A setup script that does this would guarantee "unchanged" and shorten setup's step 2.
 
-Nothing updates a harness when the framework changes. The pilot was updated by hand. Setup, run on an existing harness, could reuse the same script to refresh `rules.md`, the shared scripts, and the generated verify skill.
+Nothing updates a harness when the framework changes; `validate.py` only reports a `rules.md` from another version ([ADR 0021](adr/0021-check-the-rules-copy.md)). The pilot was updated by hand. Setup, run on an existing harness, could reuse the same script to refresh `rules.md`, the shared scripts, and the generated verify skill.
+
+### Run checks from a trusted copy
+
+The harness-edit flag ([ADR 0022](adr/0022-flag-harness-edits-made-during-a-run.md)) reports a loosened check after the fact. A fuller defense runs checks from a trusted copy and replays the saved planned break when a check changes, as mutation-testing tools like PIT do. It waits until the flag fires in practice.

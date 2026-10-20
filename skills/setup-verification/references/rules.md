@@ -1,6 +1,8 @@
 # Verification rules
 
-Copy this file into the harness as `rules.md`, unchanged; app specifics live in `settings.md`. A section applies once the harness has that kind of piece. A piece that cannot follow a rule names the exception in its own help text and in the feature file that uses it.
+Rules version: 1
+
+Copy this file into the harness as `rules.md`, unchanged; app specifics live in `settings.md`. `scripts/framework/validate.py` fails a copy that differs from the one it ships with. A section applies once the harness has that kind of piece. A piece that cannot follow a rule names the exception in its own help text and in the feature file that uses it.
 
 ## Harness layout
 
@@ -147,7 +149,7 @@ Link the guide from the project instructions the agent actually loads, scoped to
 
 ## Setup
 
-`settings.md` has a Setup Status of `incomplete` or `ready`; incomplete settings may omit unknown required fields. `status.md` has a `## Setup: <harness directory name>` section recording the target, sourced findings, places inspected, blocker, next action, and doctor proof. Run `scripts/framework/validate.py` before live verification: incomplete setup exits 2 with its resume action; invalid setup records exit 1. Finish setup with setup-verification before driving the app or claiming coverage.
+`settings.md` has a Setup Status of `incomplete` or `ready`; incomplete settings may omit unknown required fields. `status.md` has a `## Setup: <harness directory name>` section recording the target, sourced findings, places inspected, blocker, next action, and doctor proof. Run `scripts/framework/validate.py` before live verification: an edited `rules.md`, or one whose Rules version differs from the framework scripts', exits 1 before anything else is checked; incomplete setup exits 2 with its resume action; invalid setup records exit 1. Finish setup with setup-verification before driving the app or claiming coverage.
 
 Ready means setup was proven against the real app, not that the current instance is up; run the doctor every time. Structural validation alone never proves setup.
 
@@ -316,3 +318,5 @@ Record each result under `## Latest results` in `status.md` as one line starting
 ```
 
 `scripts/framework/validate.py` fails a current Verified line unless its evidence file has a consistent passing verdict, covers that sub-feature with at least one step judging it, and records every configured repo and the commits the line names. The map's proof must cite a completed planned break of the same check, aimed at that sub-feature, in which a step judging it failed, and each such step must still judge it in the passing run. After recording results, run `scripts/framework/validate.py --require-evidence`, which also fails when a cited evidence file is absent. When a line fails, correct it to what the evidence shows; never edit evidence or the map to fit a verdict.
+
+A run that finds the harness edited outside an add-feature-checks handoff opens its report with `Harness edited during this run: <files>`, before any verdict, and records the diff in `status.md`. Every sub-feature whose check or read changed is Not verified until add-feature-checks re-proves it with a planned break.
