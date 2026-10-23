@@ -231,6 +231,23 @@ class MonorepoTest(unittest.TestCase):
             self.assertTrue(state["app"]["dirty"])
             self.assertRegex(state["app"]["dirty_hash"], "^[0-9a-f]{64}$")
 
+    def test_dirty_state_leaves_out_the_framework_skill_copies_sync_recorded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = make_repo(Path(directory) / "project")
+            harness = make_harness(project)
+            git(project, "add", ".agents")
+            git(project, "commit", "-qm", "harness settings")
+            for name in ("vf", "vf-verify"):
+                (project / ".agents/skills" / name).mkdir()
+                (project / ".agents/skills" / name / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
+            lock = harness / code_state.validate.FRAMEWORK_LOCK
+            lock.parent.mkdir(parents=True)
+            lock.write_text("0" * 64 + "  ../vf/SKILL.md\n" + "0" * 64 + "  ../vf-verify/SKILL.md\n")
+            self.assertFalse(code_state.checkout_state(project, harness)["dirty"])
+            (project / ".agents/skills/other").mkdir()
+            (project / ".agents/skills/other/SKILL.md").write_text("the team's own skill\n")
+            self.assertTrue(code_state.checkout_state(project, harness)["dirty"])
+
     def test_env_locators_read_their_file_from_the_project_root(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "monorepo"

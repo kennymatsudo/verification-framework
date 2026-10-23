@@ -12,10 +12,11 @@ Prints one JSON object:
   directories of DIR and of each folder above it up to its Git top level,
   nearest first, so an app that is one folder of a monorepo finds its own.
 
-A skill is looked for beside this skill's folder first, where the Claude Code
-plugin and the skills CLI both put it, then in those same project skills
-directories, then in the same directories under the home directory. DIR
-defaults to the current directory.
+A skill is looked for beside the skill folder holding this script first (the
+installed vf, or a harness running its scripts/framework/ copy), where the
+Claude Code plugin, the skills CLI, and vf.py sync all put it, then in those
+same project skills directories, then in the same directories under the home
+directory. DIR defaults to the current directory.
 
 Exits 0 when every skill is found, 1 when any is missing (the JSON still
 prints), and 2 when DIR is not a directory, with the reason on a STOPPED: line
@@ -53,6 +54,13 @@ def project_folders(start):
     while folders[-1] != top:
         folders.append(folders[-1].parent)
     return folders
+
+
+def skill_folder(script):
+    """The skill folder holding script: the nearest folder above it with a SKILL.md, so a harness's
+    scripts/framework/ copy resolves to the harness and the installed copy to vf."""
+    script = script.absolute()
+    return next((folder for folder in script.parents if (folder / "SKILL.md").is_file()), script.parent.parent)
 
 
 def locate(router_dir, start, home):
@@ -97,7 +105,7 @@ def main():
         print(f"STOPPED: {repo} is not a directory", file=sys.stderr)
         return 2
 
-    found = locate(Path(__file__).absolute().parent.parent, repo.absolute(), Path.home())
+    found = locate(skill_folder(Path(__file__)), repo.absolute(), Path.home())
     print(json.dumps(found, indent=2))
     return 1 if found["missing"] else 0
 

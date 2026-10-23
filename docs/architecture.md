@@ -21,7 +21,7 @@ flowchart LR
   entry -->|delegates to vf-verify| skills
 ```
 
-This repo holds three skills in `skills/<name>/`: **vf** for the jobs a person starts by name, **vf-verify** for the jobs an agent may start for its own change, and **vf-explain**, which only reads ([ADR 0002](adr/0002-three-skills.md)). Each job is a mode with its procedure in the skill's `references/`. The shared contract lives in vf's `references/` and `scripts/`, because vf's setup mode is what copies it into a harness.
+This repo holds three skills in `skills/<name>/`: **vf** for the jobs a person starts by name, **vf-verify** for the jobs an agent may start for its own change, and **vf-explain**, which only reads ([ADR 0002](adr/0002-three-skills.md)). Each job is a mode with its procedure in the skill's `references/`. The shared contract lives in vf's `references/` and `scripts/`, because vf's setup mode is what copies it into a harness. Setup also commits a copy of each skill, without `scripts/`, beside the harness, so a clone of the app's repo is the install ([ADR 0007](adr/0007-the-framework-ships-inside-the-app-repo.md)).
 
 A harness is a `verify-<app>/` folder in one of the app's skills directories. The folder holding that skills directory is the **project root**: the repo's top folder for a single-repo app, or the app's own folder in a monorepo. Commands run from it and settings resolve from it ([ADR 0001](adr/0001-one-harness-per-app.md)). One harness can cover an app that spans several repos.
 
@@ -44,7 +44,7 @@ Every harness gets an identical `rules.md`, so anyone can check it for edits, up
 
 Two terms used throughout: the **doctor** is the harness's readiness check, a command that confirms the app is up and running the requested code. A **planned break** is a deliberate bug, made in a scratch copy of the code, that a new check must catch before its passes count.
 
-Setup copies seven Python scripts unchanged into each harness's `scripts/framework/`. `vf.py` is the one command people and skills call; the rest sit behind it.
+Setup copies twelve Python scripts unchanged into each harness's `scripts/framework/`. `vf.py` is the one command people and skills call for runs and records; the scripts below sit behind it, and the skills run `locate.py`, `trust_facts.py`, and the three audit scripts by path.
 
 | Script | Job |
 | --- | --- |
@@ -109,6 +109,7 @@ vf's audit mode for weak checks and its verify-pr mode also work on a harness th
 - Skills find a harness by looking for `verify-*/rules.md` in the skills directories of the current folder and each folder above it, up to the repo's top level. Keep that marker stable.
 - A harness keeps all artifacts in fixed folders. Settings can't move them ([ADR 0001](adr/0001-one-harness-per-app.md)).
 - Skills and `validate.py` support only the current harness format. An older harness fails `validate.py` ([ADR 0001](adr/0001-one-harness-per-app.md)).
+- Every skill passes the Rules version it was written for to `vf.py validate --written-for`, which fails on a mismatch and names the side to update, so a personal install can't run another procedure against the repo's harness unnoticed ([ADR 0007](adr/0007-the-framework-ships-inside-the-app-repo.md)).
 - The framework adapts to a project by finding what it already has (start scripts, clients, requirement docs), not by adding options. Generated tools use the project's own language.
 - The main agent synthesizes and decides. Subagents on a mid-tier model gather evidence: discovery during setup, the plan reviewer, per-feature readers in the audit, check readers in vf-explain.
 - Product code changes only in scratch worktrees. Skills drive and stop only app instances they started or the user named. Anything with a real or shared side effect needs the user's OK, and a harness action refuses to touch anything shared without `--user-approved`.

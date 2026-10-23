@@ -54,11 +54,15 @@ cannot be trusted, in evidence/not-verified.jsonl, and refreshes status.md. The 
 a later accepted run of a check covering ID; with --until-break, until a later planned break aimed
 at ID as well, for a check whose steps changed.
 
-vf.py sync HARNESS_DIR [--restore] creates or updates a harness's framework copies: rules.md
-and every script in FRAMEWORK_SCRIPTS under scripts/framework/. Run it from the installed
-vf skill's scripts/ folder, never from a harness's copy, since the skill's copies are
-the source. It replaces each copy that differs apart from line endings, and prints one line
-per file it created or replaced, plus a line naming any Rules version change.
+vf.py sync HARNESS_DIR [--restore] creates or updates a harness's framework copies: rules.md,
+every script in FRAMEWORK_SCRIPTS under scripts/framework/, and the vf, vf-verify, and
+vf-explain skills beside the harness, without their scripts/, so a clone of the repo holds
+everything the skills need and each script is pinned once. When the project root has more
+than one skills directory, each one gets the skill copies. Run it from the installed vf
+skill's scripts/ folder, never from a harness's copy, since the skill's copies are the
+source. It replaces each copy that differs apart from line endings, removes a copy it
+recorded earlier and no longer ships, and prints one line per file it created, replaced,
+or removed, plus a line naming any Rules version change.
 
 It records the SHA-256 of every file it copies in scripts/framework/framework.sha256, in
 the format `shasum -a 256 -c` reads, and validate.py checks the harness's rules.md against
@@ -86,7 +90,12 @@ from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 SOURCE_RULES = SCRIPTS_DIR.parent / "references" / "rules.md"
-FRAMEWORK_SCRIPTS = ["validate.py", "code_state.py", "break_session.py", "launch.py", "replay.py", "clip.py", "vf.py"]
+# The skills a clone of the app's repo holds beside its harness, and what their copies leave out.
+COMMITTED_SKILLS = ["vf", "vf-verify", "vf-explain"]
+LEFT_OUT_OF_SKILL_COPIES = {"scripts", "__pycache__"}
+INSTALL_COMMAND = "npx skills add kennymatsudo/verification-framework"
+FRAMEWORK_SCRIPTS = ["validate.py", "code_state.py", "break_session.py", "launch.py", "replay.py", "clip.py",
+                     "locate.py", "break_checks.py", "smells.py", "weakened.py", "trust_facts.py", "vf.py"]
 SCRIPT_COMMANDS = {
     "validate": ("validate.py", "check the harness's rules copy, settings, feature map, and Verified results"),
     "code-state": ("code_state.py", "print every repo's Git state for an evidence file's code field"),
@@ -597,10 +606,57 @@ def edited_copies(copies, recorded):
     return edited
 
 
+def source_skill_dir(name):
+    """The installed folder of a framework skill, beside vf (the plugin and the skills CLI install them side by side,
+    possibly through a symlink), or None when it isn't installed."""
+    for skills_dir in (SCRIPTS_DIR.parent.parent, SCRIPTS_DIR.parent.resolve().parent):
+        if (skills_dir / name / "SKILL.md").is_file():
+            return skills_dir / name
+    return None
+
+
+def skill_files(skill_dir):
+    """The files of a skill its committed copy carries, relative to the skill: everything but scripts/ and Python caches."""
+    return sorted(
+        path.relative_to(skill_dir) for path in skill_dir.rglob("*")
+        if path.is_file()
+        and not LEFT_OUT_OF_SKILL_COPIES & set(path.relative_to(skill_dir).parts)
+        and path.suffix not in (".pyc", ".pyo")
+    )
+
+
+def skills_directories(harness_dir):
+    """The skills directory holding the harness first, then every other known one at the project root, so each
+    agent the team uses finds the committed skills."""
+    own = harness_dir.parent
+    known = sibling("locate").SKILLS_DIRS
+    project_root = own.parent.parent
+    if own not in (project_root / d for d in known):
+        return [own]
+    return [own] + [project_root / d for d in known if project_root / d != own and (project_root / d).is_dir()]
+
+
+def committed_skill_copies(harness_dir):
+    """(source, target, harness-relative name) for every file of every committed skill, in every skills directory."""
+    copies = []
+    for name in COMMITTED_SKILLS:
+        source_dir = source_skill_dir(name)
+        if source_dir is None:
+            raise Stopped(f"{name} is not installed beside vf, so its copy cannot be committed beside the harness; "
+                          f"install it with `{INSTALL_COMMAND}`")
+        for skills_dir in skills_directories(harness_dir):
+            for rel in skill_files(source_dir):
+                target = skills_dir / name / rel
+                copies.append((source_dir / rel, target, Path(os.path.relpath(target, harness_dir)).as_posix()))
+    return copies
+
+
 def sync(harness_dir, restore=False):
     """Bring a harness's framework copies up to date; return the lines to print and the exit code."""
     if not SOURCE_RULES.is_file():
-        raise Stopped("no references/rules.md beside this script; run sync from the installed vf skill's scripts/vf.py")
+        raise Stopped("no references/rules.md beside this script; run sync from the installed vf skill's scripts/vf.py. "
+                      f"This is a harness's copy: updating needs the framework installed, with `{INSTALL_COMMAND}` "
+                      "or the Claude Code plugin the README names")
     source_rules = SOURCE_RULES.read_bytes()
     harness_rules_path = harness_dir / "rules.md"
     harness_rules = harness_rules_path.read_bytes() if harness_rules_path.is_file() else None
@@ -608,12 +664,14 @@ def sync(harness_dir, restore=False):
     lock = harness_dir / sibling("validate").FRAMEWORK_LOCK
     copies = [(SOURCE_RULES, harness_rules_path, "rules.md")]
     copies += [(SCRIPTS_DIR / name, framework_dir / name, str(Path("scripts") / "framework" / name)) for name in FRAMEWORK_SCRIPTS]
+    copies += committed_skill_copies(harness_dir)
 
     if harness_rules is not None:
         conflict = newer_harness(harness_rules, source_rules)
         if conflict:
             return [f"STOPPED: {conflict}"], 1
-    edited = edited_copies(copies, read_lock(lock))
+    recorded = read_lock(lock)
+    edited = edited_copies(copies, recorded)
     if edited and not restore:
         names = ", ".join(name for name, _, _ in edited)
         lines = [f"STOPPED: {names} edited since the last sync; app specifics belong in settings.md. "
@@ -632,8 +690,15 @@ def sync(harness_dir, restore=False):
         existed = target.is_file()
         if existed and normalized(target.read_bytes()) == normalized(source.read_bytes()):
             continue
+        target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(source, target)
         lines.append(f"{'replaced' if existed else 'created'} {name}")
+    shipped = {name for _, _, name in copies}
+    for name in recorded:
+        stale = harness_dir / name
+        if name not in shipped and stale.is_file():
+            stale.unlink()
+            lines.append(f"removed {name}")
     lock_text = "".join(f"{file_hash(source.read_bytes())}  {name}\n" for source, _, name in copies)
     if not lock.is_file() or lock.read_text() != lock_text:
         lines.append(f"{'replaced' if lock.is_file() else 'created'} {lock.relative_to(harness_dir)}")
@@ -675,7 +740,7 @@ def main():
     not_verified_parser.add_argument("sub_feature", help="the sub-feature ID")
     not_verified_parser.add_argument("reason", help="why it is Not verified, in a sentence")
     not_verified_parser.add_argument("--until-break", action="store_true", help="stands until a later planned break aimed at it, not just a later run")
-    sync_parser = commands.add_parser("sync", help="create or update a harness's rules.md and scripts/framework/")
+    sync_parser = commands.add_parser("sync", help="create or update a harness's rules.md, scripts/framework/, and the skill copies beside it")
     sync_parser.add_argument("harness_dir", type=Path)
     sync_parser.add_argument("--restore", action="store_true", help="replace framework copies that were edited")
     args = parser.parse_args()

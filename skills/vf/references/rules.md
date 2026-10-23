@@ -1,6 +1,6 @@
 # Verification rules
 
-Rules version: 1
+Rules version: 2
 
 Copy this file into the harness as `rules.md`, unchanged; app specifics live in `settings.md`. `scripts/framework/vf.py validate` fails a copy that differs from the one vf last synced, whose hash `scripts/framework/framework.sha256` records with every other framework file's. A section applies once the harness has that kind of piece. A piece that cannot follow a rule names the exception in its own help text and in the feature file that uses it.
 
@@ -22,6 +22,8 @@ Keep framework artifacts at fixed paths relative to this harness; settings canno
 - `evidence/launch/`: the launch record and output of an instance `vf.py start` started.
 - `evidence/not-verified.jsonl`: the Not verified records `vf.py not-verified` writes.
 - `evidence/breaks.jsonl`: one line per planned break that caught a sub-feature, written by `vf.py break run`.
+
+Beside the harness, the same skills directory holds `vf/`, `vf-verify/`, and `vf-explain/`: copies of the framework skills without their `scripts/`, written by `vf.py sync` and recorded in `framework.sha256` with every other framework copy, so a clone of the repo needs no install. Each other skills directory at the project root holds the same copies. Their scripts run from this harness's `scripts/framework/`.
 
 The project root is the folder holding the skills directory this harness sits in: `app/` for `app/.agents/skills/verify-app/`. In a single-repo app it is the repository's top folder; in a monorepo it is the app's own folder. Recipe commands run from it, and `settings.md` paths resolve from it.
 
@@ -121,7 +123,7 @@ Ready means setup was proven against the real app, not that the current instance
 
 Every result records the version that produced it. List every repo in `settings.md`, even when there is one. The doctor finds each checkout from its locator and reports the commit the running process actually loaded, not the checkout's current HEAD; a health response that recomputes Git metadata on request is not evidence of loaded code. A missing repo or unreadable running version stops the run.
 
-For each Git repo, record the commit, branch, dirty state, and whether the commit is on its default branch. Dirty means a modified, staged, or untracked file outside the harness directory, and inside the repo's located folder when the locator names a folder within a checkout, such as a monorepo app's own folder; ignored files don't count. Record `dirty_hash` from `code_state.py`: SHA-256 of staged and unstaged diffs and untracked file names, modes, and contents, or null when clean. Capture it with the loaded version at startup; a different hash means different uncommitted code even on the same commit.
+For each Git repo, record the commit, branch, dirty state, and whether the commit is on its default branch. Dirty means a modified, staged, or untracked file outside the harness directory and the framework skill copies beside it (those `framework.sha256` records), and inside the repo's located folder when the locator names a folder within a checkout, such as a monorepo app's own folder; ignored files don't count. Record `dirty_hash` from `code_state.py`: SHA-256 of staged and unstaged diffs and untracked file names, modes, and contents, or null when clean. Capture it with the loaded version at startup; a different hash means different uncommitted code even on the same commit.
 
 Take these from `scripts/framework/vf.py code-state`, never from Git directly, so every tool means the same by each field; `--checkout` points it at another checkout, and `on_main` is null when the repo has no default branch to compare with. A pass is evidence only for the recorded versions.
 

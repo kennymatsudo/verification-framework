@@ -6,16 +6,20 @@ every skill together.
 """
 
 import pathlib
+import re
 import unittest
 
 SKILLS = pathlib.Path(__file__).resolve().parent.parent / "skills"
+# The gate names the Rules version the skills were written for, so a bump in rules.md must reach every skill.
+RULES_VERSION = re.search(r"^Rules version: (\S+)$", (SKILLS / "vf/references/rules.md").read_text(), re.MULTILINE).group(1)
 
 FIND = ("Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories "
         "(`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it "
         "up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up.")
-GATE = ("Run `<harness>/scripts/framework/vf.py validate` before anything else. When it stops on incomplete setup, report its "
+GATE = (f"Run `<harness>/scripts/framework/vf.py validate --written-for {RULES_VERSION}` before anything else. When it stops on incomplete setup, report its "
         "blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the "
-        "harness predates the installed framework, so name vf to update it and stop.")
+        "harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, "
+        "relay which side it says to update, and stop.")
 
 # Skills that only work on a framework harness find it and gate on it.
 FINDS_AND_GATES = [

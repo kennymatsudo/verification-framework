@@ -126,6 +126,19 @@ class RulesCopyTest(unittest.TestCase):
             result, output = run_check(harness)
             self.assertNotIn("rules.md", output)
 
+    def test_written_for_passes_on_the_harness_version_and_names_the_older_side_on_a_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            version = validate.RULES_VERSION_LINE.search((harness / "rules.md").read_text()).group(1)
+            _, output = run_check(harness, "--written-for", version)
+            self.assertNotIn("written for", output)
+            result, output = run_check(harness, "--written-for", str(int(version) + 1))
+            self.assertEqual(result, 1, output)
+            self.assertIn(f"written for Rules version {int(version) + 1} and the harness's rules.md is on {version}; update the harness", output)
+            result, output = run_check(harness, "--written-for", "0")
+            self.assertEqual(result, 1, output)
+            self.assertIn("update the installed framework skills", output)
+
 
 class FeatureIndexTest(unittest.TestCase):
     def test_status_link_is_not_a_feature_and_broken_links_fail(self):

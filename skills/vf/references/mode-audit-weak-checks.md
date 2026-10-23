@@ -10,12 +10,12 @@ The harness is the repo's end-to-end verification layer: one vf built (`verify-*
 
 From the harness's docs and agent instructions, find where its check code and unit tests live, the unit suite command, how checks are named, the rules it promises (the harness's `rules.md`, or its trust or verification doc), any coverage map or status file, and the docs and skills that tell agents what counts as proof. Use those names in every command below.
 
-For a harness vf built: Run `<harness>/scripts/framework/vf.py validate` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop. If it reports an edited `rules.md` or one from another framework version, stop: the rules the audit would hold checks to are not the framework's. Any other error is a lead for the finders.
+For a harness vf built: Run `<harness>/scripts/framework/vf.py validate --written-for 2` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. If it reports an edited `rules.md` or one from another framework version, stop: the rules the audit would hold checks to are not the framework's. Any other error is a lead for the finders.
 
 Then run, in parallel where possible, keeping each output:
 
 - The unit suite. If it fails, stop and report the failing tests; an audit of a red suite measures nothing.
-- For Python check code, the three scripts in vf's `scripts/` directory. Run them; read their `--help` only for flags.
+- For Python check code, the three audit scripts, from `<harness>/scripts/framework/` for a harness vf built and otherwise from the installed vf's `scripts/`. Run them; read their `--help` only for flags.
   - `break_checks.py --harness <dir> --suite "<suite command>" --match "<check name regex>"`. In a scratch copy, it stubs each check function to return its all-clear value and runs the suite. `SURVIVED` means no unit test can tell that check from a broken one. Add `--copy <path>` for anything else the suite imports.
   - `smells.py <dirs>`: leads for tests with no assertion, existence-only assertions, self-comparisons, skips, and broad excepts that swallow a failure.
   - `weakened.py --path <dir> --match "<regex>"`: every deleted test, removed assertion, new skip, and changed check since the last `Audit harness checks` commit, else 30 days.

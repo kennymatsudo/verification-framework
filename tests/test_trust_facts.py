@@ -10,14 +10,14 @@ from unittest.mock import patch
 
 from support import git
 
-SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf-explain" / "scripts"
+SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
 
 SCRIPT = SCRIPTS / "trust_facts.py"
 SPEC = importlib.util.spec_from_file_location("trust_facts", SCRIPT)
 trust_facts = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(trust_facts)
 
-VALIDATE = SCRIPTS.parent.parent / "vf" / "scripts" / "validate.py"
+VALIDATE = SCRIPTS / "validate.py"
 
 FEATURE = """# Checkout
 

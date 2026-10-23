@@ -20,7 +20,7 @@ Done when you have the harness path and have read its `SKILL.md`, `rules.md`, `s
 
 ## 2. Run the mechanical check
 
-Run `<harness>/scripts/framework/vf.py validate` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop. Fix every error in the map itself: missing or extra index entries, malformed lines, proof commands whose files moved. Keep each warning about stale or missing evidence for step 5.
+Run `<harness>/scripts/framework/vf.py validate --written-for 2` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Fix every error in the map itself: missing or extra index entries, malformed lines, proof commands whose files moved. Keep each warning about stale or missing evidence for step 5.
 
 Done when `vf.py validate` exits 0 and you have a list of stale sub-features, or setup stopped with its saved blocker.
 

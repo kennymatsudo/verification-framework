@@ -11,7 +11,8 @@ doctor, the checks, and validate.py agree on what each field means.
 
 - commit: the full commit HEAD points at.
 - branch: the checked-out branch, or null on a detached HEAD.
-- dirty: a modified, staged, or untracked file outside the harness directory;
+- dirty: a modified, staged, or untracked file outside the harness directory and
+  the framework skill copies sync wrote beside it;
   files Git ignores don't count.
 - dirty_hash: SHA-256 of staged and unstaged diffs and untracked contents,
   excluding the harness; null when clean. Capture this when the process loads its code.

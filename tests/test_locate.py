@@ -87,6 +87,12 @@ class Locate(unittest.TestCase):
 
         self.assertEqual(found["harnesses"], [str(own.resolve()), str(top.resolve())])
 
+    def test_skill_folder_is_the_nearest_folder_with_a_skill_md(self):
+        make_skill(self.repo / ".agents/skills", "verify-shop")
+        harness_copy = self.repo / ".agents/skills/verify-shop/scripts/framework/locate.py"
+        self.assertEqual(locate.skill_folder(harness_copy), self.repo / ".agents/skills/verify-shop")
+        self.assertEqual(locate.skill_folder(SCRIPT), SCRIPTS.parent)
+
     def test_exit_codes(self):
         env = dict(os.environ, HOME=str(self.home))
         run = subprocess.run([sys.executable, SCRIPT, "--repo", str(self.repo)], capture_output=True, env=env)

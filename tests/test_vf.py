@@ -169,7 +169,52 @@ class Sync(unittest.TestCase):
         result = run_sync(other, script=self.framework_copy("vf.py"))
         self.assertEqual(result.returncode, 2)
         self.assertIn("run sync from the installed vf skill", result.stderr)
+        self.assertIn(vf.INSTALL_COMMAND, result.stderr)
         self.assertFalse(other.exists())
+
+    def test_commits_the_three_skills_beside_the_harness_without_their_scripts(self):
+        result = run_sync(self.harness)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        installed = vf.SCRIPTS_DIR.parent.parent
+        for name in vf.COMMITTED_SKILLS:
+            copy = self.harness.parent / name
+            self.assertEqual((copy / "SKILL.md").read_bytes(), (installed / name / "SKILL.md").read_bytes())
+            self.assertFalse((copy / "scripts").exists(), f"{name}/scripts stays with the installed skill")
+            self.assertEqual(list(copy.rglob("__pycache__")), [])
+        self.assertIn("created ../vf-verify/SKILL.md", result.stdout)
+        recorded = vf.read_lock(self.harness / validate.FRAMEWORK_LOCK)
+        self.assertEqual(recorded["../vf/SKILL.md"], vf.file_hash((installed / "vf" / "SKILL.md").read_bytes()))
+
+    def test_copies_the_skills_into_every_skills_directory_at_the_project_root(self):
+        other = self.tmp / ".claude" / "skills"
+        other.mkdir(parents=True)
+        result = run_sync(self.harness)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((other / "vf-explain" / "SKILL.md").is_file())
+        self.assertIn("created ../../../.claude/skills/vf-explain/SKILL.md", result.stdout)
+        self.assertFalse((self.tmp / ".cursor").exists(), "a skills directory the team doesn't use is not created")
+
+    def test_an_edited_skill_copy_is_shown_and_kept_until_restore(self):
+        run_sync(self.harness)
+        copy = self.harness.parent / "vf-verify" / "SKILL.md"
+        copy.write_text(copy.read_text() + "\nA local tweak.\n")
+        result = run_sync(self.harness)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("../vf-verify/SKILL.md edited since the last sync", result.stdout)
+        result = run_sync(self.harness, "--restore")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("A local tweak.", copy.read_text())
+
+    def test_removes_a_file_an_earlier_sync_recorded_that_the_framework_no_longer_ships(self):
+        run_sync(self.harness)
+        stale = self.harness.parent / "vf" / "references" / "dropped.md"
+        stale.write_text("gone from the framework\n")
+        lock = self.harness / validate.FRAMEWORK_LOCK
+        lock.write_text(lock.read_text() + f"{vf.file_hash(stale.read_bytes())}  ../vf/references/dropped.md\n")
+        result = run_sync(self.harness)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("removed ../vf/references/dropped.md", result.stdout)
+        self.assertFalse(stale.exists())
 
 
 class ScriptCommands(unittest.TestCase):

@@ -69,7 +69,8 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 ├── scripts/
 │   ├── framework/              framework copies, never edited
 │   │   ├── vf.py  validate.py  code_state.py  break_session.py
-│   │   ├── launch.py  replay.py  clip.py
+│   │   ├── launch.py  replay.py  clip.py  locate.py  trust_facts.py
+│   │   ├── break_checks.py  smells.py  weakened.py
 │   │   └── framework.sha256    hash of each framework file as copied
 │   ├── doctor.py               app's own tool, in the app's language
 │   └── check_pay_order.py      app's own check
@@ -85,13 +86,15 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 
 Times in file names are UTC, with dashes so they sort in order. These locations are fixed in every harness; `settings.md` can't move them.
 
-The seven framework scripts are Python and identical in every harness. Call them through `vf.py`: `validate`, `code-state`, `break`, `replay`, and `clip` run the script of that name; `start`, `stop`, and `doctor` run `launch.py`; `run`, `verify`, `status`, `not-verified`, and `sync` are its own. The app's tools are written in the app's language, so they can reuse its database drivers and settings.
+Beside the harness, the same skills directory holds `vf/`, `vf-verify/`, and `vf-explain/`: copies of the framework skills without their `scripts/`, so a clone of the repo needs no install. `sync` writes them, records their hashes in `framework.sha256` under paths such as `../vf/SKILL.md`, and writes the same copies into every other known skills directory at the project root.
+
+The twelve framework scripts are Python and identical in every harness, so a clone of the repo holds everything the skills run. Call the run and record scripts through `vf.py`: `validate`, `code-state`, `break`, `replay`, and `clip` run the script of that name; `start`, `stop`, and `doctor` run `launch.py`; `run`, `verify`, `status`, `not-verified`, and `sync` are its own. The skills run `locate.py`, `trust_facts.py`, and the three audit scripts directly, by path. The app's tools are written in the app's language, so they can reuse its database drivers and settings.
 
 **Who writes and reads each file:**
 
 | File | Written by | Read by |
 | --- | --- | --- |
-| `rules.md`, `scripts/framework/` | vf's setup mode, as copies | Every skill |
+| `rules.md`, `scripts/framework/`, the skill copies beside the harness | vf's setup mode, as copies | Every skill |
 | `settings.md` | Setup, then vf-verify when a tool needs a setting | `validate.py`, `code_state.py`, every skill |
 | `status.md` | `vf.py status`, through every accepted run | `validate.py`, every skill |
 | `notes.md` | Setup for the Setup record; skills for known failures, misleading passes, untested cases | `validate.py`, vf-explain's `trust_facts.py`, every skill |
@@ -104,7 +107,7 @@ The seven framework scripts are Python and identical in every harness. Call them
 
 ### Keeping the copies current
 
-vf's setup mode creates and updates the framework copies with its own `scripts/vf.py sync <harness>`. It replaces each copy that differs (apart from line endings), prints one line per file, and records every copied file's hash in `framework.sha256`. It exits 1 without copying when the harness's `rules.md` is on a newer Rules version or any copy no longer matches its recorded hash, printing each edit as a diff; `--restore` replaces the edited copies. Run from a harness's own copy, `sync` exits 2, since only the installed skill holds the newer files.
+vf's setup mode creates and updates the framework copies with its own `scripts/vf.py sync <harness>`. It replaces each copy that differs (apart from line endings), removes a file an earlier sync recorded that the framework no longer ships, prints one line per file, and records every copied file's hash in `framework.sha256`. It exits 1 without copying when the harness's `rules.md` is on a newer Rules version or any copy no longer matches its recorded hash, printing each edit as a diff; `--restore` replaces the edited copies. Run from a harness's own copy, `sync` exits 2 and prints the install command, since only the installed skill holds the newer files. `validate.py --written-for VERSION` fails when the calling skill's Rules version differs from the harness's `rules.md`, naming the side to update.
 
 ## The setup gate
 
@@ -231,7 +234,7 @@ The `code` field has one entry per repository:
 | --- | --- |
 | `commit` | The full commit ID |
 | `branch` | The checked-out branch, or `null` when a commit was checked out directly |
-| `dirty` | `true` when the repository had uncommitted changes outside the harness folder (and, for a location inside a repository, within that folder). Ignored files don't count |
+| `dirty` | `true` when the repository had uncommitted changes outside the harness folder and the framework skill copies beside it (and, for a location inside a repository, within that folder). Ignored files don't count |
 | `dirty_hash` | A SHA-256 of the staged and unstaged diffs and of untracked file names, modes, and contents, or `null` when clean. It changes with any edit and exposes no source |
 | `on_main` | Whether the commit is on the main branch: the remote's default, else local `main`, else `master`; `null` when none exists |
 
@@ -416,17 +419,17 @@ Clips need ffmpeg and ffprobe. Replay pages, screenshots, and logs need neither.
 
 ## Other scripts
 
-These stay with the skill that uses them and are given the harness's folder when they run.
+`sync` copies these into every harness's `scripts/framework/` with the rest, and the skills run them from there, given the harness's folder. The installed vf keeps the source copies, since the weak-checks audit also runs them against a harness this framework didn't build.
 
-### trust_facts.py (vf-explain)
+### trust_facts.py (run by vf-explain)
 
 Gathers what the harness records about each behavior, so the agent answers from fields rather than rereading every file. It loads the harness's own `validate.py` and uses its parser, and judges nothing.
 
 It prints one JSON object with one entry per behavior: the behavior line, its verification plan line, its proof line split into command, what it reads, and the break or the reason there is none, and its latest result line with each repo's commit, fingerprint, uncommitted files, and how far behind HEAD. A break counts as having caught a problem only when its evidence file is in the checkout, failed, was aimed at that behavior, and failed a step that judges it. Lines under `notes.md`'s "Where a pass can mislead" that start with a behavior's ID attach to it as caveats. A `tally` counts behaviors in each state. `--html <path>` writes the same facts as one page. Exits 2 when the harness has no `validate.py` or no feature index.
 
-### locate.py (vf)
+### locate.py (run by vf)
 
-Runs before vf picks a playbook, the ordered list of modes it will run for a request. Prints `skills` (each framework skill's `SKILL.md` path or null), `missing`, and `harnesses` (each `verify-*/rules.md` in the skills directories of the current folder and every folder above it, nearest first). It looks for each skill beside its own folder, then in the project's skills directories, then under the home directory. Exits 0 when every skill is found, 1 when any is missing, 2 when `--repo` isn't a directory. Its tests fail when a skill folder is added or renamed without updating its list and the playbooks.
+Runs before vf picks a playbook, the ordered list of modes it will run for a request. Prints `skills` (each framework skill's `SKILL.md` path or null), `missing`, and `harnesses` (each `verify-*/rules.md` in the skills directories of the current folder and every folder above it, nearest first). It looks for each skill beside the skill folder holding it (the installed vf, or the harness when run from `scripts/framework/`), then in the project's skills directories, then under the home directory. Exits 0 when every skill is found, 1 when any is missing, 2 when `--repo` isn't a directory. Its tests fail when a skill folder is added or renamed without updating its list and the playbooks.
 
 ### Audit scripts (vf, weak-checks mode)
 

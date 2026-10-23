@@ -19,13 +19,13 @@ You own an honest, short answer to "how far can I trust this?" for someone who d
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up. Say also that with no harness there is nothing to explain yet, and, with several, ask which with the session's structured question tool if it has one, else a `Needs you:` line.
 
-Run `<harness>/scripts/framework/vf.py validate` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop. An incomplete setup means no pass can be trusted yet, so say so. Keep its errors and warnings: a format error or "last pass is N commits behind HEAD" is a trust fact.
+Run `<harness>/scripts/framework/vf.py validate --written-for 2` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. An incomplete setup means no pass can be trusted yet, so say so. Keep its errors and warnings: a format error or "last pass is N commits behind HEAD" is a trust fact.
 
 Done when one harness is chosen and its `vf.py validate` output is in hand, or you stopped with the reason.
 
 ## 2. Gather the facts
 
-Run `python3 <this skill's directory>/scripts/trust_facts.py <harness>`. Its `--help` describes every field. It reads only what the harness records, so it settles questions 3 to 5 below; questions 1 and 2 need the check's code.
+Run `python3 <harness>/scripts/framework/trust_facts.py <harness>`. Its `--help` describes every field. When the file is missing, the harness predates the installed framework: name vf to update it and stop. It reads only what the harness records, so it settles questions 3 to 5 below; questions 1 and 2 need the check's code.
 
 Done when you have its JSON.
 

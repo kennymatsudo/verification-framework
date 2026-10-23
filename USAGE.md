@@ -177,9 +177,9 @@ Run vf again to resume. It rereads its notes, checks they're still true, and con
 
 ### Update a harness after updating the framework
 
-Each harness keeps its own copy of the shared rules and the framework scripts. After every framework update, run vf in the repo and ask it to update the harness. It replaces each copy that differs, names the files it replaced, and runs `vf.py validate`.
+Each harness keeps its own copy of the shared rules and the framework scripts, and the skills directory holding it keeps a copy of vf, vf-verify, and vf-explain, so teammates who clone the repo have everything without installing the framework. After every framework update, run the installed vf in the repo and ask it to update the harness. It replaces each copy that differs, names the files it replaced, and runs `vf.py validate`; commit the result for your teammates. The repo's own copy of vf can't do this, and says so with the install command.
 
-If a copy was edited since the last update, it shows the edit and asks before replacing it. A fix you need in a framework script belongs in the framework, not the harness. If the harness's rules are newer than the installed skills, it asks you to update the skills instead.
+If a copy was edited since the last update, it shows the edit and asks before replacing it. A fix you need in a framework script belongs in the framework, not the harness. If the harness's rules are newer than the installed skills, it asks you to update the skills instead. A skill on another Rules version than the harness fails `vf.py validate` and names the side to update.
 
 ### Harness files
 

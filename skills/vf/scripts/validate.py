@@ -38,6 +38,7 @@ from pathlib import Path
 
 # Written by vf.py sync: the SHA-256 of every framework file it copied, so an edit made since shows.
 FRAMEWORK_LOCK = Path("scripts") / "framework" / "framework.sha256"
+RULES_VERSION_LINE = re.compile(r"^Rules version: (\S+)$", re.MULTILINE)
 ACCEPTED_BY = "vf.py run"
 # A check that starts the app itself has no instance for the doctor to inspect before it runs.
 PER_CHECK = "per check"
@@ -389,6 +390,24 @@ def recorded_hash(harness_dir, name):
     return None
 
 
+def committed_skill_folders(harness_dir):
+    """The skill folders vf.py sync wrote beside the harness, found from the paths framework.sha256 records outside
+    it. They are framework copies, not the app's code, so the dirty state leaves them out like the harness itself."""
+    lock = harness_dir / FRAMEWORK_LOCK
+    if not lock.is_file():
+        return set()
+    folders = set()
+    for line in lock.read_text().splitlines():
+        _, _, name = line.strip().partition("  ")
+        if not name.startswith("../"):
+            continue
+        path = Path(os.path.normpath(harness_dir / name))
+        folder = next((parent for parent in path.parents if (parent / "SKILL.md").is_file()), None)
+        if folder is not None:
+            folders.add(folder.resolve())
+    return folders
+
+
 def check_rules(harness_dir, errors):
     """Check that the harness's rules.md is the copy vf.py sync recorded, so neither an edit nor another version slips through."""
     rules = harness_dir / "rules.md"
@@ -402,6 +421,24 @@ def check_rules(harness_dir, errors):
         errors.append(f"{FRAMEWORK_LOCK} has no entry for rules.md; run vf to bring the harness's framework copies up to date")
     elif rules_sha256(data) != recorded:
         errors.append("rules.md differs from the copy vf last synced; run vf to update or restore it, and put app specifics in settings.md")
+
+
+def check_written_for(harness_dir, written_for, errors):
+    """Fail when the skill running this was written for another Rules version than the harness's rules.md, naming
+    the side to update. A skill committed beside the harness always matches; a personal install may not."""
+    rules = harness_dir / "rules.md"
+    if written_for is None or not rules.is_file():
+        return
+    match = RULES_VERSION_LINE.search(rules.read_text())
+    harness_version = match.group(1) if match else None
+    if harness_version == written_for:
+        return
+    harness_is_older = harness_version is None or (
+        harness_version.isdigit() and written_for.isdigit() and int(harness_version) < int(written_for))
+    fix = ("update the harness: run vf's update mode from an installed framework" if harness_is_older
+           else "update the installed framework skills, since the harness's copies are newer")
+    errors.append(f"this skill was written for Rules version {written_for} and the harness's rules.md is on "
+                  f"{harness_version if harness_version is not None else 'no version'}; {fix}")
 
 
 def check_setup(harness_dir, errors):
@@ -574,8 +611,8 @@ def evidence_warnings(evidence_dir, check_proofs, project, repos):
 
 
 def source_pathspec(checkout, harness_dir):
-    """The Git pathspec for a checkout's app code: everything, minus the harness's own folder when the
-    checkout is the harness's repo or a worktree of it."""
+    """The Git pathspec for a checkout's app code: everything, minus the harness's own folder and the framework
+    skill copies sync wrote beside it, when the checkout is the harness's repo or a worktree of it."""
     harness = harness_dir.resolve()
     root = Path(git(harness, "rev-parse", "--show-toplevel") or checkout).resolve()
     if not harness.is_relative_to(root):
@@ -584,13 +621,14 @@ def source_pathspec(checkout, harness_dir):
     checkout_git = git(checkout, "rev-parse", "--git-common-dir")
     if owner_git and checkout_git and (root / owner_git).resolve() == (checkout / checkout_git).resolve():
         # top: the path is from the repo's top, whichever folder inside it git runs in.
-        return [".", f":(top,exclude){harness.relative_to(root)}"]
+        excluded = [harness] + sorted(folder for folder in committed_skill_folders(harness) if folder.is_relative_to(root))
+        return [".", *(f":(top,exclude){folder.relative_to(root)}" for folder in excluded)]
     return ["."]
 
 
 def uncommitted_files(checkout, harness_dir):
     """Dirty as rules.md defines it: modified, staged, or untracked files, not ignored ones,
-    outside the harness's own directory. None when git status fails."""
+    outside the harness's own directory and the framework skill copies beside it. None when git status fails."""
     result = subprocess.run(
         ["git", "-C", str(checkout), "status", "--porcelain", "--", *source_pathspec(checkout, harness_dir)], capture_output=True, text=True
     )
@@ -1055,11 +1093,13 @@ def main():
     parser.add_argument("harness_dir", nargs="?", default=Path(__file__).resolve().parents[2], type=Path)
     parser.add_argument("--require-evidence", action="store_true", help="fail when a Verified line cites a missing evidence file")
     parser.add_argument("--run-help", action="store_true", help="run each tools.md Help command, which must exit 0 quickly")
+    parser.add_argument("--written-for", metavar="VERSION", help="the Rules version the calling skill was written for; fails on a mismatch and names the side to update")
     args = parser.parse_args()
 
     project = project_root(args.harness_dir)
     errors = []
     check_rules(args.harness_dir.resolve(), errors)
+    check_written_for(args.harness_dir.resolve(), args.written_for, errors)
     incomplete_setup = check_setup(args.harness_dir.resolve(), errors)
     if errors:
         for error in errors:

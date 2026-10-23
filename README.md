@@ -34,7 +34,9 @@ A planned break never touches your working folder. An agent can lower a verdict 
 
 ## Install
 
-With the [`skills` CLI](https://skills.sh) (needs Node.js):
+A repo that already has a harness needs no install. The three skills are committed beside it, in the same skills directory, so your agent finds them in a fresh clone. Ask it to verify a change, or type `/vf` and ask what the harness can do.
+
+Install the framework to set up a harness, or to update one you own. With the [`skills` CLI](https://skills.sh) (needs Node.js):
 
 ```sh
 npx skills add kennymatsudo/verification-framework          # pick skills and agents interactively
@@ -48,13 +50,21 @@ As a Claude Code plugin (no Node.js needed):
 /plugin install verification-framework@verification-framework
 ```
 
-The plugin prefixes each skill with `verification-framework:`, so the starting skill is `/verification-framework:vf`.
+The plugin prefixes each skill with `verification-framework:`, so the starting skill is `/verification-framework:vf`. In a repo with a harness, `/vf` runs the repo's committed copy and `/verification-framework:vf` the installed one, which is the one that updates it.
 
-Install vf and vf-verify together. The skill that setup generates depends on vf-verify. When vf needs a skill that isn't installed, it prints the install command and stops.
+Install all three skills. Setup commits a copy of each beside the harness and stops when one is missing.
 
 To check the install, run `/vf` and ask "what can this framework do?".
 
-To update, run `npx skills update`, or `claude plugin marketplace update verification-framework` followed by `claude plugin update verification-framework@verification-framework`. Then run vf in each repo with a harness and ask it to update the harness, because each harness keeps its own copy of the shared rules and scripts.
+To update, run `npx skills update`, or `claude plugin marketplace update verification-framework` followed by `claude plugin update verification-framework@verification-framework`. Then run vf in each repo with a harness and ask it to update the harness: it replaces the harness's copies of the rules, the scripts, and the three skills in one change, which you commit for your teammates. Every skill passes the Rules version it was written for to the harness's `vf.py validate`, so a personal install on another version than the repo's copies fails with the side to update.
+
+The committed copies are vendored files. Mark them `linguist-vendored` in `.gitattributes` and exclude them from your linters, so language statistics and lint runs skip them; with the skills under `.agents/skills/`:
+
+```gitattributes
+.agents/skills/vf/** linguist-vendored
+.agents/skills/vf-verify/** linguist-vendored
+.agents/skills/vf-explain/** linguist-vendored
+```
 
 ## Try it
 

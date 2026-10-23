@@ -17,9 +17,9 @@ You own getting the person from a plain request to the right job, run in the rig
 
 ## 1. Look at the repo
 
-Run `python3 <this skill's directory>/scripts/locate.py`. Its `--help` describes the output. For each harness it lists, run `<harness>/scripts/framework/vf.py validate` and note whether it stops on incomplete setup. With several harnesses and a request that doesn't name the app, ask which. A harness whose `vf.py` is missing or doesn't know `validate` predates the installed framework; plan the update mode first.
+Run `python3 <this skill's directory>/scripts/locate.py`; a copy of this skill committed beside a harness has no `scripts/`, so it runs `../verify-*/scripts/framework/locate.py` instead. Its `--help` describes the output. For each harness it lists, run `<harness>/scripts/framework/vf.py validate` and note whether it stops on incomplete setup. With several harnesses and a request that doesn't name the app, ask which. A harness whose `vf.py` is missing or doesn't know `validate` predates the installed framework; plan the update mode first.
 
-Done when you know whether vf-verify and vf-explain are installed, and whether the repo has no harness, a harness whose setup stopped, or a ready one.
+Done when you know whether vf-verify and vf-explain are installed or committed beside the harness, and whether the repo has no harness, a harness whose setup stopped, or a ready one.
 
 ## 2. Pick a playbook
 
@@ -42,7 +42,7 @@ Done when one playbook is chosen, or the person has been asked.
 
 ## 3. Check its skills are installed
 
-A playbook that names vf-verify or vf-explain needs its path from step 1. For a missing one, stop and give its install line: `npx skills add kennymatsudo/verification-framework -s <name>`, with `-g` when this skill sits under the home directory.
+A playbook that names vf-verify or vf-explain needs its path from step 1. For a missing one, stop and give its install line: `npx skills add kennymatsudo/verification-framework -s <name>`, with `-g` when this skill sits under the home directory. When this skill is a copy committed beside a harness, the missing skill's copy was deleted: say the harness owner restores it by running vf's update mode from an installed framework.
 
 Done when every skill the playbook needs has a path, or you stopped with the install lines.
 
