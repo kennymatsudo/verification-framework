@@ -32,6 +32,10 @@ A planned break never touches your working folder. An agent can lower a verdict 
 
 [USAGE.md](USAGE.md) walks through setting up a harness, adding checks, and verifying a change. [docs/internals.md](docs/internals.md) describes the files and scripts underneath.
 
+### Compared with end-to-end tests
+
+Automated tests report whether they passed; this framework addresses whether that pass should be believed when a coding agent wrote the code, the test, and the report. A check counts only after it has failed on a broken copy of the app, judges from outside the app's code, and gets its verdict from a script the agent can lower but not raise. The procedure is written as skills; the script is what's enforced mechanically.
+
 ## Install
 
 A repo that already has a harness needs no install. The three skills are committed beside it, in the same skills directory, so your agent finds them in a fresh clone. Ask it to verify a change, or type `/vf` and ask what the harness can do.
