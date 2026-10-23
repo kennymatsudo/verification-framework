@@ -665,9 +665,12 @@ def source_pathspec(checkout, harness_dir):
 def uncommitted_files(checkout, harness_dir):
     """Dirty as rules.md defines it: modified, staged, or untracked files, not ignored ones,
     outside the harness's own directory and the framework skill copies beside it. None when git status fails."""
-    result = subprocess.run(
-        ["git", "-C", str(checkout), "status", "--porcelain", "--", *source_pathspec(checkout, harness_dir)], capture_output=True, text=True
-    )
+    paths = source_pathspec(checkout, harness_dir)
+    # Git skips its untracked-file cache whenever a pathspec is given, which costs seconds in a large repo. At the
+    # repo's top level "." is the whole repo, so it can go; in a subfolder it scopes the answer to the app.
+    if paths == ["."] and git(checkout, "rev-parse", "--show-prefix") == "":
+        paths = []
+    result = subprocess.run(["git", "-C", str(checkout), "status", "--porcelain", "--", *paths], capture_output=True, text=True)
     return [line[3:] for line in result.stdout.splitlines()] if result.returncode == 0 else None
 
 

@@ -47,6 +47,7 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 def _load(name, filename):
@@ -238,10 +239,15 @@ def code_state(harness_dir, overrides):
     if unknown:
         raise StateError(f"--checkout names {', '.join(unknown)}, which settings.md does not list")
     project = validate.project_root(harness_dir)
-    return {
-        name: checkout_state(recorded_checkout(name, locator, overrides.get(name), project, harness_dir), harness_dir)
-        for name, locator in repos.items()
-    }
+
+    def state(name, locator):
+        return checkout_state(recorded_checkout(name, locator, overrides.get(name), project, harness_dir), harness_dir)
+
+    # Repos are read side by side, since each takes seconds in a large checkout; results and the first error
+    # reported follow the settings order, so a run reads the same however the reads finish.
+    with ThreadPoolExecutor() as pool:
+        reads = {name: pool.submit(state, name, locator) for name, locator in repos.items()}
+    return {name: read.result() for name, read in reads.items()}
 
 
 def parse_checkout(value):

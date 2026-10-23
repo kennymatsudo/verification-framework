@@ -231,6 +231,24 @@ class MonorepoTest(unittest.TestCase):
             self.assertTrue(state["app"]["dirty"])
             self.assertRegex(state["app"]["dirty_hash"], "^[0-9a-f]{64}$")
 
+    def test_a_repo_located_by_a_subfolder_is_dirty_only_inside_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = make_repo(Path(directory) / "project")
+            services = make_repo(Path(directory) / "services")
+            for folder in ("worker", "other"):
+                (services / folder).mkdir()
+                commit(services, f"{folder}/code.txt", "first\n")
+            harness = make_harness(project, "- app: .\n- worker: ../services/worker\n")
+
+            (services / "other" / "code.txt").write_text("another service's edit\n")
+            result, state, errors = run_state(harness)
+            self.assertEqual(result, 0, errors)
+            self.assertFalse(state["worker"]["dirty"])
+
+            (services / "worker" / "code.txt").write_text("the worker's edit\n")
+            result, state, errors = run_state(harness)
+            self.assertTrue(state["worker"]["dirty"])
+
     def test_dirty_state_leaves_out_the_framework_skill_copies_sync_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
             project = make_repo(Path(directory) / "project")
