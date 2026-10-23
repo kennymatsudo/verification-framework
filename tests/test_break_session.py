@@ -30,7 +30,7 @@ broken = Path(scratch, "app.txt").read_text() == "broken\\n"
 folder = Path(sys.argv[2], "evidence", "pay")
 folder.mkdir(parents=True, exist_ok=True)
 ids, _, what = os.environ["VERIFY_PLANNED_BREAK"].partition(": ")
-record = {"check": "pay", "passed": not broken, "planned_break": {"what": what, "sub_features": ids.split(",")}}
+record = {"check": "pay", "passed": not broken, "planned_break": {"what": what, "sub_features": ids.split(","), "repo": "app"}}
 (folder / f"run-{len(list(folder.glob('*.json')))}.json").write_text(json.dumps(record))
 sys.exit(1 if broken else 0)
 """
@@ -115,19 +115,32 @@ class BreakSessionTest(unittest.TestCase):
             self.assertIn("Check exited 1", output)
             evidence = harness / "evidence" / "pay" / "run-0.json"
             self.assertEqual(json.loads(evidence.read_text())["planned_break"],
-                             {"what": "payment skipped", "sub_features": ["app.pay"]})
-            self.assertIn("+broken", (harness / "evidence" / "pay" / "run-0" / "break.patch").read_text())
+                             {"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"})
+            self.assertIn("+broken", (harness / "evidence" / "pay" / "run-0.patch").read_text())
             self.assertEqual((scratch / "app.txt").read_text(), "under test\n")
             self.assertEqual(code_state.checkout_state(scratch, harness)["dirty_hash"], under_test["dirty_hash"])
             self.assertEqual((project / "app.txt").read_text(), "under test\n")
 
-            result, output, errors = run(harness, "replay", "app", str(evidence), *check_command(project, harness))
+            result, output, errors = run(harness, "replay", str(evidence), *check_command(project, harness))
 
             self.assertEqual(result, 0, errors)
             self.assertIn("Check exited 1", output)
             replayed = json.loads((harness / "evidence" / "pay" / "run-1.json").read_text())
             self.assertEqual(replayed["planned_break"]["sub_features"], ["app.pay"])
             self.assertFalse(replayed["passed"])
+
+    def test_replay_refuses_a_break_that_does_not_name_its_repo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, harness = make_project(directory)
+            evidence = harness / "evidence" / "pay" / "run-0.json"
+            evidence.parent.mkdir(parents=True)
+            evidence.write_text(json.dumps({"check": "pay", "planned_break": {"what": "skipped", "sub_features": ["app.pay"]}}))
+            evidence.with_suffix(".patch").write_text("")
+
+            result, _, errors = run(harness, "replay", str(evidence), "--", sys.executable, "-c", "pass")
+
+            self.assertEqual(result, 2)
+            self.assertIn("doesn't name the repo its break edited", errors)
 
     def test_checkout_overrides_cannot_bypass_an_open_session(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
@@ -209,7 +222,7 @@ app = json.loads(subprocess.check_output([sys.executable, str(checkout / "app.py
 assert Path(app["checkout"]) == checkout
 ids, _, what = os.environ["VERIFY_PLANNED_BREAK"].partition(": ")
 record = {"check": "cli", "passed": app["behavior"] == "working", "code": app["code"],
-          "planned_break": {"what": what, "sub_features": ids.split(",")}}
+          "planned_break": {"what": what, "sub_features": ids.split(","), "repo": "app"}}
 folder = harness / "evidence" / "cli"
 folder.mkdir(parents=True, exist_ok=True)
 (folder / f"run-{len(list(folder.glob('*.json')))}.json").write_text(json.dumps(record))
@@ -229,7 +242,7 @@ sys.exit(0 if record["passed"] else 1)
             self.assertFalse(record["passed"])
             self.assertEqual(record["code"]["app"], broken_code)
             self.assertEqual((scratch / "app.py").read_text(), app.read_text())
-            self.assertEqual(run(harness, "replay", "app", str(evidence), *command)[0], 0)
+            self.assertEqual(run(harness, "replay", str(evidence), *command)[0], 0)
             self.assertFalse(json.loads(evidence.with_name("run-1.json").read_text())["passed"])
             self.assertEqual(run(harness, "end", "app")[0], 0)
             healthy = subprocess.check_output(healthy_command, text=True)

@@ -26,8 +26,10 @@ name, plus, when it judged none or stopped, the ones the feature map proves with
 so a run that stops before judging what it was run for is recorded as stopped rather than refused.
 
 vf.py run records started_at and finished_at, the code code_state.py reports, which must not change
-while the check runs, VERIFY_PLANNED_BREAK as planned_break, and the verdict from the exit code: 0
-passed, 1 a step failed, anything else stopped. It also records `harness_code`, a SHA-256 (line endings
+while the check runs, VERIFY_PLANNED_BREAK as planned_break with the repo of the break session this
+harness has open, and the verdict from the exit code: 0 passed, 1 a step failed, anything else stopped.
+With VERIFY_PLANNED_BREAK set and no session open, or sessions open on several repos, it stops before
+running the check. It also records `harness_code`, a SHA-256 (line endings
 normalized) of settings.md, of every file under the harness's scripts/ apart from scripts/framework/ and
 other checks' entries under scripts/checks/, and of any file the check command names, so a planned break
 and a later pass can be shown to have run the same check. It accepts the record under
@@ -166,12 +168,12 @@ def utc_now():
     return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
 
 
-def parse_planned_break(planned):
-    """VERIFY_PLANNED_BREAK as the evidence records it, or None when it is not set."""
+def parse_planned_break(planned, repo):
+    """VERIFY_PLANNED_BREAK as the evidence records it, with the repo the break edited, or None when it is not set."""
     if not planned:
         return None
     ids, _, what = planned.partition(": ")
-    return {"what": what.strip(), "sub_features": [item.strip() for item in ids.split(",") if item.strip()]}
+    return {"what": what.strip(), "sub_features": [item.strip() for item in ids.split(",") if item.strip()], "repo": repo}
 
 
 def report_events(report):
@@ -338,6 +340,11 @@ def run_check(command):
     """
     harness = harness_of(SCRIPTS_DIR, "vf.py run")
     validate, code_state = sibling("validate"), sibling("code_state")
+    planned = os.environ.get("VERIFY_PLANNED_BREAK")
+    try:
+        broken_repo = code_state.break_session_repo(harness) if planned else None
+    except code_state.StateError as error:
+        raise Stopped(str(error)) from error
     doctor = run_doctor(harness, validate)
     if not ready(doctor):
         raise Stopped(not_ready_message(doctor))
@@ -353,7 +360,6 @@ def run_check(command):
     pending.mkdir(parents=True, exist_ok=True)
     report = pending.with_suffix(".jsonl")
     report.write_text("")
-    planned = os.environ.get("VERIFY_PLANNED_BREAK")
 
     exit_code = subprocess.run(command, cwd=validate.project_root(harness),
                                env={**os.environ, REPORT_VAR: str(report), RUN_DIR_VAR: str(pending)}).returncode
@@ -368,7 +374,7 @@ def run_check(command):
             judged += [sub_id for sub_id in mapped_to_command(harness, validate, command) if sub_id not in judged]
         record["sub_features"] = judged
     record.update(code=code_before, harness_code=harness_before, doctor=doctor, started_at=started.strftime(validate.TIME_FORMAT),
-                  finished_at=finished.strftime(validate.TIME_FORMAT), planned_break=parse_planned_break(planned))
+                  finished_at=finished.strftime(validate.TIME_FORMAT), planned_break=parse_planned_break(planned, broken_repo))
     name = record["check"] if isinstance(record["check"], str) and CHECK_NAME.fullmatch(record["check"]) else None
     report.unlink()
     path = settle_run_folder(evidence, pending, stamp, name, kept)

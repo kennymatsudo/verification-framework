@@ -6,7 +6,7 @@ You own two answers for one change, made by one teammate's pull request or by se
 
 The harness is the repo's end-to-end verification layer: one vf built (`verify-*/rules.md` in a skills directory), or else the harness the repo's agent instructions name. If neither exists, stop and say so. Read its rules, its settings, and its run instructions (the stack check, which actions need the developer's OK, evidence, cleanup) before the first run.
 
-For a framework harness: Run `<harness>/scripts/framework/vf.py validate --written-for 2` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
+For a framework harness: Run `<harness>/scripts/framework/vf.py validate --written-for 3` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
 
 ## 1. List the claims
 

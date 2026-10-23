@@ -267,6 +267,17 @@ class HarnessCommands(unittest.TestCase):
                    sys.executable, "-c", CHECK, json.dumps(spec), *named]
         return subprocess.run(command, capture_output=True, text=True, env={**os.environ, **(env or {})})
 
+    def open_break_session(self):
+        """Open a planned break session on the app repo, closed when the test ends."""
+        (self.project / ".gitignore").write_text("pointed.txt\n.agents/\n")
+        git(self.project, "add", ".gitignore")
+        git(self.project, "commit", "-qm", "ignore")
+        started = subprocess.run([sys.executable, str(self.harness / "scripts/framework/vf.py"), "break", "start", "app"],
+                                 capture_output=True, text=True)
+        self.assertEqual(started.returncode, 0, started.stdout + started.stderr)
+        self.addCleanup(subprocess.run, [sys.executable, str(self.harness / "scripts/framework/vf.py"), "break", "end", "app"],
+                        capture_output=True)
+
     def assemble(self, events, exit_code, files=()):
         """The record and problems vf.assemble builds from a check's events, with files present in its run folder."""
         run_dir = self.project / "run"
@@ -386,6 +397,7 @@ class HarnessCommands(unittest.TestCase):
                            {"event": "step", "name": "customer signs in", "passed": True, "at": 1.0, "sub_features": ["app.login"]},
                            {"event": "stopped", "reason": "the sandbox listed no ticket"}], "exit": 2}
         command = ["python3", ".agents/skills/verify-app/scripts/pay_check.py", json.dumps(stop)]
+        self.open_break_session()
         features = self.harness / "features"
         features.mkdir(exist_ok=True)
         (features / "README.md").write_text("# Map\n\n## Features\n\n- [Pay](pay.md)\n")
@@ -454,10 +466,17 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(manifest(), sorted(shared + [f"{harness}/scripts/checks/pay.py", f"{harness}/scripts/checks/refund/main.py",
                                                       f"{harness}/scripts/checks/refund/steps.py"]))
 
-    def test_planned_break_comes_from_the_environment(self):
-        result = self.run_check(env={"VERIFY_PLANNED_BREAK": "app.pay: payment skipped"}, exit=1, steps=FAILED_STEP)
+    def test_a_planned_break_records_the_repo_of_its_session_and_needs_one(self):
+        env = {"VERIFY_PLANNED_BREAK": "app.pay: payment skipped"}
+        result = self.run_check(env=env, exit=1, steps=FAILED_STEP)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("no break session open", result.stderr)
+        self.assertFalse((self.harness / "evidence" / "pay").exists())
+
+        self.open_break_session()
+        result = self.run_check(env=env, exit=1, steps=FAILED_STEP)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertEqual(self.record()["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"]})
+        self.assertEqual(self.record()["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"})
 
     def test_a_kept_recording_and_snapshot_move_into_the_run_folder(self):
         failed = [{"event": "step", "name": "order is paid", "passed": False, "at": 4.0,
@@ -512,8 +531,8 @@ class HarnessCommands(unittest.TestCase):
         record, path = self.record(), self.evidence()
         self.assertEqual(record["accepted_by"], "vf.py run")
         self.assertTrue(record["code"]["app"]["dirty"])
-        self.assertEqual(record["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"]})
-        self.assertTrue(path.with_suffix("").joinpath("break.patch").is_file())
+        self.assertEqual(record["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"})
+        self.assertIn("+broken", path.with_suffix(".patch").read_text())
         self.assertIn("Break recorded for app.pay: step 'order is paid' caught it", result.stdout)
         logged = json.loads((self.harness / "evidence" / "breaks.jsonl").read_text().splitlines()[0])
         self.assertEqual((logged["sub_feature"], logged["check"], logged["what"], logged["step"], logged["evidence"]),

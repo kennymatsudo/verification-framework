@@ -706,6 +706,8 @@ def record_problems(record, repos):
             problems.append("has a planned_break that does not say what was broken")
         elif not isinstance(targets, list) or not targets or not all(isinstance(item, str) and item in ids for item in targets):
             problems.append("has a planned_break whose sub_features are not among the run's")
+        elif planned.get("repo") not in repos:
+            problems.append("has a planned_break that does not name the repo it edited among the settings' repos")
     steps = record.get("steps")
     if not isinstance(steps, list) or (not steps and record.get("passed") is True):
         problems.append("has no check steps")

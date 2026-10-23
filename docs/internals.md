@@ -77,6 +77,7 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 └── evidence/
     ├── checkout-pay/           one folder per check
     │   ├── 2026-10-03T14-02-11Z.json   record of one run
+    │   ├── 2026-10-03T14-02-11Z.patch  on a planned break, the edit it made
     │   └── 2026-10-03T14-02-11Z/       that run's video, screenshots, logs, replay page
     ├── doctor/                 proof the app could be started
     ├── launch/                 the record of an instance vf.py start started
@@ -101,6 +102,7 @@ The twelve framework scripts are Python and identical in every harness, so a clo
 | `features/` | add-checks mode; verify mode when a change alters a behavior; audit mode when a description drifts | `validate.py`, vf-verify, audit mode |
 | `tools.md`, `scripts/` | Setup for the doctor, vf-verify for every later tool | Skills, and agents debugging without a skill |
 | `evidence/<check>/<time>.json` | `vf.py run`, from the events the check reports | `validate.py`, `replay.py`, `clip.py`, agents diagnosing a failure |
+| `evidence/<check>/<time>.patch` | `vf.py break run`, on a planned break | `vf.py break replay` |
 | `evidence/breaks.jsonl` | `vf.py break run` | vf-explain's `trust_facts.py`, when the break's record isn't on this machine |
 | `evidence/not-verified.jsonl` | `vf.py not-verified` | `vf.py status`, `validate.py` |
 | `README.md`, `recordings.html` | Setup; `replay.py` after every run | People |
@@ -208,7 +210,7 @@ A refused record is written as `<time>.json.refused`, so nothing can cite it but
 | --- | --- | --- |
 | `check` | The check's name, also its folder under `evidence/` | Replay page title |
 | `sub_features` | The behavior IDs this run claims to prove. Filled from the `check` event, else from the steps, plus the proof lines whose command matches when the steps name none or the run stopped | A Verified result and its break must both list the ID |
-| `planned_break` | On a break run, `{"what": ..., "sub_features": [...]}`, from `VERIFY_PLANNED_BREAK`. `null` otherwise | A Verified result can't cite a run that has one |
+| `planned_break` | On a break run, `{"what": ..., "sub_features": [...], "repo": ...}`: what and which IDs from `VERIFY_PLANNED_BREAK`, and the repository of the break session open for this harness. `null` otherwise | A Verified result can't cite a run that has one; a break that names no settings repository proves nothing; `break replay` applies the patch to that repository |
 | `passed` | `true`, `false`, or `null` when the run stopped early | Verified needs `true`; its break needs `false` |
 | `reads` | `"state"` when the check reads stored data; otherwise what it reads, such as `"screen"` | Proof that the database is right doesn't prove what the screen showed |
 | `code` | Per repository: which code ran (see [Code version](#code-version)) | A Verified result must name each commit here |
@@ -246,7 +248,7 @@ It exits 2 with a `STOPPED:` line when `settings.md` lists no repositories or an
 
 ### Run folder
 
-Files beyond the record go in a folder beside it with the same name minus `.json`: the video; screenshots and page text from failed steps (`step-3-failed.png`, `step-3-failed.txt`); `console.json` and `requests.json` with the browser's errors and failed requests; `replay.html`; clips and stills; and, on a break run, `break.patch`. A screen check keeps its video only when the run fails or `VERIFY_KEEP_RECORDING=1` is set.
+Files beyond the record go in a folder beside it with the same name minus `.json`: the video; screenshots and page text from failed steps (`step-3-failed.png`, `step-3-failed.txt`); `console.json` and `requests.json` with the browser's errors and failed requests; `replay.html`; and clips and stills. A break run's edit is saved as `<time>.patch` beside the record instead, outside the folder, so a team that commits records but ignores run folders keeps the edit too. A screen check keeps its video only when the run fails or `VERIFY_KEEP_RECORDING=1` is set.
 
 ## How the result lines are written
 
@@ -320,7 +322,7 @@ sequenceDiagram
   A->>B: break run <repo> "<id>: <change>" -- vf.py run -- <check>
   B->>R: run with VERIFY_PLANNED_BREAK set
   R-->>B: record (must fail on a step judging <id>)
-  B->>B: save break.patch beside the record, append breaks.jsonl
+  B->>B: save <time>.patch beside the record, append breaks.jsonl
   B->>W: restore the copy
   A->>B: break end <repo>
   B->>W: point the app back, remove the worktree
@@ -329,14 +331,14 @@ sequenceDiagram
 1. Run the check on the current code through `vf.py run`. It should pass. If it fails, find out whether the app or the check is wrong first.
 2. Tell the user `Planned break: <the change>`: the smallest change that makes one behavior wrong while the app still builds.
 3. `vf.py break start <repository>` makes a throwaway copy with `git worktree add` at the commit under test, copies in the developer's staged, unstaged, and new files, confirms the copy's `dirty_hash` matches, and points the app at it with the `Run scratch code` setting.
-4. Make the change in the copy, then `vf.py break run <repository> "<id>: <the change>" -- python3 scripts/framework/vf.py run -- <check command>`. It confirms the developer's folder hasn't changed and the copy holds an edit, runs `After an edit` unless the app reloads by itself, runs the check with `VERIFY_PLANNED_BREAK` set, saves the edit as `break.patch` in the record's folder, then restores the copy. The run must fail on a step that judges the broken behavior.
+4. Make the change in the copy, then `vf.py break run <repository> "<id>: <the change>" -- python3 scripts/framework/vf.py run -- <check command>`. It confirms the developer's folder hasn't changed and the copy holds an edit, runs `After an edit` unless the app reloads by itself, runs the check with `VERIFY_PLANNED_BREAK` set, saves the edit as `<time>.patch` beside the record, then restores the copy. `vf.py run` records the session's repository in `planned_break.repo`, and stops before the check runs when `VERIFY_PLANNED_BREAK` is set without exactly one of this harness's sessions open. The run must fail on a step that judges the broken behavior.
 5. `vf.py break end <repository>` points the app back, removes the copy, and reports any change to the developer's folder since the session started.
 
 `break run` prints `Break recorded for <id>: step '<name>' caught it` for each target whose own step failed and appends a line to `evidence/breaks.jsonl`. Nothing in the feature file changes; `vf.py status` now reports the behavior Verified. A target whose step didn't fail gets `No break recorded`, so the agent plans a break that reaches it. A break run that stopped gets `No break recorded` with its reason, so the agent runs the break again.
 
 **The session** lives in `verify-break-session/` inside the repository's shared Git folder, visible to every worktree and never committed. It names the owning harness, the copy, the starting commit and fingerprint, and the intended checkout. One session covers the whole repository, so another harness in it can't start, run, end, or record code until this one ends. Commands the script runs from `settings.md` get `VERIFY_BREAK_SESSION` set, so their own `code-state` calls report the folder the app is being pointed at. Restoring files doesn't reload running processes or undo data changes, so the doctor must still confirm the loaded version.
 
-`end` marks the session as ending before it points the app back, so a crash leaves a session that blocks ordinary runs, and running `end` again finishes it. `vf.py break status` shows each repository's session. `vf.py break replay <repository> <record> -- <check command>` applies a saved `break.patch` and runs it again, for re-proving a check after a step changes.
+`end` marks the session as ending before it points the app back, so a crash leaves a session that blocks ordinary runs, and running `end` again finishes it. `vf.py break status` shows each repository's session. `vf.py break replay <record> -- <check command>` applies the record's saved patch to the repository its `planned_break` names, whose session must be open, and runs it again, for re-proving a check after its code changes.
 
 Exit codes: 0 when the step finished, whatever the check's result; 1 when a guard found a problem (a session already open, no edit to run, the developer's folder changing, no break recorded); 2 when it couldn't run.
 

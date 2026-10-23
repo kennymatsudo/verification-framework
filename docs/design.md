@@ -30,7 +30,7 @@ One planned break per behavior means at least two runs per behavior. That's chea
 
 The cost is a longer window on scratch code, during which the developer can't use the stack. This fits with batching above: one cuts the number of runs, the other the cost of each switch.
 
-**What settles it:** one 13-behavior feature run as one session, timed, with every run's evidence naming its own `break.patch` and fingerprint.
+**What settles it:** one 13-behavior feature run as one session, timed, with every run's evidence naming its own saved patch and fingerprint.
 
 ### Support more break-session setups
 
@@ -100,6 +100,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0006: One versioned tool writes every record](adr/0006-one-versioned-tool-writes-every-record.md)
 - [0007: The framework ships inside the app's repo](adr/0007-the-framework-ships-inside-the-app-repo.md)
 - [0008: Fingerprint what a check could load, not the whole harness](adr/0008-fingerprint-what-a-check-could-load.md)
+- [0009: A planned break names its repo, and its edit travels with the record](adr/0009-a-break-names-its-repo-and-its-edit-travels-with-the-record.md)
 
 ## Parked ideas
 

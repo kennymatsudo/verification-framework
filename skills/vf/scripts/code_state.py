@@ -210,6 +210,26 @@ def recorded_checkout(name, locator, override, project, harness_dir):
     return checkout
 
 
+def break_session_repo(harness_dir):
+    """The repo whose planned break session this harness has open on its scratch copy, which is the repo a
+    planned break run edited. StateError unless there is exactly one, so a break can't be recorded outside a session."""
+    harness_dir = harness_dir.resolve()
+    project = validate.project_root(harness_dir)
+    found = []
+    for name, locator in listed_repos(harness_dir).items():
+        checkout = validate.resolve_repo(locator, project)
+        session = open_session(checkout) if checkout else None
+        if session and Path(session["harness"]) == harness_dir and session["app_checkout"] == session["scratch"]:
+            found.append(name)
+    if not found:
+        raise StateError("VERIFY_PLANNED_BREAK is set but this harness has no break session open; "
+                         "run the break through `vf.py break run`")
+    if len(found) > 1:
+        raise StateError(f"break sessions are open on {', '.join(found)}, so this break can't name the repo it edited; "
+                         f"end all but the one holding the break")
+    return found[0]
+
+
 def code_state(harness_dir, overrides):
     """The code entry for every repo settings.md lists, with overrides naming another checkout for a repo."""
     harness_dir = harness_dir.resolve()

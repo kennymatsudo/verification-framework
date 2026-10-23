@@ -8,7 +8,7 @@ You own checks that prove the agreed behavior on the real app and catch a delibe
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up.
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 2` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Then read its `settings.md` and `rules.md`, the feature map in `features/`, the results in `status.md`, the caveats in `notes.md`, and the tool guide in `tools.md`.
+Run `<harness>/scripts/framework/vf.py validate --written-for 3` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Then read its `settings.md` and `rules.md`, the feature map in `features/`, the results in `status.md`, the caveats in `notes.md`, and the tool guide in `tools.md`.
 
 Done when the target, harness, setup gate, existing coverage, and tools are known, or a named blocker stops the work.
 

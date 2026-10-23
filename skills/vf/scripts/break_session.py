@@ -4,7 +4,7 @@
 Usage:
   break_session.py start REPO
   break_session.py run REPO "IDS: WHAT WAS BROKEN" -- CHECK COMMAND...
-  break_session.py replay REPO EVIDENCE_FILE -- CHECK COMMAND...
+  break_session.py replay EVIDENCE_FILE -- CHECK COMMAND...
   break_session.py status
   break_session.py end REPO
 
@@ -17,14 +17,15 @@ Run scratch code command. Make the break as an uncommitted edit in the copy it p
 
 run confirms the developer's checkout still matches and the copy holds an edit, restarts what runs
 REPO when settings.md's After an edit names a command, and runs the check from the project root with
-VERIFY_PLANNED_BREAK set. It saves the edit as break.patch in the run folder of the evidence the check
-wrote, then restores the copy to its starting state and confirms its fingerprint, whether the check
+VERIFY_PLANNED_BREAK set. It saves the edit as <time>.patch beside the <time>.json evidence the check
+wrote, outside the run folder so it can be committed with the record, then restores the copy to its starting state and confirms its fingerprint, whether the check
 passed, failed, or crashed. When vf.py run accepted the break run, it appends one line per targeted
 sub-feature whose judging step failed to evidence/breaks.jsonl, the harness's record of what was broken
 and when; vf.py status reads the break's evidence itself, so nothing is written in the feature file.
 
-replay applies the break.patch saved beside EVIDENCE_FILE and runs it as run does, aimed at the
-evidence's planned_break, to re-prove a check after its steps change.
+replay applies the patch saved beside EVIDENCE_FILE to the repo its planned_break names and runs it as
+run does, aimed at the same sub-features, to re-prove a check after its code changes. The repo's
+session must be open.
 
 end points the app back at the developer's checkout, removes the copy, closes the session, and
 reports whether the developer's checkout still has its starting fingerprint. Ending a repo with no
@@ -231,7 +232,7 @@ def planned_break_runs(paths):
 
 def run_break(harness, repo, planned, command, patch=None):
     """Run the check against the scratch copy's edit, or against a saved patch, then restore the copy.
-    Saves the edit as break.patch beside the evidence the check wrote and logs what the break caught."""
+    Saves the edit as <time>.patch beside the evidence the check wrote and logs what the break caught."""
     ids, sep, what = planned.partition(": ")
     if not sep or not ids.strip() or not what.strip():
         raise StateError(f"expected \"<sub-feature IDs>: <what was broken>\", got {planned!r}")
@@ -266,8 +267,7 @@ def run_break(harness, repo, planned, command, patch=None):
         print(f"Running the check with VERIFY_PLANNED_BREAK={planned}", flush=True)
         exit_code = subprocess.run(command, cwd=project, env={**os.environ, "VERIFY_PLANNED_BREAK": planned}).returncode
         runs = planned_break_runs(evidence_files(harness) - before)
-        target = runs[0].with_suffix("") / "break.patch" if len(runs) == 1 else folder / "last-break.patch"
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target = runs[0].with_suffix(".patch") if len(runs) == 1 else folder / "last-break.patch"
         target.write_bytes(edit)
     finally:
         restore(session, folder, harness)
@@ -318,17 +318,19 @@ def record_breaks(harness, evidence):
     return lines
 
 
-def replay(harness, repo, evidence, command):
-    """Run a saved break again: apply the break.patch beside the evidence and run the check as run does."""
+def replay(harness, evidence, command):
+    """Run a saved break again: apply the patch beside the evidence to the repo it edited and run the check as run does."""
     record = validate.read_record(evidence)
     planned_break = (record or {}).get("planned_break")
     if not planned_break:
         raise StateError(f"{evidence} is not a planned break run")
-    patch = evidence.with_suffix("") / "break.patch"
+    if not planned_break.get("repo"):
+        raise StateError(f"{evidence} doesn't name the repo its break edited; run the break again with `vf.py break run`")
+    patch = evidence.with_suffix(".patch")
     if not patch.is_file():
         raise StateError(f"{evidence} has no saved break at {patch}")
     planned = f"{','.join(planned_break['sub_features'])}: {planned_break['what']}"
-    return run_break(harness, repo, planned, command, patch.read_bytes())
+    return run_break(harness, planned_break["repo"], planned, command, patch.read_bytes())
 
 
 def status(harness):
@@ -406,9 +408,7 @@ def main():
     run = actions.add_parser("run")
     run.add_argument("repo")
     run.add_argument("planned_break", metavar='"IDS: WHAT WAS BROKEN"')
-    replayed = actions.add_parser("replay")
-    replayed.add_argument("repo")
-    replayed.add_argument("evidence", type=Path)
+    actions.add_parser("replay").add_argument("evidence", type=Path)
     actions.add_parser("status")
     actions.add_parser("end").add_argument("repo")
     args = parser.parse_args(argv)
@@ -421,7 +421,7 @@ def main():
         if args.action == "run":
             return run_break(harness, args.repo, args.planned_break, command)
         if args.action == "replay":
-            return replay(harness, args.repo, args.evidence.resolve(), command)
+            return replay(harness, args.evidence.resolve(), command)
         if args.action == "status":
             return status(harness)
         return end(harness, args.repo)

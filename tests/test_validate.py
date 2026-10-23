@@ -496,7 +496,7 @@ class VerifiedResultsTest(unittest.TestCase):
             "code": {"app": {"commit": self.COMMIT, "dirty": True, "dirty_hash": "a" * 64}},
             "harness_code": dict(self.CODE),
             "doctor": dict(self.DOCTOR),
-            "planned_break": {"what": "payment capture skipped", "sub_features": ["checkout.pay"]},
+            "planned_break": {"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "app"},
             "started_at": "2026-10-09T09:59:00Z",
             "finished_at": "2026-10-09T10:00:00Z",
             "steps": [dict(self.STEP, passed=False)],
@@ -699,6 +699,8 @@ class VerifiedResultsTest(unittest.TestCase):
                                            ({"code": {"app": {"commit": self.COMMIT, "dirty": True}}}, "dirty_hash", "Pass not proven: "),
                                            ({"doctor": "skipped"}, "ran without the doctor reporting the app ready", "Pass not proven: "),
                                            ({"planned_break": {"sub_features": ["checkout.pay"]}}, "does not say what was broken", "Pass not proven: "),
+                                           ({"planned_break": {"what": "x", "sub_features": ["checkout.pay"]}},
+                                            "does not name the repo it edited", "Pass not proven: "),
                                            ({"check": "other"}, "its check is not break-tested", "Passed but not break-tested: ")):
             with self.subTest(broken=broken), tempfile.TemporaryDirectory() as directory:
                 harness = self.make_verified_harness(Path(directory))
@@ -849,9 +851,9 @@ class VerifiedResultsTest(unittest.TestCase):
             (self.LINE, {}, None),
             (refund_line, {}, "its check is not break-tested"),
             (refund_line.replace("payment capture skipped", "refund skipped"),
-             {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"]}}, None),
+             {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"}}, None),
             # Aimed at the refund, but only the payment step failed.
-            (refund_line, {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"]},
+            (refund_line, {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"},
                            "steps": [dict(pay, passed=False), refund]}, "no step judging it failed in its planned break"),
         )
         for line, broken, expected in cases:
