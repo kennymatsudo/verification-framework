@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -95,8 +96,9 @@ class Locate(unittest.TestCase):
 
     def test_exit_codes(self):
         env = dict(os.environ, HOME=str(self.home))
-        run = subprocess.run([sys.executable, SCRIPT, "--repo", str(self.repo)], capture_output=True, env=env)
-        self.assertIn(run.returncode, (0, 1))
+        run = subprocess.run([sys.executable, SCRIPT, "--repo", str(self.repo)], capture_output=True, text=True, env=env)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout)["missing"], [])
         run = subprocess.run([sys.executable, SCRIPT, "--repo", str(self.tmp / "nope")], capture_output=True, text=True)
         self.assertEqual(run.returncode, 2)
         self.assertTrue(run.stderr.startswith("STOPPED:"))

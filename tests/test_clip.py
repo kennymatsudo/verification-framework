@@ -100,9 +100,8 @@ class StepsTest(unittest.TestCase):
             with self.subTest(video=video), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "run.json"
                 path.write_text(json.dumps(dict(RECORD, recording={"video": video, "starts_at": 1.0})))
-                result = subprocess.run([sys.executable, str(SCRIPT), str(path), "--frames", "failed"], capture_output=True, text=True)
-                self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertIn("not a path inside evidence/", result.stderr)
+                with self.assertRaisesRegex(clip.ClipError, "not a path inside evidence/"):
+                    clip.load(path)
 
     def test_evidence_without_a_recording_stops_with_the_fix(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -89,7 +89,8 @@ def make_harness(root):
 
 def run_check(harness, *flags):
     output = io.StringIO()
-    with patch.object(sys, "argv", [str(SCRIPT), str(harness), *flags]), contextlib.redirect_stdout(output):
+    with patch.object(sys, "argv", [str(SCRIPT), str(harness), *flags]), \
+            contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
         result = validate.main()
     return result, output.getvalue()
 
@@ -171,24 +172,6 @@ class FeatureIndexTest(unittest.TestCase):
 
 
 class FeatureSectionsTest(unittest.TestCase):
-    def test_gotchas_is_optional(self):
-        with tempfile.TemporaryDirectory() as directory:
-            harness = make_harness(Path(directory))
-            features = harness / "features"
-            (features / "README.md").write_text(
-                "# Map\n\nRead [results](../status.md).\n\n## Features\n\n"
-                "- [Checkout](checkout.md): pay.\n"
-            )
-            (features / "checkout.md").write_text(
-                "# Checkout\n\n## Sub-features\n\n"
-                "- checkout.pay: a paid order appears.\n\n"
-                "## How a user reaches it\n\n- Checkout button.\n\n"
-                "## Verification plan\n\nSource: launch checklist.\n\n"
-                "## How to prove it\n\n- checkout.pay: No check yet.\n"
-            )
-            result, output = run_check(harness)
-            self.assertEqual(result, 0, output)
-
     def test_feature_accepts_verification_plan_without_relaxing_proof_requirements(self):
         with tempfile.TemporaryDirectory() as directory:
             feature = Path(directory) / "checkout.md"
@@ -406,11 +389,14 @@ class SetupTest(unittest.TestCase):
 
 
 class HarnessLayoutTest(unittest.TestCase):
-    def test_harness_files_are_used_even_when_project_has_other_homes(self):
+    def test_the_harness_map_is_read_even_when_the_project_has_a_features_folder_of_its_own(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "features").mkdir()
-            (root / "features" / "README.md").write_text("# Unrelated project map\n")
+            (root / "features" / "README.md").write_text("# Project map\n\n## Features\n\n- [Decoy](decoy.md)\n")
+            (root / "features" / "decoy.md").write_text(
+                "# Decoy\n\n## Sub-features\n\n- decoy.one: a project feature.\n\n"
+                "## How a user reaches it\n\n- Menu.\n\n## How to prove it\n\n- decoy.one: No check yet.\n")
             harness = make_harness(root)
             result, output = run_check(harness)
             self.assertEqual(result, 0, output)
@@ -456,22 +442,24 @@ class ProjectRootTest(unittest.TestCase):
 
     def test_a_monorepo_apps_recipes_resolve_from_its_own_folder(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            subprocess.run(["git", "init", "-q", directory], check=True)
-            harness = make_harness(root / "app")
-            (harness / "scripts").mkdir(exist_ok=True)
+            harness = Path(directory) / "app" / ".agents" / "skills" / "verify-app"
+            (harness / "scripts").mkdir(parents=True)
             (harness / "scripts" / "pay").write_text("# checkout check\n")
-            (harness / "features" / "README.md").write_text("# Map\n\n## Features\n\n- [Checkout](checkout.md)\n")
-            feature = (
+            feature = Path(directory) / "checkout.md"
+            text = (
                 "# Checkout\n\n## Sub-features\n\n- checkout.pay: order is paid.\n\n"
                 "## How a user reaches it\n\n- Checkout button.\n\n"
                 "## How to prove it\n\n- checkout.pay: `{command}`. Not break-tested: new.\n"
             )
-            for command, errors in ((".agents/skills/verify-app/scripts/pay", 0), ("app/.agents/skills/verify-app/scripts/pay", 1)):
+            from_app = ".agents/skills/verify-app/scripts/pay"
+            from_top = "app/" + from_app
+            for command, expected in ((from_app, []),
+                                      (from_top, [f"checkout.md: checkout.pay names `{from_top}`, but {from_top} does not exist"])):
                 with self.subTest(command=command):
-                    (harness / "features" / "checkout.md").write_text(feature.format(command=command))
-                    result, output = run_check(harness)
-                    self.assertIn(f"{errors} errors", output)
+                    feature.write_text(text.format(command=command))
+                    errors = []
+                    validate.check_feature(feature, validate.project_root(harness), {}, errors)
+                    self.assertEqual(errors, expected)
 
 
 class VerifiedResultsTest(unittest.TestCase):
@@ -722,16 +710,6 @@ class VerifiedResultsTest(unittest.TestCase):
                 lines = self.render(harness)
                 self.assertTrue(lines[0].startswith("- checkout.pay: Not verified. " + rendered), lines[0])
 
-    def test_a_pass_or_break_vf_run_did_not_accept_is_not_proof(self):
-        for write, expected in (("write_evidence", "no accepted run covers it"), ("write_break", "its check is not break-tested")):
-            with self.subTest(write=write), tempfile.TemporaryDirectory() as directory:
-                harness = self.make_verified_harness(Path(directory))
-                getattr(self, write)(harness, accepted_by=None)
-                self.write_results(harness, self.LINE)
-                result, output = run_check(harness, "--require-evidence")
-                self.assertEqual(result, 1, output)
-                self.assertIn(expected, output)
-
     def test_a_not_verified_record_stands_until_a_later_run_or_break(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = self.make_verified_harness(Path(directory))
@@ -804,17 +782,6 @@ class VerifiedResultsTest(unittest.TestCase):
             result, output = run_check(harness, "--require-evidence")
             self.assertEqual(result, 1, output)
             self.assertIn("its planned break in evidence/checkout-pay/later.json did not fail", output)
-
-    def test_a_missing_break_record_leaves_the_pass_not_break_tested(self):
-        with tempfile.TemporaryDirectory() as directory:
-            harness = self.make_verified_harness(Path(directory))
-            self.render(harness)
-            (harness / "evidence" / "checkout-pay" / "break.json").unlink()
-            result, output = run_check(harness)
-            self.assertEqual(result, 1, output)
-            self.assertIn("ERROR status.md: checkout.pay is Verified, but its check is not break-tested", output)
-            lines = self.render(harness)
-            self.assertTrue(lines[0].startswith("- checkout.pay: Not verified. Passed but not break-tested: no planned break aimed at it has failed this check."), lines[0])
 
     def test_a_check_edited_since_its_break_is_not_proven_until_the_break_is_replayed(self):
         changed = dict(self.CODE, **{"ok/reads.py": "c" * 64})

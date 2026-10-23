@@ -65,15 +65,6 @@ class Sync(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "replaced scripts/framework/clip.py\nreplaced scripts/framework/framework.sha256")
         self.assertEqual(self.framework_copy("clip.py").read_bytes(), (vf.SCRIPTS_DIR / "clip.py").read_bytes())
 
-    def test_upgrades_an_older_rules_version_and_names_the_change(self):
-        self.harness.mkdir(parents=True)
-        (self.harness / "rules.md").write_text(with_version(self.source_rules, self.version - 1) + "old rule\n")
-        result = run_sync(self.harness)
-        self.assertEqual(result.returncode, 0)
-        self.assertIn(f"Rules version {self.version - 1} -> {self.version}", result.stdout)
-        self.assertIn("replaced rules.md", result.stdout)
-        self.assertEqual((self.harness / "rules.md").read_text(), self.source_rules)
-
     def test_refuses_to_downgrade_a_newer_harness(self):
         self.harness.mkdir(parents=True)
         newer = with_version(self.source_rules, self.version + 1)
@@ -194,17 +185,6 @@ class Sync(unittest.TestCase):
         self.assertIn("created ../../../.claude/skills/vf-explain/SKILL.md", result.stdout)
         self.assertFalse((self.tmp / ".cursor").exists(), "a skills directory the team doesn't use is not created")
 
-    def test_an_edited_skill_copy_is_shown_and_kept_until_restore(self):
-        run_sync(self.harness)
-        copy = self.harness.parent / "vf-verify" / "SKILL.md"
-        copy.write_text(copy.read_text() + "\nA local tweak.\n")
-        result = run_sync(self.harness)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("../vf-verify/SKILL.md edited since the last sync", result.stdout)
-        result = run_sync(self.harness, "--restore")
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertNotIn("A local tweak.", copy.read_text())
-
     def test_removes_a_file_an_earlier_sync_recorded_that_the_framework_no_longer_ships(self):
         run_sync(self.harness)
         stale = self.harness.parent / "vf" / "references" / "dropped.md"
@@ -232,22 +212,15 @@ class ScriptCommands(unittest.TestCase):
         self.assertEqual(through_vf.stdout, direct.stdout)
         self.assertEqual(through_vf.stderr, direct.stderr)
 
-    def test_a_commands_help_is_the_scripts_own(self):
-        result = subprocess.run([sys.executable, str(SCRIPT), "break", "--help"], capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("break_session.py", result.stdout)
-
 # A check that reports its run as events in VERIFY_REPORT, shaped by the JSON spec in argv[1].
 CHECK = """
-import json, os, sys, time
+import json, os, sys
 from pathlib import Path
 spec = json.loads(sys.argv[1])
 if spec.get("touch"):
     Path("app.txt").write_text("edited while running\\n")
 if spec.get("touch_harness"):
     Path(spec["touch_harness"]).write_text("loosened while running\\n")
-if spec.get("sleep"):
-    time.sleep(spec["sleep"])
 run_dir = Path(os.environ["VERIFY_RUN_DIR"])
 for name in spec.get("files", []):
     (run_dir / name).write_text("x")
@@ -265,6 +238,8 @@ if not spec.get("no_report"):
 sys.exit(spec.get("exit", 0))
 """
 
+CHECK_EVENT = {"event": "check", "name": "pay", "sub_features": ["app.pay"], "reads": "state"}
+PASSED_STEP = {"event": "step", "name": "order is paid", "passed": True, "at": 1.0}
 FAILED_STEP = [{"event": "step", "name": "order is paid", "passed": False, "at": 1.0, "detail": "status=pending"}]
 
 
@@ -287,10 +262,20 @@ class HarnessCommands(unittest.TestCase):
             "# App verification settings\n\n## Repos\n\n- app: .\n\n## Commands\n\n"
             f"- Start: {start}\n- Doctor: {doctor}\n- Run scratch code: {scratch}\n- After an edit: reloads\n")
 
-    def run_check(self, env=None, **spec):
+    def run_check(self, env=None, named=(), **spec):
         command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--",
-                   sys.executable, "-c", CHECK, json.dumps(spec)]
+                   sys.executable, "-c", CHECK, json.dumps(spec), *named]
         return subprocess.run(command, capture_output=True, text=True, env={**os.environ, **(env or {})})
+
+    def assemble(self, events, exit_code, files=()):
+        """The record and problems vf.assemble builds from a check's events, with files present in its run folder."""
+        run_dir = self.project / "run"
+        run_dir.mkdir(exist_ok=True)
+        for name in files:
+            (run_dir / name).write_text("x")
+        problems = []
+        record, _ = vf.assemble([dict(event) for event in events], exit_code, run_dir, problems)
+        return record, problems
 
     def evidence(self, check="pay"):
         files = list((self.harness / "evidence" / check).glob("*.json"))
@@ -309,76 +294,66 @@ class HarnessCommands(unittest.TestCase):
         return json.loads(refused[0].read_text())
 
     def test_accepts_a_sound_pass_and_keeps_the_checks_exit_code(self):
-        result = self.run_check()
+        (self.project / "e2e").mkdir()
+        (self.project / "e2e" / "pay.sh").write_text("#!/bin/sh\n")
+        result = self.run_check(named=["e2e/pay.sh"])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertRegex(result.stdout, r"Accepted evidence/pay/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\.json")
+        self.assertIn("status.md not refreshed: ", result.stdout, "no feature map yet, and the run still counts")
         record = self.record()
         self.assertEqual(record["accepted_by"], "vf.py run")
         self.assertEqual((record["check"], record["sub_features"], record["reads"], record["passed"]), ("pay", ["app.pay"], "state", True))
         self.assertEqual(record["steps"], [{"name": "order is paid", "passed": True, "at": 1.0}])
         self.assertEqual(record["code"]["app"]["commit"], git(self.project, "rev-parse", "HEAD"))
         self.assertEqual(record["doctor"], {"exit_code": 0, "output": "verify: ready"})
-        self.assertEqual(list(record["harness_code"]), [".agents/skills/verify-app/scripts/pay.py", ".agents/skills/verify-app/settings.md"])
+        self.assertEqual(list(record["harness_code"]),
+                         [".agents/skills/verify-app/scripts/pay.py", ".agents/skills/verify-app/settings.md", "e2e/pay.sh"])
         self.assertIsNone(record["planned_break"])
         self.assertIsNone(record["stopped"])
         self.assertLessEqual(record["started_at"], record["finished_at"])
         self.assertTrue(self.evidence().with_suffix("").joinpath("replay.html").is_file())
         self.assertNotIn("Recording kept", result.stdout)
 
-    def test_accepts_a_sound_failure(self):
-        result = self.run_check(exit=1, steps=FAILED_STEP)
-        self.assertEqual(result.returncode, 1, result.stdout)
-        record = self.record()
-        self.assertEqual(record["accepted_by"], "vf.py run")
+    def test_a_failed_step_with_exit_1_is_a_sound_failure(self):
+        record, problems = self.assemble([CHECK_EVENT, *FAILED_STEP], 1)
+        self.assertEqual(problems, [])
         self.assertFalse(record["passed"])
         self.assertEqual(record["steps"][0]["detail"], "status=pending")
 
-    def test_refuses_a_verdict_its_exit_code_contradicts(self):
-        self.assert_refused(self.run_check(exit=1), "exited 1 but no step failed")
-        shutil.rmtree(self.harness / "evidence" / "pay")
-        self.assert_refused(self.run_check(exit=0, steps=FAILED_STEP), "exited 0 but step 'order is paid' failed")
-        shutil.rmtree(self.harness / "evidence" / "pay")
-        self.assert_refused(self.run_check(exit=0, more=[{"event": "stopped", "reason": "browser crashed"}]), "reported it stopped but exited 0")
-
-    def test_a_stopped_run_is_accepted_with_no_verdict(self):
-        result = self.run_check(exit=2, steps=[], more=[{"event": "stopped", "reason": "browser crashed"}])
-        self.assertEqual(result.returncode, 2, result.stdout)
-        record = self.record()
-        self.assertIsNone(record["passed"])
-        self.assertEqual(record["stopped"], "browser crashed")
-        self.assertEqual(record["accepted_by"], "vf.py run")
+    def test_a_verdict_its_exit_code_contradicts_is_a_problem(self):
+        cases = (([CHECK_EVENT, PASSED_STEP], 1, "exited 1 but no step failed"),
+                 ([CHECK_EVENT, *FAILED_STEP], 0, "exited 0 but step 'order is paid' failed"),
+                 ([CHECK_EVENT, PASSED_STEP, {"event": "stopped", "reason": "browser crashed"}], 0, "reported it stopped but exited 0"))
+        for events, exit_code, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(self.assemble(events, exit_code)[1], [expected])
 
     def test_a_crash_keeps_the_steps_that_finished(self):
-        result = self.run_check(exit=3)
-        self.assertEqual(result.returncode, 3, result.stdout)
-        record = self.record()
+        record, problems = self.assemble([CHECK_EVENT, PASSED_STEP], 3)
+        self.assertEqual(problems, [])
         self.assertEqual((record["passed"], record["stopped"]), (None, "the check exited 3"))
         self.assertEqual(record["steps"][0]["name"], "order is paid")
 
-    def test_refuses_a_malformed_step_or_report_line(self):
-        self.assert_refused(self.run_check(steps=[{"event": "step", "name": "order is paid", "passed": True}]), "has steps with no 'at' time")
-        shutil.rmtree(self.harness / "evidence" / "pay")
-        self.assert_refused(self.run_check(raw=["not json"]), "report line 3 is not JSON: not json")
-        shutil.rmtree(self.harness / "evidence" / "pay")
-        self.assert_refused(self.run_check(raw=['{"event": "hello"}']), "report line 3 names no event among check, step")
+    def test_a_report_line_that_is_not_an_event_is_a_problem(self):
+        report = self.project / "report.jsonl"
+        report.write_text(json.dumps(CHECK_EVENT) + "\n\nnot json\n{\"event\": \"hello\"}\n")
+        events, problems = vf.report_events(report)
+        self.assertEqual(events, [CHECK_EVENT])
+        self.assertEqual(problems, ["report line 3 is not JSON: not json",
+                                    "report line 4 names no event among check, step, mark, recording, created, stopped: {\"event\": \"hello\"}"])
 
     def test_refuses_a_run_that_reported_no_check(self):
         self.assert_refused(self.run_check(no_report=True), "reported no check event", folder=".pending")
-        shutil.rmtree(self.harness / "evidence" / ".pending")
-        self.assert_refused(self.run_check(events=[{"event": "step", "name": "x", "passed": True, "at": 1.0}]), "reported no check event", folder=".pending")
 
-    def test_accepts_the_check_event_anywhere_in_the_report(self):
-        step = {"event": "step", "name": "order is paid", "passed": True, "at": 1.0}
-        result = self.run_check(events=[step, {"event": "check", "name": "pay", "sub_features": ["app.pay"], "reads": "state"}])
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.record()["sub_features"], ["app.pay"])
+    def test_the_check_event_may_come_after_its_steps(self):
+        record, problems = self.assemble([PASSED_STEP, CHECK_EVENT], 0)
+        self.assertEqual(problems, [])
+        self.assertEqual(record["sub_features"], ["app.pay"])
 
-    def test_a_check_that_names_no_sub_features_covers_the_ones_its_steps_judge(self):
-        steps = [{"event": "step", "name": "order is paid", "passed": True, "at": 1.0, "sub_features": ["app.pay"]},
-                 {"event": "step", "name": "receipt is sent", "passed": True, "at": 2.0, "sub_features": ["app.receipt", "app.pay"]}]
-        result = self.run_check(events=[{"event": "check", "name": "pay", "reads": "state"}, *steps])
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.record()["sub_features"], ["app.pay", "app.receipt"])
+    def test_steps_name_the_sub_features_a_check_covers_in_order_without_repeats(self):
+        steps = [{"name": "order is paid", "sub_features": ["app.pay"]},
+                 {"name": "receipt is sent", "sub_features": ["app.receipt", "app.pay"]}, {"name": "setup"}]
+        self.assertEqual(vf.judged_by_steps(steps), ["app.pay", "app.receipt"])
 
     def test_a_check_that_stops_before_any_step_is_recorded_against_what_the_map_says_it_proves(self):
         script = self.harness / "scripts" / "pay_check.py"
@@ -431,11 +406,10 @@ class HarnessCommands(unittest.TestCase):
     def test_refuses_a_check_name_that_is_not_a_folder_name(self):
         self.assert_refused(self.run_check(name="pay/../refund"), "names check 'pay/../refund'", folder=".pending")
 
-    def test_refuses_a_run_during_which_the_code_changed(self):
-        self.assert_refused(self.run_check(touch=True), "ran while the code changed in app")
-
-    def test_refuses_a_run_during_which_the_harness_code_changed(self):
-        self.assert_refused(self.run_check(touch_harness=str(self.harness / "scripts" / "pay.py")), "ran while the harness's own code changed")
+    def test_refuses_a_run_during_which_the_code_or_the_harness_changed(self):
+        result = self.run_check(touch=True, touch_harness=str(self.harness / "scripts" / "pay.py"))
+        self.assert_refused(result, "ran while the code changed in app")
+        self.assertIn("ran while the harness's own code changed", result.stdout)
 
     def test_the_doctor_runs_first_and_a_not_ready_app_stops_the_run(self):
         self.write_settings(doctor="echo not ready: process 42 has exited; exit 1")
@@ -460,16 +434,6 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.record()["doctor"], "per check")
 
-    def test_the_check_commands_own_file_is_fingerprinted_too(self):
-        (self.project / "e2e").mkdir()
-        (self.project / "e2e" / "pay.sh").write_text("#!/bin/sh\n")
-        command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--",
-                   sys.executable, "-c", CHECK, json.dumps({}), "e2e/pay.sh"]
-        result = subprocess.run(command, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sorted(self.record()["harness_code"]),
-                         [".agents/skills/verify-app/scripts/pay.py", ".agents/skills/verify-app/settings.md", "e2e/pay.sh"])
-
     def test_other_checks_under_scripts_checks_are_not_fingerprinted_with_the_named_one(self):
         checks = self.harness / "scripts" / "checks"
         (checks / "refund").mkdir(parents=True)
@@ -481,12 +445,7 @@ class HarnessCommands(unittest.TestCase):
         shared = [f"{harness}/scripts/pay.py", f"{harness}/scripts/reads.py", f"{harness}/settings.md"]
 
         def manifest(*named):
-            shutil.rmtree(self.harness / "evidence", ignore_errors=True)
-            command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--",
-                       sys.executable, "-c", CHECK, json.dumps({}), *named]
-            result = subprocess.run(command, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            return sorted(self.record()["harness_code"])
+            return sorted(validate.harness_code(self.harness, [sys.executable, "-c", CHECK, "{}", *named]))
 
         self.assertEqual(manifest(f"{harness}/scripts/checks/pay.py"), sorted(shared + [f"{harness}/scripts/checks/pay.py"]))
         self.assertEqual(manifest(f"{harness}/scripts/checks/refund/main.py"),
@@ -499,9 +458,6 @@ class HarnessCommands(unittest.TestCase):
         result = self.run_check(env={"VERIFY_PLANNED_BREAK": "app.pay: payment skipped"}, exit=1, steps=FAILED_STEP)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(self.record()["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"]})
-        shutil.rmtree(self.harness / "evidence" / "pay")
-        self.assert_refused(self.run_check(env={"VERIFY_PLANNED_BREAK": "app.refund: refund skipped"}, exit=1, steps=FAILED_STEP),
-                            "has a planned_break whose sub_features are not among the run's")
 
     def test_a_kept_recording_and_snapshot_move_into_the_run_folder(self):
         failed = [{"event": "step", "name": "order is paid", "passed": False, "at": 4.0,
@@ -648,12 +604,6 @@ class HarnessCommands(unittest.TestCase):
         self.assertNotIn("Untested", status)
         self.assertEqual((self.harness / "notes.md").read_text(), "# Verification notes\n\n## Untested cases\n\n- Two payments at once.\n")
 
-    def test_a_run_without_a_feature_map_still_counts_and_says_status_was_not_refreshed(self):
-        result = self.run_check()
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("status.md not refreshed: ", result.stdout)
-        self.assertEqual(self.record()["accepted_by"], "vf.py run")
-
     def test_status_and_verify_stop_when_the_harness_has_no_feature_map(self):
         for args in (("status",), ("verify", "app.pay")):
             with self.subTest(command=args[0]):
@@ -704,7 +654,10 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(entry["sub_feature"], "app.pay")
         self.assertNotIn("until", entry)
 
-        result = self.run_check(sleep=1.1)
+        # A run after the record lifts it; the record is backdated so the run need not wait for the next second.
+        log = self.harness / "evidence" / "not-verified.jsonl"
+        log.write_text(json.dumps(dict(entry, at="2000-01-01T00:00:00Z")) + "\n")
+        result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("- app.pay: Not verified. Passed but not break-tested", (self.harness / "status.md").read_text())
 

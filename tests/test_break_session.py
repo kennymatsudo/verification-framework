@@ -77,7 +77,7 @@ def ordinary_state(harness, env, overrides=None):
 
 class BreakSessionTest(unittest.TestCase):
     def test_start_copies_the_code_under_test_and_blocks_ordinary_runs(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
             project, harness = make_project(directory)
             (project / "staged.txt").write_text("staged edit\n")
             git(project, "add", "staged.txt")
@@ -86,6 +86,7 @@ class BreakSessionTest(unittest.TestCase):
             under_test = code_state.checkout_state(project, harness)
 
             result, output, errors = run(harness, "start", "app")
+            cleanup.callback(run, harness, "end", "app")
 
             self.assertEqual(result, 0, errors)
             scratch = Path((project / "pointed.txt").read_text().strip())
@@ -99,11 +100,12 @@ class BreakSessionTest(unittest.TestCase):
             self.assertEqual(run(harness, "start", "app")[0], 1)
 
     def test_run_saves_the_break_beside_its_evidence_and_restores_the_copy(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
             project, harness = make_project(directory)
             (project / "app.txt").write_text("under test\n")
             under_test = code_state.checkout_state(project, harness)
             run(harness, "start", "app")
+            cleanup.callback(run, harness, "end", "app")
             scratch = Path((project / "pointed.txt").read_text().strip())
             (scratch / "app.txt").write_text("broken\n")
 
@@ -234,9 +236,10 @@ sys.exit(0 if record["passed"] else 1)
             self.assertEqual(json.loads(healthy)["behavior"], "working")
 
     def test_run_refuses_without_an_edit_or_after_the_developer_checkout_changed(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
             project, harness = make_project(directory)
             run(harness, "start", "app")
+            cleanup.callback(run, harness, "end", "app")
 
             result, _, errors = run(harness, "run", "app", "app.pay: nothing", *check_command(project, harness))
             self.assertEqual(result, 1)
@@ -249,9 +252,10 @@ sys.exit(0 if record["passed"] else 1)
             self.assertFalse((harness / "evidence").exists())
 
     def test_run_restores_the_copy_when_the_check_writes_no_evidence(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
             project, harness = make_project(directory, after_edit="`touch restarted.txt`")
             run(harness, "start", "app")
+            cleanup.callback(run, harness, "end", "app")
             scratch = Path((project / "pointed.txt").read_text().strip())
             (scratch / "app.txt").write_text("broken\n")
 

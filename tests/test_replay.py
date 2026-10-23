@@ -141,9 +141,8 @@ class ReplayTest(unittest.TestCase):
         for video in ("../video.webm", "/tmp/video.webm"):
             with self.subTest(video=video), tempfile.TemporaryDirectory() as directory:
                 evidence = write(directory, dict(RECORD, recording={"video": video, "starts_at": 2.0}))
-                result = subprocess.run([sys.executable, str(SCRIPT), str(evidence)], capture_output=True, text=True)
-                self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertIn("not a path inside evidence/", result.stderr)
+                with self.assertRaisesRegex(replay.ReplayError, "not a path inside evidence/"):
+                    replay.write_replay(evidence)
                 self.assertFalse((evidence.with_suffix("") / "replay.html").exists())
 
     def test_verdict_names_unfinished_and_unjudged_runs(self):
@@ -326,10 +325,8 @@ class ReplayTest(unittest.TestCase):
     def test_invalid_code_metadata_stops_without_publishing_a_replay(self):
         with tempfile.TemporaryDirectory() as directory:
             evidence = write(directory, dict(RECORD, code=["app"]))
-            result = subprocess.run([sys.executable, str(SCRIPT), str(evidence)], capture_output=True, text=True)
-            self.assertEqual(result.returncode, 2, result.stderr)
-            self.assertIn("STOPPED:", result.stderr)
-            self.assertIn("code metadata", result.stderr)
+            with self.assertRaisesRegex(replay.ReplayError, "code metadata"):
+                replay.write_replay(evidence)
             self.assertFalse((evidence.with_suffix("") / "replay.html").exists())
 
     def test_a_failed_check_leads_with_its_first_failed_step_and_watches_from_just_before_it(self):
