@@ -212,7 +212,7 @@ A refused record is written as `<time>.json.refused`, so nothing can cite it but
 | `passed` | `true`, `false`, or `null` when the run stopped early | Verified needs `true`; its break needs `false` |
 | `reads` | `"state"` when the check reads stored data; otherwise what it reads, such as `"screen"` | Proof that the database is right doesn't prove what the screen showed |
 | `code` | Per repository: which code ran (see [Code version](#code-version)) | A Verified result must name each commit here |
-| `harness_code` | Each harness file's path and SHA-256: everything under `scripts/` apart from `framework/` and `__pycache__`, plus files the command names | A pass is proven only while the break's fingerprinted files are unchanged |
+| `harness_code` | Each harness file's path and SHA-256 with line endings normalized: `settings.md`, everything under `scripts/` apart from `framework/`, `__pycache__`, and other checks' entries under `checks/`, plus files the command names | A pass is proven only while the break's fingerprinted files are unchanged |
 | `doctor` | The doctor's exit code and last lines, or `"per check"` | Verified needs exit 0 |
 | `started_at`, `finished_at` | UTC to the second. Both required | The most recent run by `finished_at` decides each verdict |
 | `steps` | Each step's name, `sub_features`, pass or fail, `at`, `detail`, and IDs read. A failed step in a browser check names a `snapshot` | In a one-behavior check, a step with no `sub_features` judges that one. In a multi-behavior check it judges none |
@@ -263,7 +263,7 @@ Files beyond the record go in a folder beside it with the same name minus `.json
 | Passed, but the record or break doesn't back it | a check | `Not verified. Pass not proven: <why>. <code>. Evidence: <file>` |
 | Passed, backed by the break | a check | `Verified. <check>, reads <state or screen>, <code>. Break-tested <date>: <what>. Evidence: <file>` |
 
-`<code>` names each repository's commit, as `app a1b2c3d`, with `(uncommitted <fingerprint>)` when the run used uncommitted code. A break run never counts as the latest run. A refused record doesn't count either.
+`<code>` names each repository's commit, as `app a1b2c3d`, with `(uncommitted <fingerprint>)` when the run used uncommitted code. A break run never counts as the latest run. A refused record doesn't count either. After the lines, `vf.py status` prints the same out-of-date warnings `validate.py` prints, described under [What validate.py checks](#what-validatepy-checks-in-the-rendered-lines).
 
 A passing run is **proven** when all of these hold:
 
@@ -272,7 +272,7 @@ A passing run is **proven** when all of these hold:
 3. Every step that judged this behavior and failed during the break is still in the passing run, judging this behavior.
 4. Both records record every repository in settings with a valid commit, a `dirty_hash` for dirty code and none for clean, a `harness_code` fingerprint, a ready doctor or `per check`, and `accepted_by`.
 5. Every file in the break's `harness_code` is in the passing run's with the same hash. A file added since needs no new break. A changed or removed one does: `<file> changed since its planned break; replay the break with vf.py break replay`.
-6. Every file in the passing run's `harness_code` still on disk has the same hash it had during the run, so an edited check can't keep an earlier pass: `<file> changed since this run; rerun its check`. A fresh clone that rewrites line endings can show a pass as not proven until the check reruns there.
+6. Every file in the passing run's `harness_code` still on disk has the same hash it had during the run, so an edited check can't keep an earlier pass: `<file> changed since this run; rerun its check`. Hashes ignore line endings, so a clone that rewrites them changes nothing.
 7. The passing run has well-formed steps, one that judges this behavior, no stopped reason, and a valid recording if it names one.
 
 When one fails, the line says why in the same words `validate.py` uses.
@@ -298,9 +298,9 @@ A team may not keep evidence in Git, so a fresh clone can hold a `status.md` who
 
 Adding a step later makes the check stricter and needs no new break. Renaming or removing a step that caught the break, or changing which behaviors it judges, means the break must run again ([ADR 0005](adr/0005-credit-a-planned-break-only-to-what-it-broke.md) explains why only the steps that caught the break count).
 
-**Out-of-date warnings.** Separately, `validate.py` finds the most recent passing run for each behavior and warns (`WARN`, no exit code change) when a behavior has no passing run, a repository folder can't be found, the tested commit isn't in the repository or is behind the current one, or the run tested uncommitted code. It lists up to three uncommitted files per repository.
+**Out-of-date warnings.** Separately, `validate.py` and `vf.py status` find the most recent passing run for each behavior and warn (`WARN`, no exit code change) when a behavior has no passing run, a repository folder can't be found, the tested commit isn't in the repository, is behind HEAD, or is no longer in HEAD's history after a rebase or a branch switch, or the run tested uncommitted code. They list up to three uncommitted files per repository. A verdict never depends on HEAD: a pass is about the commit it names, and the warning tells a reader that this checkout is not that commit.
 
-**Limits.** `validate.py` sees a changed check only through the files `harness_code` fingerprints. A check whose logic lives elsewhere, such as a project test called by name with no path, can change without the fingerprint moving; the agent must then rerun the break on its own judgment, after `vf.py not-verified --until-break`. `validate.py` also can't tell whether a check really acts like a user or reads results without going through app code. A separate agent reviews each new check against the agreed plan, and vf's audit mode reviews checks again later.
+**Limits.** `validate.py` sees a changed check only through the files `harness_code` fingerprints. A check whose logic lives elsewhere, such as a project test called by name with no path, or a check under `scripts/checks/` that loads another check's entry there, can change without the fingerprint moving; the agent must then rerun the break on its own judgment, after `vf.py not-verified --until-break`. `validate.py` also can't tell whether a check really acts like a user or reads results without going through app code. A separate agent reviews each new check against the agreed plan, and vf's audit mode reviews checks again later.
 
 ## Prove a check with a planned break
 

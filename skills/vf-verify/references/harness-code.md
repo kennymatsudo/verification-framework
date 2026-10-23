@@ -11,7 +11,7 @@ Start with what the first tool needs: the doctor needs connections, a probe adds
 - **Actions.** One wrapper per system a user or operator touches, named for that system as they know it. Each method drives a real entry point. A wait polls a read until the expected state appears or a timeout passes, and returns nothing on timeout so the check decides what that means.
 - **Screen.** For an app with a screen, one wrapper around the project's browser or device driver. It records the run, keeps the video only as `rules.md` describes under Evidence (the run failed, or `VERIFY_KEEP_RECORDING=1` is set), saves the snapshots, console output, and failed requests from that section, and adds an `action` mark for each user action. Most drivers record without a pointer; drawing one in makes the video easier to follow, as long as the drawn pointer takes no clicks and holds no text.
 - **Reporter.** Described below.
-- **Commands.** Thin entry files for the doctor, probes, actions, and checks. They parse arguments, enforce the approval flag, and call the modules above, with `--help` that works before anything connects.
+- **Commands.** Thin entry files for the doctor, probes, actions, and checks. They parse arguments, enforce the approval flag, and call the modules above, with `--help` that works before anything connects. Each check's entry goes under `scripts/checks/`, as one file or one folder, and loads nothing from another check's entry: `vf.py run` fingerprints the check the command names along with everything outside `checks/`, so an edit to one check never uncalibrates another, and an edit to a shared module uncalibrates them all.
 
 Unit tests cover each judging function with one passing and one breaking state.
 

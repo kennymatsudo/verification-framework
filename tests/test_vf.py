@@ -318,7 +318,7 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(record["steps"], [{"name": "order is paid", "passed": True, "at": 1.0}])
         self.assertEqual(record["code"]["app"]["commit"], git(self.project, "rev-parse", "HEAD"))
         self.assertEqual(record["doctor"], {"exit_code": 0, "output": "verify: ready"})
-        self.assertEqual(list(record["harness_code"]), [".agents/skills/verify-app/scripts/pay.py"])
+        self.assertEqual(list(record["harness_code"]), [".agents/skills/verify-app/scripts/pay.py", ".agents/skills/verify-app/settings.md"])
         self.assertIsNone(record["planned_break"])
         self.assertIsNone(record["stopped"])
         self.assertLessEqual(record["started_at"], record["finished_at"])
@@ -467,7 +467,33 @@ class HarnessCommands(unittest.TestCase):
                    sys.executable, "-c", CHECK, json.dumps({}), "e2e/pay.sh"]
         result = subprocess.run(command, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sorted(self.record()["harness_code"]), [".agents/skills/verify-app/scripts/pay.py", "e2e/pay.sh"])
+        self.assertEqual(sorted(self.record()["harness_code"]),
+                         [".agents/skills/verify-app/scripts/pay.py", ".agents/skills/verify-app/settings.md", "e2e/pay.sh"])
+
+    def test_other_checks_under_scripts_checks_are_not_fingerprinted_with_the_named_one(self):
+        checks = self.harness / "scripts" / "checks"
+        (checks / "refund").mkdir(parents=True)
+        (checks / "pay.py").write_text("# pay check\n")
+        (checks / "refund" / "main.py").write_text("# refund check\n")
+        (checks / "refund" / "steps.py").write_text("# refund steps\n")
+        (self.harness / "scripts" / "reads.py").write_text("# shared reads\n")
+        harness = ".agents/skills/verify-app"
+        shared = [f"{harness}/scripts/pay.py", f"{harness}/scripts/reads.py", f"{harness}/settings.md"]
+
+        def manifest(*named):
+            shutil.rmtree(self.harness / "evidence", ignore_errors=True)
+            command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--",
+                       sys.executable, "-c", CHECK, json.dumps({}), *named]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return sorted(self.record()["harness_code"])
+
+        self.assertEqual(manifest(f"{harness}/scripts/checks/pay.py"), sorted(shared + [f"{harness}/scripts/checks/pay.py"]))
+        self.assertEqual(manifest(f"{harness}/scripts/checks/refund/main.py"),
+                         sorted(shared + [f"{harness}/scripts/checks/refund/main.py", f"{harness}/scripts/checks/refund/steps.py"]))
+        # A command that names no check could be running any of them, so every check stays in scope.
+        self.assertEqual(manifest(), sorted(shared + [f"{harness}/scripts/checks/pay.py", f"{harness}/scripts/checks/refund/main.py",
+                                                      f"{harness}/scripts/checks/refund/steps.py"]))
 
     def test_planned_break_comes_from_the_environment(self):
         result = self.run_check(env={"VERIFY_PLANNED_BREAK": "app.pay: payment skipped"}, exit=1, steps=FAILED_STEP)
@@ -649,6 +675,24 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("status.md not written: fix the feature map first", result.stdout)
         self.assertEqual((self.harness / "status.md").read_text(), before)
+
+    def test_status_warns_when_the_latest_pass_is_not_on_this_checkouts_head(self):
+        self.write_map()
+        (self.project / "app.txt").write_text("second\n")
+        git(self.project, "commit", "-qam", "second")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("WARN", self.framework("status").stdout)
+
+        git(self.project, "commit", "-q", "--allow-empty", "-m", "third")
+        self.assertIn("WARN app last pass is 1 commit behind HEAD for app.pay", self.framework("status").stdout)
+
+        # Rewriting the tested commit, as a rebase does, leaves HEAD without it rather than behind it.
+        git(self.project, "reset", "-q", "--hard", "HEAD~1")
+        git(self.project, "commit", "-q", "--amend", "-m", "second, reworded")
+        tested = self.record()["code"]["app"]["commit"]
+        self.assertIn(f"WARN app last pass ran on {tested[:12]}, which is not in HEAD's history (rebased, or another branch) for app.pay",
+                      self.framework("status").stdout)
 
     def test_not_verified_records_a_reason_that_a_later_run_lifts(self):
         self.write_map()

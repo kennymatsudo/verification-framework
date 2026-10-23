@@ -107,7 +107,7 @@ Verification plan (the agreed proof and its sources, which vf-verify settles bef
 
 ## Tool discovery
 
-Tools are ordinary repo-local commands usable outside verification. Put new harness tools in `scripts/`; reuse existing project commands in recipes when they suffice. Use the project's language, third-party drivers, and connection settings. Python 3 is a fallback for standalone coordination when available. Keep command parsing separate from reusable reads and actions. No MCP server or universal CLI is required.
+Tools are ordinary repo-local commands usable outside verification. Put new harness tools in `scripts/`, with each check's entry file or folder under `scripts/checks/`; reuse existing project commands in recipes when they suffice. Use the project's language, third-party drivers, and connection settings. Python 3 is a fallback for standalone coordination when available. Keep command parsing separate from reusable reads and actions. No MCP server or universal CLI is required.
 
 Document each harness command in `tools.md`: when to use it, what it answers, working directory and inputs, environment prerequisites, permissions and side effects, output and failure meanings, and limits. `--help` works without connecting to services or acting. Redact secrets in help examples and output, and read credentials from the project's connection settings, never from a literal in a tool or the guide. `validate.py` checks each entry's Permissions and Limits lines, Run from folder, and Help command, and flags a credential written into `tools.md` or `scripts/`; `--run-help` also runs each Help command. The other guide lines are for the reader and go unchecked. A probe's help and guide describe observations, never promise a verified feature.
 
@@ -220,6 +220,8 @@ The check reports these events, one JSON object per line appended to the `VERIFY
   "accepted_by": "vf.py run"
 }
 ```
+
+`harness_code` is the check's own code as `vf.py run` saw it, hashed with line endings normalized: `settings.md`, every file under `scripts/` apart from `scripts/framework/`, and any file the command names. Under `scripts/checks/`, only the entry the command names counts, a file or a folder, so put each check's entry there and anything two checks share outside it; a command that names no entry gets all of them. A planned break proves a pass only while every file it recorded is unchanged in the pass.
 
 `passed` is `true`, `false`, or `null`, from the check's exit code. `stopped` holds the reason when the run stopped early, from the `stopped` event or the exit code. `created` lists what cleanup may remove. A step's `sub_features` follows the Checks rule above. `planned_break` is null or absent on a run of the code under test; a planned break run records `{"what": "payment capture skipped", "sub_features": ["checkout.pay"]}` from `VERIFY_PLANNED_BREAK`, naming only sub-features the run covers.
 

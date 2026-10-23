@@ -98,6 +98,8 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0004: Drive through the app, judge from outside it, and compute every verdict from the evidence](adr/0004-judge-from-outside-and-compute-verdicts-from-evidence.md)
 - [0005: A planned break proves only what it broke, run in a scratch copy of a fingerprinted check](adr/0005-credit-a-planned-break-only-to-what-it-broke.md)
 - [0006: One versioned tool writes every record](adr/0006-one-versioned-tool-writes-every-record.md)
+- [0007: The framework ships inside the app's repo](adr/0007-the-framework-ships-inside-the-app-repo.md)
+- [0008: Fingerprint what a check could load, not the whole harness](adr/0008-fingerprint-what-a-check-could-load.md)
 
 ## Parked ideas
 

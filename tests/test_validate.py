@@ -992,6 +992,31 @@ class VerifiedResultsTest(unittest.TestCase):
             self.assertNotIn("recording", output)
 
 
+class HarnessFingerprintTest(unittest.TestCase):
+    def test_a_line_ending_rewrite_is_not_a_harness_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            check = harness / "scripts" / "checks" / "pay.py"
+            check.parent.mkdir(parents=True)
+            check.write_bytes(b"# pay\nprint(1)\n")
+            before = validate.harness_code(harness)
+            check.write_bytes(b"# pay\r\nprint(1)\r\n")
+            self.assertEqual(validate.harness_code(harness), before)
+            self.assertEqual(validate.harness_edited_since_run(harness, {"harness_code": before}), [])
+            check.write_bytes(b"# pay\r\nprint(2)\r\n")
+            self.assertEqual(validate.harness_edited_since_run(harness, {"harness_code": before}),
+                             [".agents/skills/verify-app/scripts/checks/pay.py changed since this run; rerun its check"])
+
+    def test_settings_are_part_of_the_fingerprint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            before = validate.harness_code(harness)
+            self.assertIn(".agents/skills/verify-app/settings.md", before)
+            (harness / "settings.md").write_text(SETTINGS.replace("Doctor:", "Doctor: true #"))
+            self.assertEqual(validate.harness_edited_since_run(harness, {"harness_code": before}),
+                             [".agents/skills/verify-app/settings.md changed since this run; rerun its check"])
+
+
 class MultiRepoTest(unittest.TestCase):
     def test_evidence_names_each_repo(self):
         with tempfile.TemporaryDirectory() as directory:

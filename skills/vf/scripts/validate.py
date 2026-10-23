@@ -132,26 +132,59 @@ def setting(harness_dir, section, label):
     return None
 
 
+CHECKS_FOLDER = "checks"
+
+
+def normalized(content):
+    """Bytes with CRLF line endings turned to LF, so a Git checkout's conversion is not an edit."""
+    return content.replace(b"\r\n", b"\n")
+
+
+def file_fingerprint(path):
+    """SHA-256 of a harness file's content with line endings normalized."""
+    return hashlib.sha256(normalized(path.read_bytes())).hexdigest()
+
+
 def harness_code(harness_dir, command=()):
-    """The harness's own code as {path from the project root: SHA-256}: every file under scripts/ apart from
-    the framework copies, plus any file the check command names. A planned break and a later pass must agree on it."""
+    """The harness's own code as {path from the project root: fingerprint}: settings.md, every file under
+    scripts/ apart from the framework copies, and any file the check command names. A planned break and a
+    later pass must agree on it.
+
+    Under scripts/checks/ each top-level entry, a file or a folder, is one check's own code, so only the
+    entries the command names count; the rest belong to checks this command cannot load. A command that
+    names nothing under checks/ gets all of it, since the check it runs could be any of them."""
     project = project_root(harness_dir)
     scripts = harness_dir / "scripts"
-    files = []
-    if scripts.is_dir():
-        files += [path for path in scripts.rglob("*")
-                  if path.is_file() and path.relative_to(scripts).parts[0] != "framework" and "__pycache__" not in path.parts]
-    for word in command:
-        if "/" in word and "\n" not in word and not word.startswith("-") and len(word) < 1024 and (project / word).is_file():
-            files.append(project / word)
+    checks = scripts / CHECKS_FOLDER
+    named = [project / word for word in command
+             if "/" in word and "\n" not in word and not word.startswith("-") and len(word) < 1024 and (project / word).is_file()]
+    named_checks = {check_entry(checks, path) for path in named} - {None}
+    files = list(named)
+    if (harness_dir / "settings.md").is_file():
+        files.append(harness_dir / "settings.md")
+    for path in scripts.rglob("*") if scripts.is_dir() else ():
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
+        top = path.relative_to(scripts).parts[0]
+        if top == "framework" or (top == CHECKS_FOLDER and named_checks and check_entry(checks, path) not in named_checks):
+            continue
+        files.append(path)
     manifest = {}
     for path in files:
         try:
             key = path.resolve().relative_to(project.resolve()).as_posix()
         except ValueError:
             continue
-        manifest[key] = hashlib.sha256(path.read_bytes()).hexdigest()
+        manifest[key] = file_fingerprint(path)
     return dict(sorted(manifest.items()))
+
+
+def check_entry(checks, path):
+    """The top-level file or folder under scripts/checks/ that holds path, or None when path is outside it."""
+    try:
+        return path.resolve().relative_to(checks.resolve()).parts[0]
+    except (ValueError, IndexError):
+        return None
 
 
 def command_path_exists(command, project):
@@ -567,11 +600,14 @@ def stale_commit_warning(name, checkout, commit):
     behind = git(checkout, "rev-list", "--count", f"{commit}..HEAD") if commit else None
     if behind is None or head is None or tested is None:
         return f"{name} last pass ran on {commit or 'an unknown commit'}, which this checkout cannot find"
-    if tested != head and behind != "0":
-        return f"{name} last pass is {behind} commit{'' if behind == '1' else 's'} behind HEAD"
-    if tested != head:
-        return f"{name} last pass ran on a different commit than HEAD"
-    return None
+    if tested == head:
+        return None
+    # After a rebase, commit..HEAD also counts the rebased copies of the tested commits, so the count
+    # only means "behind" when the tested commit is still in HEAD's history.
+    in_history = subprocess.run(["git", "-C", str(checkout), "merge-base", "--is-ancestor", tested, head], capture_output=True)
+    if in_history.returncode != 0:
+        return f"{name} last pass ran on {tested[:12]}, which is not in HEAD's history (rebased, or another branch)"
+    return f"{name} last pass is {behind} commit{'' if behind == '1' else 's'} behind HEAD"
 
 
 def evidence_warnings(evidence_dir, check_proofs, project, repos):
@@ -1064,7 +1100,7 @@ def harness_edited_since_run(harness_dir, record):
     problems = []
     for name, digest in manifest.items():
         path = project / name
-        if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+        if path.is_file() and file_fingerprint(path) != digest:
             problems.append(f"{name} changed since this run; rerun its check")
     return problems
 

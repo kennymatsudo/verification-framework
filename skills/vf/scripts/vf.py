@@ -27,9 +27,10 @@ so a run that stops before judging what it was run for is recorded as stopped ra
 
 vf.py run records started_at and finished_at, the code code_state.py reports, which must not change
 while the check runs, VERIFY_PLANNED_BREAK as planned_break, and the verdict from the exit code: 0
-passed, 1 a step failed, anything else stopped. It also records `harness_code`, a SHA-256 of every file
-under the harness's scripts/ apart from scripts/framework/ and of any file the check command names, so
-a planned break and a later pass can be shown to have run the same check. It accepts the record under
+passed, 1 a step failed, anything else stopped. It also records `harness_code`, a SHA-256 (line endings
+normalized) of settings.md, of every file under the harness's scripts/ apart from scripts/framework/ and
+other checks' entries under scripts/checks/, and of any file the check command names, so a planned break
+and a later pass can be shown to have run the same check. It accepts the record under
 evidence/<check>/<time>.json only when the events follow the Evidence rules and agree with the exit
 code, stamps it "accepted_by": "vf.py run", builds its replay page, refreshes status.md, and exits with
 the check's code. Otherwise it writes the record as <time>.json.refused, so no result can cite it,
@@ -408,14 +409,29 @@ def feature_map(harness, validate):
     return seen_ids, proofs, errors
 
 
+def settings_repos(harness, validate):
+    """The repos settings.md lists, or none when the harness has no settings yet."""
+    settings = harness / "settings.md"
+    return validate.parse_repos(validate.sections(settings.read_text())[1])[0] if settings.is_file() else {}
+
+
 def mapped_verdicts(harness, validate):
     """The feature map's verdicts, or the map's errors; raises Stopped when the harness has no map."""
     seen_ids, proofs, errors = feature_map(harness, validate)
     if errors:
         return None, errors
-    settings = harness / "settings.md"
-    repos = validate.parse_repos(validate.sections(settings.read_text())[1])[0] if settings.is_file() else {}
-    return validate.compute_verdicts(harness, seen_ids, proofs, repos), []
+    return validate.compute_verdicts(harness, seen_ids, proofs, settings_repos(harness, validate)), []
+
+
+def evidence_warnings(harness, validate):
+    """validate.py's warnings about each behavior's latest pass: no pass, a commit HEAD has moved past or
+    no longer contains, or uncommitted code, so a reader of status.md learns the pass is not about this checkout."""
+    evidence = harness / "evidence"
+    if not evidence.is_dir():
+        return []
+    _, proofs, _ = feature_map(harness, validate)
+    return validate.evidence_warnings(evidence, validate.command_proofs(proofs), validate.project_root(harness),
+                                      settings_repos(harness, validate))
 
 
 def refresh_status(harness, validate):
@@ -497,7 +513,7 @@ def status(harness):
     if errors:
         return [f"ERROR {error}" for error in errors] + ["status.md not written: fix the feature map first"], 1
     lines = validate.render_status(harness, verdicts)
-    warnings = validate.standing_warnings(verdicts)
+    warnings = validate.standing_warnings(verdicts) + evidence_warnings(harness, validate)
     return lines + [f"WARN {warning}" for warning in warnings], 0
 
 
