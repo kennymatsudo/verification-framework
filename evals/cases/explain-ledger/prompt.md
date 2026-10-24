@@ -1,6 +1,7 @@
 ---
 tags: [smoke, explain]
 max_turns: 100
+model: claude-opus-5-5
 timeout_seconds: 1800
 allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash, Agent]
 ---

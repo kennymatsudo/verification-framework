@@ -1,6 +1,7 @@
 ---
 tags: [add-checks, guardrails]
 max_turns: 200
+model: claude-opus-5-5
 timeout_seconds: 3000
 allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash, Agent]
 ---

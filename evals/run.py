@@ -27,6 +27,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vfeval import RESULTS, agent, cases, fixtures, graders, report, scaffold  # noqa: E402
 
+# The agent under test. A score measures skill and model together, so runs pin one and record it; --model or a case's
+# frontmatter `model:` overrides it.
+DEFAULT_MODEL = "claude-opus-5-5"
+
+
+def model_for(case, args):
+    return args.model or case["settings"].get("model") or DEFAULT_MODEL
+
 
 def cmd_list(args):
     for case in cases.select_cases(args.case, args.tag):
@@ -92,7 +100,8 @@ def scaffold_cached(case, workspace):
 def run_case_once(case, out_dir, args):
     out_dir.mkdir(parents=True, exist_ok=True)
     workspace = Path(tempfile.mkdtemp(prefix=f"vf-eval-{case['name']}-"))
-    run_record = {"case": case["name"], "score": 0.0, "graders": [], "cost_usd": 0.0, "duration_s": 0.0, "error": None}
+    model = model_for(case, args)
+    run_record = {"case": case["name"], "model": model, "served_models": [], "score": 0.0, "graders": [], "cost_usd": 0.0, "duration_s": 0.0, "error": None}
     started = time.perf_counter()
     try:
         manifest = scaffold_cached(case, workspace)
@@ -100,9 +109,10 @@ def run_case_once(case, out_dir, args):
         cwd = workspace / case["run"].get("cwd", ".")
         turns = agent.converse(case["prompt"], cwd, load_sheet(case), max_user_turns=case["run"].get("max_user_turns", 6),
                                user_model=args.user_model, timeout=case["settings"].get("timeout_seconds", 1800),
-                               model=args.model, max_turns=case["settings"].get("max_turns", 80))
+                               model=model, max_turns=case["settings"].get("max_turns", 80))
         report.write_json(out_dir / "turns.json", turns)
         (out_dir / "transcript.md").write_text(agent.transcript_lines(turns))
+        run_record["served_models"] = sorted({m for t in turns for m in (t.get("models_used") or ([t["model"]] if t.get("model") else []))})
         run_record["cost_usd"] = round(sum(t["cost_usd"] for t in turns), 4)
         run_record["user_turns"] = len(turns) - 1
         run_record["agent_steps"] = sum(t["num_turns"] for t in turns)
@@ -133,14 +143,14 @@ def cmd_run(args):
         return 2
     out = Path(args.out) if args.out else RESULTS / time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
     out.mkdir(parents=True, exist_ok=True)
-    print(f"results in {out}")
+    print(f"results in {out}; agent model {args.model or 'per case, default ' + DEFAULT_MODEL}")
     case_results = {}
     for case in chosen:
         for number in range(1, args.runs + 1):
             record = run_case_once(case, out / case["name"] / f"run-{number}", args)
             case_results.setdefault(case["name"], []).append(record)
             failed = [g["name"] for g in record["graders"] if not g["passed"]]
-            print(f"{'ok  ' if record['score'] >= 0.999 else 'FAIL'} {record['duration_s']:6.0f}s ${record['cost_usd']:5.2f}  {case['name']} run {number}: {record['score']:.2f}"
+            print(f"{'ok  ' if record['score'] >= 0.999 else 'FAIL'} {record['duration_s']:6.0f}s ${record['cost_usd']:5.2f}  {case['name']} run {number} ({record['model']}): {record['score']:.2f}"
                   + (f"  failed: {', '.join(failed)}" if failed else "") + (f"  error: {record['error']}" if record["error"] else ""))
     for built, _ in CACHE.values():
         shutil.rmtree(built, ignore_errors=True)
@@ -173,7 +183,7 @@ def main():
     p = commands.add_parser("scaffold"); p.add_argument("--case"); p.add_argument("--practice"); p.add_argument("--prepare", default="bare", choices=cases.PREPARE_LEVELS)
     p.add_argument("--change"); p.add_argument("--into", required=True); p.add_argument("--manifest"); p.set_defaults(run=cmd_scaffold)
     p = commands.add_parser("run"); p.add_argument("--case", action="append", default=[]); p.add_argument("--tag", action="append", default=[])
-    p.add_argument("--runs", type=int, default=1); p.add_argument("--model"); p.add_argument("--user-model"); p.add_argument("--keep", action="store_true"); p.add_argument("--out"); p.set_defaults(run=cmd_run)
+    p.add_argument("--runs", type=int, default=1); p.add_argument("--model", help=f"the agent under test; default: the case's model, else {DEFAULT_MODEL}"); p.add_argument("--user-model", help="let this model play the developer instead of the answer-sheet rules"); p.add_argument("--keep", action="store_true"); p.add_argument("--out"); p.set_defaults(run=cmd_run)
     p = commands.add_parser("grade"); p.add_argument("workspace"); p.add_argument("--case", required=True); p.set_defaults(run=cmd_grade)
     args = parser.parse_args()
     try:

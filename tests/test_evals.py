@@ -30,6 +30,11 @@ class Cases(unittest.TestCase):
                     self.assertTrue((practice["dir"] / "hidden" / change["patch"]).is_file(), f"{name}: {change['patch']} is missing")
                 self.assertTrue((practice["dir"] / "hidden" / "answers.json").is_file() or practice.get("base"), f"{name}: hidden/answers.json is missing")
 
+    def test_every_case_pins_the_agent_model(self):
+        for name in cases.case_names():
+            with self.subTest(case=name):
+                self.assertEqual(cases.load_case(name)["settings"].get("model"), "claude-opus-5-5", "prompt.md frontmatter should pin the model the suite is calibrated on")
+
     def test_frontmatter_parses_lists_numbers_and_strings(self):
         settings, body = cases.frontmatter("---\ntags: [smoke, setup]\nmax_turns: 120\nmodel: claude-x\n---\n\nDo the thing.\n")
         self.assertEqual(settings, {"tags": ["smoke", "setup"], "max_turns": 120, "model": "claude-x"})
@@ -52,16 +57,19 @@ class SimulatedDeveloper(unittest.TestCase):
 class TranscriptParser(unittest.TestCase):
     def test_reads_session_tools_and_result_from_stream_json(self):
         lines = [
-            json.dumps({"type": "system", "subtype": "init", "session_id": "s1"}),
+            json.dumps({"type": "system", "subtype": "init", "session_id": "s1", "model": "claude-opus-5-5"}),
             json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]}}),
             json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "Done.\n\nNeeds you: commit?"}]}}),
-            json.dumps({"type": "result", "subtype": "success", "result": "Done.\n\nNeeds you: commit?", "session_id": "s1", "total_cost_usd": 0.5, "duration_ms": 1200, "num_turns": 3}),
+            json.dumps({"type": "result", "subtype": "success", "result": "Done.\n\nNeeds you: commit?", "session_id": "s1", "total_cost_usd": 0.5, "duration_ms": 1200, "num_turns": 3,
+                        "modelUsage": {"claude-opus-5-5": {}, "claude-sonnet-5-5": {}}}),
         ]
         turn = agent.parse_stream(lines, agent.Turn())
         self.assertEqual(turn.session_id, "s1")
         self.assertEqual([use["name"] for use in turn.tool_uses], ["Bash"])
         self.assertEqual(agent.question_in(turn.final_text), "commit?")
         self.assertEqual(turn.cost_usd, 0.5)
+        self.assertEqual(turn.model, "claude-opus-5-5")
+        self.assertEqual(turn.models_used, ["claude-opus-5-5", "claude-sonnet-5-5"])
         self.assertIsNone(turn.error)
 
 

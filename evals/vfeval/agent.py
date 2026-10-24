@@ -25,6 +25,8 @@ ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Bash", "Edit", "Write", "MultiEdit", "
 class Turn:
     def __init__(self):
         self.session_id = None
+        self.model = None
+        self.models_used = []
         self.final_text = ""
         self.texts = []
         self.tool_uses = []
@@ -48,6 +50,7 @@ def parse_stream(lines, turn):
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
             turn.session_id = event.get("session_id") or turn.session_id
+            turn.model = event.get("model") or turn.model
         elif kind == "assistant":
             for block in event.get("message", {}).get("content", []):
                 if block.get("type") == "text" and block.get("text"):
@@ -60,6 +63,7 @@ def parse_stream(lines, turn):
             turn.cost_usd = event.get("total_cost_usd") or 0.0
             turn.duration_ms = event.get("duration_ms") or 0
             turn.num_turns = event.get("num_turns") or 0
+            turn.models_used = sorted(event.get("modelUsage", {}).keys()) if isinstance(event.get("modelUsage"), dict) else []
             if event.get("is_error") or event.get("subtype", "success") != "success":
                 turn.error = event.get("subtype") or "error"
     if not turn.final_text and turn.texts:
@@ -146,7 +150,8 @@ def converse(prompt, cwd, sheet, max_user_turns=6, user_model=None, **kwargs):
         session = turn.session_id or session
         record = {"index": index, "prompt": message, "final_text": turn.final_text, "texts": turn.texts,
                   "tool_uses": turn.tool_uses, "cost_usd": turn.cost_usd, "duration_ms": turn.duration_ms,
-                  "num_turns": turn.num_turns, "error": turn.error, "session_id": turn.session_id, "reply": None}
+                  "num_turns": turn.num_turns, "error": turn.error, "session_id": turn.session_id, "reply": None,
+                  "model": turn.model, "models_used": turn.models_used}
         turns.append(record)
         question = question_in(turn.final_text)
         if turn.error or question is None or index == max_user_turns:
@@ -168,7 +173,7 @@ def transcript_lines(turns):
         for use in turn["tool_uses"]:
             summary = json.dumps(use["input"])[:160]
             lines.append(f"- tool {use['name']}: {summary}")
-        lines.append(f"\n## Agent (turn {turn['index']}, {turn['num_turns']} steps, ${turn['cost_usd']:.2f})\n\n{turn['final_text']}\n")
+        lines.append(f"\n## Agent (turn {turn['index']}, {turn['num_turns']} steps, ${turn['cost_usd']:.2f}, {turn.get('model') or 'model unknown'})\n\n{turn['final_text']}\n")
         if turn["error"]:
             lines.append(f"ERROR: {turn['error']}\n")
     return "\n".join(lines)
