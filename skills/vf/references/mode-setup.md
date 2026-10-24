@@ -10,7 +10,7 @@ Start from the app or system the user named; for a named feature, find the app t
 
 Glob `verify-*/rules.md` in the skills directories of the current folder and each folder above it up to the repo's top level, nearest first (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) and read each candidate's app scope. Don't use an unrelated harness just because it is the only one. When the target or harness is still ambiguous, ask one question, with a recommendation only when the project or the request settles it.
 
-For a matching harness, first bring its framework copies up to date by running this skill's `scripts/vf.py sync <harness>`. It replaces `rules.md`, every script in `scripts/framework/`, and the copies of vf, vf-verify, and vf-explain beside the harness that differ from the installed skills, names each one, and removes a file it recorded earlier that the framework no longer ships. A copy of this skill committed beside the harness has no `scripts/`: say that updating needs the framework installed, give the install command from the framework README, and stop. When sync stops instead:
+For a matching harness, first bring its framework copies up to date by running this skill's `scripts/vf.py sync <harness>`. It replaces `rules.md`, every script in `<harness>/scripts/framework/`, and the copies of vf, vf-verify, and vf-explain beside the harness that differ from the installed skills, names each one, and removes a file it recorded earlier that the framework no longer ships. A copy of this skill committed beside the harness has no `scripts/`: say that updating needs the framework installed, give the install command from the framework README, and stop. When sync stops instead:
 
 - **A skill isn't installed beside vf:** sync names it and its install line. Every harness carries a copy of all three, so stop until it is installed.
 - **Harness on a newer Rules version:** tell the user to update the installed framework skills, since copying would downgrade the harness.
@@ -26,7 +26,7 @@ Done when the target and harness are established and an existing harness's frame
 
 ## 2. Start the harness
 
-Pick the skills directory the app's folder already uses, nearest the app in a monorepo; if none, the one the current agent loads. Name the harness `verify-<app>` after the app. Run this skill's `scripts/vf.py sync <harness>` to copy `rules.md` and the framework scripts into the harness, unchanged, and the vf, vf-verify, and vf-explain skills beside it, so teammates who clone the repo have them without installing anything; it stops and names the install line when one of them isn't installed. The app's own tools go in `scripts/` beside `scripts/framework/`.
+Pick the skills directory the app's folder already uses, nearest the app in a monorepo; if none, the one the current agent loads. Name the harness `verify-<app>` after the app. Run this skill's `scripts/vf.py sync <harness>` to copy `rules.md` and the framework scripts into the harness, unchanged, and the vf, vf-verify, and vf-explain skills beside it, so teammates who clone the repo have them without installing anything; it stops and names the install line when one of them isn't installed. The app's own tools go in `<harness>/scripts/`, beside `<harness>/scripts/framework/`.
 
 Write `settings.md` from `references/settings.md` with Setup Status `incomplete` and only the fields already known. Write `notes.md` from `references/notes.md`. Write `README.md` from `references/readme.md`.
 

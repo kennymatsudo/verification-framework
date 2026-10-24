@@ -2,7 +2,7 @@
 
 Rules version: 3
 
-Copy this file into the harness as `rules.md`, unchanged; app specifics live in `settings.md`. `scripts/framework/vf.py validate` fails a copy that differs from the one vf last synced, whose hash `scripts/framework/framework.sha256` records with every other framework file's. A section applies once the harness has that kind of piece. A piece that cannot follow a rule names the exception in its own help text and in the feature file that uses it.
+Copy this file into the harness as `rules.md`, unchanged; app specifics live in `settings.md`. `scripts/framework/vf.py validate` fails a copy that differs from the one vf last synced, whose hash this harness's `framework.sha256` records with every other framework file's. A section applies once the harness has that kind of piece. A piece that cannot follow a rule names the exception in its own help text and in the feature file that uses it.
 
 ## Harness layout
 
@@ -15,15 +15,14 @@ Keep framework artifacts at fixed paths relative to this harness; settings canno
 - `status.md`: the latest result for every behavior, written by `vf.py status` and never by hand.
 - `notes.md`: what people write beside the results: the Setup record, known failing checks, where a pass can mislead, untested cases.
 - `tools.md`: command guide.
-- `scripts/`: the app's harness tools.
-- `scripts/framework/`: framework scripts, copied unchanged.
+- `scripts/`: the app's harness tools, with the framework scripts, copied unchanged, in its `framework/` folder.
 - `evidence/<check>/`: each check's runs.
 - `evidence/doctor/`: saved doctor output.
 - `evidence/launch/`: the launch record and output of an instance `vf.py start` started.
 - `evidence/not-verified.jsonl`: the Not verified records `vf.py not-verified` writes.
 - `evidence/breaks.jsonl`: one line per planned break that caught a sub-feature, written by `vf.py break run`.
 
-Beside the harness, the same skills directory holds `vf/`, `vf-verify/`, and `vf-explain/`: copies of the framework skills without their `scripts/`, written by `vf.py sync` and recorded in `framework.sha256` with every other framework copy, so a clone of the repo needs no install. Each other skills directory at the project root holds the same copies. Their scripts run from this harness's `scripts/framework/`.
+Beside the harness, the same skills directory holds `vf/`, `vf-verify/`, and `vf-explain/`: copies of the framework skills without their `scripts/`, written by `vf.py sync` and recorded in `framework.sha256` with every other framework copy, so a clone of the repo needs no install. Each other skills directory at the project root holds the same copies. Their scripts run from the framework scripts in this harness.
 
 The project root is the folder holding the skills directory this harness sits in: `app/` for `app/.agents/skills/verify-app/`. In a single-repo app it is the repository's top folder; in a monorepo it is the app's own folder. Recipe commands run from it, and `settings.md` paths resolve from it.
 
@@ -107,7 +106,7 @@ Verification plan (the agreed proof and its sources, which vf-verify settles bef
 
 ## Tool discovery
 
-Tools are ordinary repo-local commands usable outside verification. Put new harness tools in `scripts/`, with each check's entry file or folder under `scripts/checks/`; reuse existing project commands in recipes when they suffice. Use the project's language, third-party drivers, and connection settings. Python 3 is a fallback for standalone coordination when available. Keep command parsing separate from reusable reads and actions. No MCP server or universal CLI is required.
+Tools are ordinary repo-local commands usable outside verification. Put new harness tools in this harness's `scripts/`, with each check's entry file or folder in its `checks/` folder; reuse existing project commands in recipes when they suffice. Use the project's language, third-party drivers, and connection settings. Python 3 is a fallback for standalone coordination when available. Keep command parsing separate from reusable reads and actions. No MCP server or universal CLI is required.
 
 Document each harness command in `tools.md`: when to use it, what it answers, working directory and inputs, environment prerequisites, permissions and side effects, output and failure meanings, and limits. `--help` works without connecting to services or acting. Redact secrets in help examples and output, and read credentials from the project's connection settings, never from a literal in a tool or the guide. `validate.py` checks each entry's Permissions and Limits lines, Run from folder, and Help command, and flags a credential written into `tools.md` or `scripts/`; `--run-help` also runs each Help command. The other guide lines are for the reader and go unchecked. A probe's help and guide describe observations, never promise a verified feature.
 
@@ -221,7 +220,7 @@ The check reports these events, one JSON object per line appended to the `VERIFY
 }
 ```
 
-`harness_code` is the check's own code as `vf.py run` saw it, hashed with line endings normalized: `settings.md`, every file under `scripts/` apart from `scripts/framework/`, and any file the command names. Under `scripts/checks/`, only the entry the command names counts, a file or a folder, so put each check's entry there and anything two checks share outside it; a command that names no entry gets all of them. A planned break proves a pass only while every file it recorded is unchanged in the pass.
+`harness_code` is the check's own code as `vf.py run` saw it, hashed with line endings normalized: `settings.md`, every file under `scripts/` apart from its `framework/` folder, and any file the command names. In its `checks/` folder, only the entry the command names counts, a file or a folder, so put each check's entry there and anything two checks share outside it; a command that names no entry gets all of them. A planned break proves a pass only while every file it recorded is unchanged in the pass.
 
 `passed` is `true`, `false`, or `null`, from the check's exit code. `stopped` holds the reason when the run stopped early, from the `stopped` event or the exit code. `created` lists what cleanup may remove. A step's `sub_features` follows the Checks rule above. `planned_break` is null or absent on a run of the code under test; a planned break run records `{"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "app"}`: what and which sub-features from `VERIFY_PLANNED_BREAK`, naming only sub-features the run covers, and the repo of the break session this harness has open. `vf.py run` stops before the check runs when `VERIFY_PLANNED_BREAK` is set and no session is open, or sessions are open on several repos, so a break can't be recorded outside a session. A planned break that names no settings repo proves nothing.
 
