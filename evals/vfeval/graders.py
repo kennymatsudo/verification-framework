@@ -130,14 +130,11 @@ def sub_feature_lines(harness):
     for path in sorted((harness / "features").glob("*.md")) if (harness / "features").is_dir() else []:
         if path.name == "README.md":
             continue
-        text = path.read_text()
-        for line in text.splitlines():
+        for line in path.read_text().splitlines():
             if line.startswith("- ") and ":" in line and line[2:].split(":", 1)[0].strip().replace(".", "").replace("-", "").isalnum():
                 sub_id, rest = line[2:].split(":", 1)
                 found.setdefault(sub_id.strip(), []).append(rest.strip())
-        for sub_id in list(found):
-            found[sub_id] = " ".join(found[sub_id])
-    return found
+    return {sub_id: " ".join(parts) for sub_id, parts in found.items()}
 
 
 def resolve_ids(ctx, practice_id):
@@ -154,6 +151,10 @@ def resolve_ids(ctx, practice_id):
         cited = [sub_id for sub_id, text in lines.items() if re.search(rf"\b{re.escape(requirement)}\b", text)]
         if cited:
             return cited
+    if behavior.get("match"):
+        matched = [sub_id for sub_id, text in lines.items() if re.search(behavior["match"], f"{sub_id} {text}", re.IGNORECASE)]
+        if matched:
+            return matched
     words = {w for w in re.findall(r"[a-z]{4,}", behavior.get("words", "").lower())}
     scored = sorted(((len(words & set(re.findall(r"[a-z]{4,}", text.lower()))), sub_id) for sub_id, text in lines.items()), reverse=True)
     return [sub_id for score, sub_id in scored if score >= max(2, len(words) // 2)][:2]
@@ -320,9 +321,6 @@ def hidden_breaks_caught(ctx, sub_features=None):
     all_ids = [sub_id for sub_id in sub_feature_lines(ctx.harness) if scaffold.proof_command(ctx.harness, sub_id)]
     if not all_ids:
         return Result(0, "the feature map has no sub-feature with a check command")
-    # The break runs refresh status.md; put the agent's own results back afterwards so later graders and a reader see them.
-    status_path = ctx.harness / "status.md"
-    status_before = status_path.read_bytes() if status_path.is_file() else None
     notes, caught = [], 0
     for brk in breaks:
         sub_id = brk["sub_feature"]
@@ -349,8 +347,6 @@ def hidden_breaks_caught(ctx, sub_features=None):
         finally:
             ctx.stop_app()
             scaffold.git(repo, "apply", "-R", str(patch), check=False)
-    if status_before is not None:
-        status_path.write_bytes(status_before)
     return Result(caught / len(breaks), f"{caught}/{len(breaks)} hidden breaks caught\n" + "\n".join(notes))
 
 
@@ -500,10 +496,15 @@ def no_error_turns(ctx):
     return Result(not errors, "\n".join(errors) or "no errors")
 
 
+MUTATING = {"hidden_breaks_caught", "doctor_works"}
+
+
 def grade(ctx, specs):
-    """Run each grader spec ({name, weight?, ...params}); the list of result dicts and the weighted score."""
+    """Run each grader spec ({name, weight?, ...params}); the list of result dicts and the weighted score.
+
+    Graders that start the app or run checks go last, so the ones reading status.md and validate see the agent's state."""
     results, total, weight_sum = [], 0.0, 0.0
-    for spec in specs:
+    for spec in sorted(specs, key=lambda spec: spec.get("name") in MUTATING):
         spec = dict(spec)
         name = spec.pop("name")
         weight = float(spec.pop("weight", 1))

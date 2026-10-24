@@ -33,19 +33,23 @@
   "behaviors": {
     "orders.create": {
       "requirement": "SR-1",
-      "words": "an order is stored with its lines and total"
+      "words": "an order is stored with its lines and total",
+      "match": "order.*(stor|creat|total)"
     },
     "orders.enqueue": {
       "requirement": "SR-2",
-      "words": "one outbox job per order"
+      "words": "one outbox job per order",
+      "match": "outbox|queue|job"
     },
     "mail.confirmation-sent": {
       "requirement": "SR-3",
-      "words": "one confirmation email per job"
+      "words": "one confirmation email per job",
+      "match": "(mail|email|confirmation).*(sent|send)|sends"
     },
     "mail.marks-done": {
       "requirement": "SR-3",
-      "words": "a job is marked done after sending"
+      "words": "a job is marked done after sending",
+      "match": "done|twice|again|mark"
     }
   },
   "open_questions": [],

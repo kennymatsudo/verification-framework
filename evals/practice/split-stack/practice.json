@@ -33,15 +33,18 @@
   "behaviors": {
     "items.add": {
       "requirement": "ST-1",
-      "words": "adding stores the exact name and quantity"
+      "words": "adding stores the exact name and quantity",
+      "match": "add"
     },
     "items.list": {
       "requirement": "ST-2",
-      "words": "listing shows every stored item"
+      "words": "listing shows every stored item",
+      "match": "list"
     },
     "items.reject-negative": {
       "requirement": "ST-3",
-      "words": "a negative quantity is refused"
+      "words": "a negative quantity is refused",
+      "match": "negative|refus|reject"
     }
   },
   "open_questions": [],

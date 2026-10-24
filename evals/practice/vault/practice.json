@@ -26,15 +26,18 @@
   "behaviors": {
     "secrets.roundtrip": {
       "requirement": "VR-1",
-      "words": "a stored secret reads back"
+      "words": "a stored secret reads back",
+      "match": "read back|roundtrip|store"
     },
     "secrets.token-required": {
       "requirement": "VR-2",
-      "words": "a call without the token is refused"
+      "words": "a call without the token is refused",
+      "match": "without.*token|401"
     },
     "startup.token-required": {
       "requirement": "VR-3",
-      "words": "the service refuses to start without the token"
+      "words": "the service refuses to start without the token",
+      "match": "start.*token|refuses to start"
     }
   },
   "open_questions": [],

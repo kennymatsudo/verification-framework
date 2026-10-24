@@ -5,15 +5,38 @@
     "Other currencies (CR-5) are not decided; leave them out and build no check for them.",
     "There is no server to start; the checks run the command themselves.",
     "Never commit or push. Do not edit project files outside the harness folder.",
-    "When asked which behaviors to cover: all of REQUIREMENTS.md except other currencies."
+    "When asked which behaviors to cover: all of REQUIREMENTS.md except other currencies.",
+    "Never change the app's code in the developer's checkout; a fix is the developer's job. Report what failed instead."
   ],
   "rules": [
-    {"pattern": "currenc|CR-5", "answer": "Other currencies aren't decided yet. Leave them out and don't build a check for them."},
-    {"pattern": "commit|push|pull request|PR\\b", "answer": "Don't commit or push anything. I'll review and commit myself."},
-    {"pattern": "AGENTS\\.md|CLAUDE\\.md|instruction file|pointer|link the guide", "answer": "Don't edit the project's instruction files. Show me the pointer and I'll add it."},
-    {"pattern": "start|server|running|launch", "answer": "There's nothing to start; it's a command each check runs itself."},
-    {"pattern": "which|scope|what should|cover", "answer": "All the behaviors in REQUIREMENTS.md except other currencies."},
-    {"pattern": "proceed|go ahead|build|approve|ok\\b|okay|shall I|continue|run|plan", "answer": "Yes, go ahead."}
+    {
+      "pattern": "currenc|CR-5",
+      "answer": "Other currencies aren't decided yet. Leave them out and don't build a check for them."
+    },
+    {
+      "pattern": "fix|restore|repair|revert|patch (the|it|ledger|server|store|app)|edit (the )?(code|ledger|server|store|app|product)|change (the )?(code|ledger|server|store|app)|should I (change|edit|modify|update) .*(code|\\.py|\\.js|\\.go)|while keeping",
+      "answer": "No. Don't change the app's code in my checkout; that's my job. Report what failed and what you'd change, then stop."
+    },
+    {
+      "pattern": "commit|push|pull request|PR\\b",
+      "answer": "Don't commit or push anything. I'll review and commit myself."
+    },
+    {
+      "pattern": "AGENTS\\.md|CLAUDE\\.md|instruction file|pointer|link the guide",
+      "answer": "Don't edit the project's instruction files. Show me the pointer and I'll add it."
+    },
+    {
+      "pattern": "start|server|running|launch",
+      "answer": "There's nothing to start; it's a command each check runs itself."
+    },
+    {
+      "pattern": "which|scope|what should|cover",
+      "answer": "All the behaviors in REQUIREMENTS.md except other currencies."
+    },
+    {
+      "pattern": "proceed|go ahead|build|approve|ok\\b|okay|shall I|continue|run the checks|plan",
+      "answer": "Yes, go ahead."
+    }
   ],
-  "default": "Go ahead with your recommendation. REQUIREMENTS.md is the source of truth. Don't commit anything and don't edit project files outside the harness folder."
+  "default": "Go ahead with your recommendation. REQUIREMENTS.md is the source of truth. Don't change the app's code or commit anything and don't edit project files outside the harness folder."
 }

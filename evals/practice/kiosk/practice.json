@@ -1,32 +1,97 @@
 {
   "name": "kiosk",
   "summary": "A Node web page with a small server and a JSON file store, in one repo. Checks drive the page in a browser; some bugs show only on the screen, some only in storage.",
-  "setup": {"language": "node", "shape": "single repo", "surface": "web page", "start": "agent", "reload": "page files reload, server restarts"},
-  "requires": ["node", "playwright", "curl"],
-  "ports": [8072],
-  "repos": {"kiosk": "."},
+  "setup": {
+    "language": "node",
+    "shape": "single repo",
+    "surface": "web page",
+    "start": "agent",
+    "reload": "page files reload, server restarts"
+  },
+  "requires": [
+    "node",
+    "playwright",
+    "curl"
+  ],
+  "ports": [
+    8072
+  ],
+  "repos": {
+    "kiosk": "."
+  },
   "project_root": ".",
   "harness": ".claude/skills/verify-kiosk",
   "requirements": "REQUIREMENTS.md",
-  "app_code_patterns": ["require\\([\"'][^\"']*server(\\.js)?[\"']\\)", "require\\([\"'][^\"']*public/app(\\.js)?[\"']\\)"],
+  "app_code_patterns": [
+    "require\\([\"'][^\"']*server(\\.js)?[\"']\\)",
+    "require\\([\"'][^\"']*public/app(\\.js)?[\"']\\)"
+  ],
   "behaviors": {
-    "menu.shown": {"requirement": "KR-1", "words": "the menu is shown with prices"},
-    "cart.add": {"requirement": "KR-2", "words": "adding an item again raises its quantity"},
-    "cart.total": {"requirement": "KR-3", "words": "the total shown equals the sum of the lines"},
-    "order.place": {"requirement": "KR-4", "words": "placing an order stores what the customer saw"},
-    "order.empty-refused": {"requirement": "KR-5", "words": "an empty order is refused"}
+    "menu.shown": {
+      "requirement": "KR-1",
+      "words": "the menu is shown with prices",
+      "match": "menu"
+    },
+    "cart.add": {
+      "requirement": "KR-2",
+      "words": "adding an item again raises its quantity",
+      "match": "add.*(quantit|again|cart)|quantit"
+    },
+    "cart.total": {
+      "requirement": "KR-3",
+      "words": "the total shown equals the sum of the lines",
+      "match": "total"
+    },
+    "order.place": {
+      "requirement": "KR-4",
+      "words": "placing an order stores what the customer saw",
+      "match": "plac.*order|order.*(stor|number|confirm)"
+    },
+    "order.empty-refused": {
+      "requirement": "KR-5",
+      "words": "an empty order is refused",
+      "match": "empty"
+    }
   },
   "open_questions": [
-    {"requirement": "KR-6", "pattern": "tax", "about": "the undecided sales tax line"}
+    {
+      "requirement": "KR-6",
+      "pattern": "tax",
+      "about": "the undecided sales tax line"
+    }
   ],
   "known_bugs": {},
   "breaks": [
-    {"patch": "breaks/01-total-ignores-qty.patch", "sub_feature": "cart.total", "what": "the total shown ignores quantities (the stored total stays right)"},
-    {"patch": "breaks/02-add-does-not-increment.patch", "sub_feature": "cart.add", "what": "tapping Add again leaves the quantity at one"},
-    {"patch": "breaks/03-server-drops-qty.patch", "sub_feature": "order.place", "what": "the server stores every line with quantity one"},
-    {"patch": "breaks/04-confirmation-wrong-number.patch", "sub_feature": "order.place", "what": "the confirmation shows a number one higher than the stored order"},
-    {"patch": "breaks/05-empty-order-posted.patch", "sub_feature": "order.empty-refused", "what": "an empty cart is posted to the server, which refuses it with a different message"},
-    {"patch": "breaks/06-menu-drops-last-item.patch", "sub_feature": "menu.shown", "what": "the page leaves out the last menu item"}
+    {
+      "patch": "breaks/01-total-ignores-qty.patch",
+      "sub_feature": "cart.total",
+      "what": "the total shown ignores quantities (the stored total stays right)"
+    },
+    {
+      "patch": "breaks/02-add-does-not-increment.patch",
+      "sub_feature": "cart.add",
+      "what": "tapping Add again leaves the quantity at one"
+    },
+    {
+      "patch": "breaks/03-server-drops-qty.patch",
+      "sub_feature": "order.place",
+      "what": "the server stores every line with quantity one"
+    },
+    {
+      "patch": "breaks/04-confirmation-wrong-number.patch",
+      "sub_feature": "order.place",
+      "what": "the confirmation shows a number one higher than the stored order"
+    },
+    {
+      "patch": "breaks/05-empty-order-posted.patch",
+      "sub_feature": "order.empty-refused",
+      "what": "an empty cart is posted to the server, which refuses it with a different message"
+    },
+    {
+      "patch": "breaks/06-menu-drops-last-item.patch",
+      "sub_feature": "menu.shown",
+      "what": "the page leaves out the last menu item"
+    }
   ],
   "changes": {}
 }

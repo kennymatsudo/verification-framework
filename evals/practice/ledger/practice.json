@@ -27,31 +27,38 @@
   "behaviors": {
     "accounts.open": {
       "requirement": "LR-1",
-      "words": "opening an account"
+      "words": "opening an account",
+      "match": "open|creat"
     },
     "accounts.unknown-404": {
       "requirement": "LR-2",
-      "words": "unknown account answers 404"
+      "words": "unknown account answers 404",
+      "match": "unknown|missing|404|does not exist|nonexist"
     },
     "transactions.deposit": {
       "requirement": "LR-3",
-      "words": "a deposit raises the balance"
+      "words": "a deposit raises the balance",
+      "match": "deposit"
     },
     "transactions.refuse-overdraft": {
       "requirement": "LR-4",
-      "words": "an overdraft is refused"
+      "words": "an overdraft is refused",
+      "match": "withdraw.*(overdra|below zero|negative|insufficient|409|refus)|overdra(w|ft).*withdraw"
     },
     "transfers.move": {
       "requirement": "LR-5",
-      "words": "a transfer moves money"
+      "words": "a transfer moves money",
+      "match": "transfer.*(debit|credit|move|both)"
     },
     "transfers.refuse-overdraft": {
       "requirement": "LR-6",
-      "words": "an oversized transfer is refused"
+      "words": "an oversized transfer is refused",
+      "match": "transfer.*(larger|more than|exceed|above|insufficient|409|refus|oversiz)"
     },
     "statement.newest-first": {
       "requirement": "LR-8",
-      "words": "the statement lists newest first"
+      "words": "the statement lists newest first",
+      "match": "statement|newest|history"
     }
   },
   "open_questions": [

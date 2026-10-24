@@ -109,6 +109,8 @@ def run_case_once(case, out_dir, args):
         if turns and turns[-1].get("error"):
             run_record["error"] = turns[-1]["error"]
         ctx = graders.Context(workspace, case["practice"], case, manifest, turns)
+        if ctx.status_snapshot:
+            (out_dir / "status-before-grading.md").write_text(ctx.status_snapshot)
         results, score = graders.grade(ctx, case["run"].get("graders", []))
         run_record["graders"], run_record["score"] = results, round(score, 3)
     except scaffold.ScaffoldError as error:

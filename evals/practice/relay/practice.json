@@ -24,19 +24,23 @@
   "behaviors": {
     "convert.rows": {
       "requirement": "CR-1",
-      "words": "rows convert to exact cents"
+      "words": "rows convert to exact cents",
+      "match": "row|cents"
     },
     "convert.total": {
       "requirement": "CR-2",
-      "words": "the total is the sum of the rows"
+      "words": "the total is the sum of the rows",
+      "match": "total"
     },
     "convert.reject-malformed": {
       "requirement": "CR-3",
-      "words": "malformed input is rejected with no output"
+      "words": "malformed input is rejected with no output",
+      "match": "malformed|bad amount|reject|exit (code )?2"
     },
     "convert.repeatable": {
       "requirement": "CR-4",
-      "words": "converting again gives the same file"
+      "words": "converting again gives the same file",
+      "match": "again|twice|identical|repeat|replac"
     }
   },
   "open_questions": [
