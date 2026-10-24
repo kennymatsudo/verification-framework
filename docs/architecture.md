@@ -121,7 +121,7 @@ vf's audit mode for weak checks and its verify-pr mode also work on a harness th
 | What a pass means, the evidence format, or the report words | `rules.md`, the settings template, `validate.py`, USAGE.md, and internals.md, together |
 | The message shape | Both copies of `references/messages.md`, kept identical, and USAGE.md |
 | Something only some apps need | A blank in the settings template, not a rule |
-| How one job is done | That skill's `SKILL.md` and its `references/` |
+| How one job is done | That skill's `SKILL.md` and its `references/`, then the eval smoke tier (`evals/README.md`) |
 | Who does which job | The modes involved, USAGE.md, the README index, and an ADR |
 | Which skills or modes exist, or their names | The skill folders and `references/mode-*.md`, the README index, USAGE.md, vf's playbooks (the ordered lists of modes it runs for a request), and `locate.py` |
 | A large or hard-to-reverse decision | A new ADR in `docs/adr/`, linked from design.md |

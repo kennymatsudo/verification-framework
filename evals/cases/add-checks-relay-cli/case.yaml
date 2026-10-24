@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: add-checks-relay-cli
+expected_outcome: |
+  Checks that run the real relay command on input files the check writes and read back the output file, exit code, and message; each proven with a planned break run from a scratch checkout; the undecided currencies (CR-5) asked about, not inferred; hidden breaks such as a float rounding error, a silently skipped bad row, or a partial output file are caught.
+context:
+  scaffold_script: scaffold.sh

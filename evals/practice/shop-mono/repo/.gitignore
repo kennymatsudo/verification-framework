@@ -1,0 +1,5 @@
+queue/
+mail-sink/
+apps/orders/data/
+__pycache__/
+node_modules/

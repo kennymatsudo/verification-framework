@@ -1,0 +1,15 @@
+diff --git a/public/app.js b/public/app.js
+index f36e596..03651ee 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -55,10 +55,6 @@ async function placeOrder() {
+   const message = document.getElementById("message");
+   const confirmation = document.getElementById("confirmation");
+   confirmation.textContent = "";
+-  if (cart.size === 0) {
+-    message.textContent = "Add something first";
+-    return;
+-  }
+   const items = [...cart.values()].map((line) => ({ sku: line.sku, qty: line.qty }));
+   const response = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
+   const result = await response.json();

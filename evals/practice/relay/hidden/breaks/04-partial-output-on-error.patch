@@ -1,0 +1,12 @@
+diff --git a/relay/cli.py b/relay/cli.py
+index 327a15a..2dece52 100644
+--- a/relay/cli.py
++++ b/relay/cli.py
+@@ -43,6 +43,7 @@ def main(argv):
+     try:
+         result = convert(argv[1])
+     except Malformed as error:
++        Path(argv[2]).write_text("{}\n")
+         print(f"relay: {error}", file=sys.stderr)
+         return 2
+     except OSError as error:

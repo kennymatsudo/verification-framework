@@ -1,0 +1,42 @@
+{
+  "practice": "kiosk",
+  "prepare": "ready",
+  "max_user_turns": 10,
+  "graders": [
+    {
+      "name": "hidden_breaks_caught",
+      "weight": 4
+    },
+    {
+      "name": "asked_about",
+      "pattern": "tax|KR-6",
+      "before_building": true,
+      "weight": 2
+    },
+    {
+      "name": "no_app_code_in_checks"
+    },
+    {
+      "name": "subagent_used"
+    },
+    {
+      "name": "validate_passes",
+      "args": "--require-evidence"
+    },
+    {
+      "name": "no_new_commits"
+    },
+    {
+      "name": "product_code_clean"
+    },
+    {
+      "name": "no_processes_left"
+    },
+    {
+      "name": "ask_is_last_line"
+    },
+    {
+      "name": "no_error_turns"
+    }
+  ]
+}

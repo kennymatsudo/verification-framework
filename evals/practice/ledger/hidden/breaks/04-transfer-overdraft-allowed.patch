@@ -1,0 +1,13 @@
+diff --git a/ledger/store.py b/ledger/store.py
+index a62b204..e801464 100644
+--- a/ledger/store.py
++++ b/ledger/store.py
+@@ -87,8 +87,6 @@ def transfer(conn, from_id, to_id, amount):
+         target = conn.execute("SELECT balance FROM accounts WHERE id = ?", (to_id,)).fetchone()
+         if source is None or target is None:
+             raise NotFound(from_id if source is None else to_id)
+-        if source["balance"] < amount:
+-            raise InsufficientFunds()
+         now = time.time()
+         conn.execute("UPDATE accounts SET balance = balance - ? WHERE id = ?", (amount, from_id))
+         conn.execute("INSERT INTO transactions (account_id, amount, memo, balance_after, at) VALUES (?, ?, ?, ?, ?)",

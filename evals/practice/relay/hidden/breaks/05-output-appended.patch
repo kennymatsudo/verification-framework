@@ -1,0 +1,13 @@
+diff --git a/relay/cli.py b/relay/cli.py
+index 327a15a..f6e6980 100644
+--- a/relay/cli.py
++++ b/relay/cli.py
+@@ -48,6 +48,7 @@ def main(argv):
+     except OSError as error:
+         print(f"relay: {error}", file=sys.stderr)
+         return 2
+-    Path(argv[2]).write_text(json.dumps(result, indent=2) + "\n")
++    with open(argv[2], "a") as handle:
++        handle.write(json.dumps(result, indent=2) + "\n")
+     print(f"wrote {len(result['rows'])} rows to {argv[2]}")
+     return 0

@@ -1,0 +1,15 @@
+diff --git a/main.go b/main.go
+index 6fe3f1b..90b1cac 100644
+--- a/main.go
++++ b/main.go
+@@ -69,10 +69,6 @@ func main() {
+ 				reply(w, 400, map[string]string{"error": "name and qty are required"})
+ 				return
+ 			}
+-			if item.Qty < 0 {
+-				reply(w, 400, map[string]string{"error": "qty must be zero or more"})
+-				return
+-			}
+ 			items = append(items, item)
+ 			if err := store.write(items); err != nil {
+ 				reply(w, 500, map[string]string{"error": err.Error()})

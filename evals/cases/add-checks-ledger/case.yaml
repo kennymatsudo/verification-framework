@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: add-checks-ledger
+expected_outcome: |
+  Checks for every settled behavior in REQUIREMENTS.md, each agreed in a preview, reviewed by a separate agent, and proven with a planned break; the overdraft behavior stays Failed because the code contradicts LR-4; the undecided daily limit (LR-7) is asked about, not inferred; reads come from the database, never through ledger's own code; hidden breaks applied afterwards are caught by the new checks.
+context:
+  scaffold_script: scaffold.sh

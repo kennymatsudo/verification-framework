@@ -1,0 +1,39 @@
+diff --git a/README.md b/README.md
+index 4931cca..8279177 100644
+--- a/README.md
++++ b/README.md
+@@ -16,7 +16,8 @@ The server listens on `http://127.0.0.1:8071` (override with `LEDGER_PORT`) and
+ | `GET /accounts/<id>` | | `{"id", "name", "balance"}` or 404 |
+ | `POST /accounts/<id>/transactions` | `{"amount": 25, "memo": "salary"}`; a negative amount withdraws | `201 {"id": <transaction id>, "balance": <new balance>}` |
+ | `POST /transfers` | `{"from": 1, "to": 2, "amount": 10}` | `201 {"id": <transfer id>}`, or `409 {"error": "insufficient funds"}` |
+-| `GET /accounts/<id>/statement` | | `{"transactions": [{"id", "amount", "memo", "balance_after", "at"}, ...]}` newest first |
++| `GET /accounts` | | `{"accounts": [{"id", "name", "balance"}, ...]}` |
++| `GET /accounts/<id>/history` | | `{"transactions": [{"id", "amount", "memo", "balance_after", "at"}, ...]}` newest first (was `/statement`) |
+ 
+ Amounts are integers in cents. See [REQUIREMENTS.md](REQUIREMENTS.md) for the intended behavior.
+ 
+diff --git a/ledger/server.py b/ledger/server.py
+index 72602f7..1d64d6e 100644
+--- a/ledger/server.py
++++ b/ledger/server.py
+@@ -13,7 +13,8 @@ ROUTES = [
+     ("GET", re.compile(r"^/accounts/(\d+)$"), "get_account"),
+     ("POST", re.compile(r"^/accounts/(\d+)/transactions$"), "post_transaction"),
+     ("POST", re.compile(r"^/transfers$"), "transfer"),
+-    ("GET", re.compile(r"^/accounts/(\d+)/statement$"), "statement"),
++    ("GET", re.compile(r"^/accounts/(\d+)/history$"), "statement"),
++    ("GET", re.compile(r"^/accounts$"), "list_accounts"),
+     ("GET", re.compile(r"^/health$"), "health"),
+ ]
+ 
+@@ -74,6 +75,10 @@ class Handler(BaseHTTPRequestHandler):
+             return self.reply(400, {"error": "amount must be positive"})
+         self.reply(201, store.transfer(self.server.db, int(payload["from"]), int(payload["to"]), amount))
+ 
++    def list_accounts(self):
++        rows = self.server.db.execute("SELECT id, name, balance FROM accounts ORDER BY id").fetchall()
++        self.reply(200, {"accounts": [dict(row) for row in rows]})
++
+     def statement(self, account_id):
+         self.reply(200, store.statement(self.server.db, account_id))
+ 

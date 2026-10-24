@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: setup-vault-blocked
+expected_outcome: |
+  Setup stops as incomplete: the service needs VAULT_TOKEN from the ops password manager, which the developer cannot provide. The harness records that blocker and the next action, invents no token, starts nothing, and commits nothing.
+context:
+  scaffold_script: scaffold.sh

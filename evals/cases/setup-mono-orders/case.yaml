@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: setup-mono-orders
+expected_outcome: |
+  A ready harness under apps/orders's own skills directory, so the project root is the app folder, not the repo root; its repos list covers orders and the mailer code the orders flow depends on; the doctor is proven; nothing is committed and the mailer is never run.
+context:
+  scaffold_script: scaffold.sh

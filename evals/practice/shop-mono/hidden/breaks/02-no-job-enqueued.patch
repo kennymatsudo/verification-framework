@@ -1,0 +1,12 @@
+diff --git a/apps/orders/orders/server.py b/apps/orders/orders/server.py
+index 801028e..8a335a7 100644
+--- a/apps/orders/orders/server.py
++++ b/apps/orders/orders/server.py
+@@ -59,7 +59,6 @@ class Handler(BaseHTTPRequestHandler):
+         total = sum(PRICES[i["sku"]] * i["qty"] for i in items)
+         cur = self.server.db.execute("INSERT INTO orders (email, items, total_cents, at) VALUES (?, ?, ?, ?)", (email, json.dumps(items), total, time.time()))
+         order_id = cur.lastrowid
+-        enqueue(self.server.outbox, {"kind": "order-confirmation", "order_id": order_id, "email": email, "total_cents": total, "status": "pending"})
+         self.reply(201, {"id": order_id, "total_cents": total})
+ 
+ 

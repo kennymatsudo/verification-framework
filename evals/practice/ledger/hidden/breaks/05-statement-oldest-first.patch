@@ -1,0 +1,13 @@
+diff --git a/ledger/store.py b/ledger/store.py
+index a62b204..0d88749 100644
+--- a/ledger/store.py
++++ b/ledger/store.py
+@@ -108,7 +108,7 @@ def transfer(conn, from_id, to_id, amount):
+ def statement(conn, account_id):
+     account(conn, account_id)
+     rows = conn.execute(
+-        "SELECT id, amount, memo, balance_after, at FROM transactions WHERE account_id = ? ORDER BY id DESC",
++        "SELECT id, amount, memo, balance_after, at FROM transactions WHERE account_id = ? ORDER BY id ASC",
+         (account_id,),
+     ).fetchall()
+     return {"transactions": [dict(row) for row in rows]}

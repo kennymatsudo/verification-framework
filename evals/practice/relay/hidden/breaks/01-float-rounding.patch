@@ -1,0 +1,13 @@
+diff --git a/relay/cli.py b/relay/cli.py
+index 327a15a..72424b7 100644
+--- a/relay/cli.py
++++ b/relay/cli.py
+@@ -20,7 +20,7 @@ def to_cents(text, line):
+         raise Malformed(f"line {line}: bad amount {text!r}") from None
+     if value != value.quantize(Decimal("0.01")):
+         raise Malformed(f"line {line}: amount {text!r} has more than two decimals")
+-    return int(value * 100)
++    return int(float(text) * 100)
+ 
+ 
+ def convert(source):

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kiosk</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 40rem; }
+    section { margin-bottom: 1.5rem; }
+    li { display: flex; justify-content: space-between; padding: .4rem 0; border-bottom: 1px solid #ddd; }
+    button { cursor: pointer; }
+    #message { color: #a00; min-height: 1.2em; }
+    #confirmation { color: #060; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Order here</h1>
+  <section>
+    <h2>Menu</h2>
+    <ul id="menu" aria-label="menu"></ul>
+  </section>
+  <section>
+    <h2>Your order</h2>
+    <ul id="cart" aria-label="cart"></ul>
+    <p>Total: <strong id="total" data-cents="0">$0.00</strong></p>
+    <p id="message" role="alert"></p>
+    <button id="place" type="button">Place order</button>
+    <p id="confirmation" aria-live="polite"></p>
+  </section>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+diff --git a/public/app.js b/public/app.js
+index f36e596..e274300 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -66,7 +66,7 @@ async function placeOrder() {
+     message.textContent = result.error || "Something went wrong";
+     return;
+   }
+-  confirmation.textContent = `Order #${result.number} placed. Total ${dollars(result.total_cents)}.`;
++  confirmation.textContent = `Order #${result.number + 1} placed. Total ${dollars(result.total_cents)}.`;
+   confirmation.dataset.number = String(result.number);
+   cart.clear();
+   renderCart();

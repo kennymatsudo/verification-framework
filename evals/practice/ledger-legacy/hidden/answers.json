@@ -1,0 +1,16 @@
+{
+  "persona": "You lead the ledger team and inherited the qa/ scripts. Terse.",
+  "facts": [
+    "REQUIREMENTS.md is the source of truth; LR-4 says overdrafts are refused with 409, whatever the code does today.",
+    "The agent may start and stop the app itself.",
+    "Never commit, push, or edit the qa/ scripts; report findings and the fixes you would make.",
+    "Audit every script under qa/checks and COVERAGE.md."
+  ],
+  "rules": [
+    {"pattern": "commit|push|edit|fix|change the", "answer": "Don't change anything. Report the findings and the fix you'd make for each."},
+    {"pattern": "start|launch|running", "answer": "Yes, start and stop the app yourself."},
+    {"pattern": "which|scope|all of|every", "answer": "Every script under qa/checks and COVERAGE.md."},
+    {"pattern": "proceed|go ahead|approve|ok\\b|okay|shall I|continue|run|plan", "answer": "Yes, go ahead."}
+  ],
+  "default": "Go ahead. Don't change anything; just report what you find."
+}

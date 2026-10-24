@@ -1,0 +1,12 @@
+diff --git a/ledger/store.py b/ledger/store.py
+index a62b204..3c236c4 100644
+--- a/ledger/store.py
++++ b/ledger/store.py
+@@ -93,7 +93,6 @@ def transfer(conn, from_id, to_id, amount):
+         conn.execute("UPDATE accounts SET balance = balance - ? WHERE id = ?", (amount, from_id))
+         conn.execute("INSERT INTO transactions (account_id, amount, memo, balance_after, at) VALUES (?, ?, ?, ?, ?)",
+                      (from_id, -amount, f"transfer to {to_id}", source["balance"] - amount, now))
+-        conn.execute("UPDATE accounts SET balance = balance + ? WHERE id = ?", (amount, to_id))
+         conn.execute("INSERT INTO transactions (account_id, amount, memo, balance_after, at) VALUES (?, ?, ?, ?, ?)",
+                      (to_id, amount, f"transfer from {from_id}", target["balance"] + amount, now))
+         cur = conn.execute("INSERT INTO transfers (from_account, to_account, amount, at) VALUES (?, ?, ?, ?)",
