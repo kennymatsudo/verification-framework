@@ -105,6 +105,21 @@ It scaffolds each case with `scaffold.sh`, runs the prompt once with and without
 
 A grader scores 0 to 1; most are pass or fail, `hidden_breaks_caught` and `report_names` are fractions. A case's score is the weighted mean; a case passes a run at 1.0. Compare `summary.md` across two results folders to see what a skill change moved.
 
+## Baseline
+
+The first smoke run on `claude-opus-5-5` (one run per case, 2026-10-24) scored 0.93 and cost $35:
+
+| Case | Score | Time | Cost | What failed |
+| --- | --- | --- | --- | --- |
+| add-checks-ledger | 1.00 | 657 s | $18.67 | nothing: all six hidden breaks caught, overdraft kept Failed |
+| audit-weak-ledger-legacy | 1.00 | 204 s | $1.25 | nothing |
+| setup-ledger | 1.00 | 212 s | $3.36 | nothing |
+| explain-ledger | 0.92 | 61 s | $0.27 | no reader subagents, although the harness has five check scripts and vf-explain says to spawn them past three |
+| setup-vault-blocked | 0.91 | 95 s | $1.13 | the options and "Then I'll ..." came after the `Needs you:` line instead of on it |
+| verify-ledger-change | 0.77 | 475 s | $10.68 | built a memo-filter check and edited `features/statement.md` despite "existing checks only", and asked five times, three of them to edit product code or the requirements |
+
+Three findings about the skills, not the suite: the ask is often not the last line (seen in vf, vf-verify, and across models); the verify mode built under an existing-checks-only request once the developer said "go ahead with your recommendation"; and vf-explain read the checks itself instead of spawning readers. The verify cases' developer now refuses new checks outright and the cases cap questions at three, so the next run measures the skill, not the sheet's leniency. Compare later runs against these numbers on the same model.
+
 ## Adding a practice repo or a case
 
 A practice repo needs: `repo/` with a README that says how to run it and a `REQUIREMENTS.md` with IDs, one item left open and, where it fits, one the code contradicts; `practice.json` (copy `ledger`'s); `hidden/answers.json` in the developer's voice, never revealing a break; `hidden/breaks/*.patch` made with `git diff` against `repo/`, one behavior each, each a bug a response could hide; `hidden/harness/` as a ready reference harness at zero coverage and `hidden/coverage/` with its checks, both following `rules.md`, so the fixture test proves the breaks are real and the harness is a worked example; and `tests/test_practice_<name>.py` (copy one). Keep it under 200 lines of app code and starting in a second.

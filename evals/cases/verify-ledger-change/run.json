@@ -40,6 +40,18 @@
     },
     {
       "name": "no_error_turns"
+    },
+    {
+      "name": "questions_at_most",
+      "n": 3
     }
-  ]
+  ],
+  "answers": {
+    "rules": [
+      {
+        "pattern": "build|add (a |the )?(new )?check|new check|memo|exact|substring|case matter",
+        "answer": "No new checks. Existing checks only, as I said; report the memo filter as a gap. And don't change the app's code or REQUIREMENTS.md."
+      }
+    ]
+  }
 }
