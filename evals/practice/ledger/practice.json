@@ -22,10 +22,7 @@
   "harness": ".claude/skills/verify-ledger",
   "requirements": "REQUIREMENTS.md",
   "app_code_patterns": [
-    "\\bfrom ledger\\b",
-    "\\bimport ledger\\b",
-    "ledger[./]store",
-    "ledger[./]server"
+    "(?m)^\\s*(from\\s+ledger(\\.\\w+)?\\s+import|import\\s+ledger\\b)"
   ],
   "behaviors": {
     "accounts.open": {

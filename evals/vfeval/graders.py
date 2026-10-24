@@ -124,6 +124,41 @@ def _harness_missing(ctx):
     return None if ctx.harness else Result(0, "no harness found (no verify-*/rules.md in the workspace)")
 
 
+def sub_feature_lines(harness):
+    """{id: text} for every sub-feature in the feature map, with the file's other lines that name the id appended."""
+    found = {}
+    for path in sorted((harness / "features").glob("*.md")) if (harness / "features").is_dir() else []:
+        if path.name == "README.md":
+            continue
+        text = path.read_text()
+        for line in text.splitlines():
+            if line.startswith("- ") and ":" in line and line[2:].split(":", 1)[0].strip().replace(".", "").replace("-", "").isalnum():
+                sub_id, rest = line[2:].split(":", 1)
+                found.setdefault(sub_id.strip(), []).append(rest.strip())
+        for sub_id in list(found):
+            found[sub_id] = " ".join(found[sub_id])
+    return found
+
+
+def resolve_ids(ctx, practice_id):
+    """The agent's sub-feature IDs that stand for a practice behavior: the same ID when the map has it, else the IDs whose
+    lines cite the behavior's requirement ID, else the ones sharing most of its words."""
+    if not ctx.harness:
+        return []
+    lines = sub_feature_lines(ctx.harness)
+    if practice_id in lines:
+        return [practice_id]
+    behavior = ctx.practice.get("behaviors", {}).get(practice_id, {})
+    requirement = behavior.get("requirement")
+    if requirement:
+        cited = [sub_id for sub_id, text in lines.items() if re.search(rf"\b{re.escape(requirement)}\b", text)]
+        if cited:
+            return cited
+    words = {w for w in re.findall(r"[a-z]{4,}", behavior.get("words", "").lower())}
+    scored = sorted(((len(words & set(re.findall(r"[a-z]{4,}", text.lower()))), sub_id) for sub_id, text in lines.items()), reverse=True)
+    return [sub_id for score, sub_id in scored if score >= max(2, len(words) // 2)][:2]
+
+
 @grader
 def harness_ready(ctx):
     """The harness validates and its setup status is ready."""
@@ -210,9 +245,10 @@ def status_verdict(ctx, expect):
     verdicts = ctx.verdicts()
     hits, notes = 0, []
     for sub_id, wanted in expect.items():
-        actual = verdicts.get(sub_id, ("missing", ""))[0]
-        hits += actual == wanted
-        notes.append(f"{sub_id}: {actual} (wanted {wanted})")
+        ids = resolve_ids(ctx, sub_id) or [sub_id]
+        actual = [verdicts.get(i, ("missing", ""))[0] for i in ids]
+        hits += wanted in actual
+        notes.append(f"{sub_id} -> {ids}: {actual} (wanted {wanted})")
     return Result(hits / max(1, len(expect)), "\n".join(notes))
 
 
@@ -268,10 +304,11 @@ def no_processes_left(ctx):
 
 @grader
 def hidden_breaks_caught(ctx, sub_features=None):
-    """Each hidden break, applied to the developer's checkout, makes its behavior's check report Failed.
+    """Each hidden break, applied to the developer's checkout, makes at least one of the agent's checks report Failed.
 
-    The agent never saw these breaks, so a caught break shows the check reads the real outcome; a missed one shows a
-    check that would pass on broken code. The score is the fraction caught.
+    The agent never saw these breaks, so a caught break shows the harness reads the real outcome; a missed one shows
+    checks that pass on broken code. Every mapped check runs, since the agent names its own sub-features and a bug in a
+    deposit also fails the transfer that funds an account. The score is the fraction caught.
     """
     if missing := _harness_missing(ctx):
         return missing
@@ -280,13 +317,13 @@ def hidden_breaks_caught(ctx, sub_features=None):
         return Result(0, "the practice repo declares no hidden breaks")
     repos = ctx.repos()
     ctx.stop_app()
+    all_ids = [sub_id for sub_id in sub_feature_lines(ctx.harness) if scaffold.proof_command(ctx.harness, sub_id)]
+    if not all_ids:
+        return Result(0, "the feature map has no sub-feature with a check command")
     notes, caught = [], 0
     for brk in breaks:
         sub_id = brk["sub_feature"]
-        command = scaffold.proof_command(ctx.harness, sub_id)
-        if not command:
-            notes.append(f"{sub_id}: MISSED, no check in the feature map")
-            continue
+        aimed = [i for i in resolve_ids(ctx, sub_id) if i in all_ids]
         repo = repos[brk.get("repo", next(iter(repos)))]
         patch = scaffold.hidden(ctx.practice, brk["patch"])
         if scaffold.git(repo, "apply", str(patch), check=False) is None or scaffold.git(repo, "status", "--porcelain", check=False) == "":
@@ -297,13 +334,15 @@ def hidden_breaks_caught(ctx, sub_features=None):
             if not started:
                 notes.append(f"{sub_id}: Start failed with the break applied: {output[-200:]}")
                 continue
-            code, output = ctx.run_vf("verify", sub_id, timeout=240)
-            verdict = ctx.verdicts(output).get(sub_id, ("no line", ""))
-            if verdict[0] == "Failed":
+            code, output = ctx.run_vf("verify", *all_ids, timeout=600)
+            verdicts = ctx.verdicts(output)
+            failed = [i for i, (verdict, _) in verdicts.items() if verdict == "Failed"]
+            if failed:
                 caught += 1
-                notes.append(f"{sub_id}: CAUGHT ({brk['what']})")
+                where = "its own check" if any(i in aimed for i in failed) else "another check"
+                notes.append(f"{sub_id}: CAUGHT by {where} {failed} ({brk['what']})")
             else:
-                notes.append(f"{sub_id}: MISSED, verify said {verdict[0]} {verdict[1][:160]} ({brk['what']})")
+                notes.append(f"{sub_id}: MISSED, every check still passed or stopped: {[(i, v[0]) for i, v in verdicts.items()][:6]} ({brk['what']})")
         finally:
             ctx.stop_app()
             scaffold.git(repo, "apply", "-R", str(patch), check=False)
@@ -443,7 +482,8 @@ def not_verified_reason(ctx, sub_feature, pattern):
     if missing := _harness_missing(ctx):
         return missing
     ledger = ctx.harness / "evidence" / "not-verified.jsonl"
-    lines = [line for line in ledger.read_text().splitlines() if sub_feature in line] if ledger.is_file() else []
+    ids = resolve_ids(ctx, sub_feature) or [sub_feature]
+    lines = [line for line in ledger.read_text().splitlines() if any(i in line for i in ids)] if ledger.is_file() else []
     hit = any(re.search(pattern, line, re.IGNORECASE) for line in lines)
     return Result(hit, f"records for {sub_feature}: {lines[-2:] or 'none'}")
 

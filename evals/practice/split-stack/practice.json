@@ -1,26 +1,70 @@
 {
   "name": "split-stack",
   "summary": "Two repos checked out side by side: a Go API and the Python command-line client that drives it. The harness lives in the client repo and finds the API checkout through an env: locator; the API is compiled, so its doctor stamps the build with the code it came from.",
-  "setup": {"language": "go and python", "shape": "two repos, one harness", "surface": "command line over an HTTP API", "start": "agent", "reload": "rebuild and restart"},
-  "requires": ["python3", "go", "curl"],
-  "ports": [8075],
-  "repos": {"web": "web", "api": "api"},
-  "git_repos": ["api", "web"],
+  "setup": {
+    "language": "go and python",
+    "shape": "two repos, one harness",
+    "surface": "command line over an HTTP API",
+    "start": "agent",
+    "reload": "rebuild and restart"
+  },
+  "requires": [
+    "python3",
+    "go",
+    "curl"
+  ],
+  "ports": [
+    8075
+  ],
+  "repos": {
+    "web": "web",
+    "api": "api"
+  },
+  "git_repos": [
+    "api",
+    "web"
+  ],
   "project_root": "web",
   "harness": ".claude/skills/verify-stock",
   "requirements": "web/REQUIREMENTS.md",
-  "app_code_patterns": ["\\bfrom stock\\b", "\\bimport stock\\b"],
+  "app_code_patterns": [
+    "(?m)^\\s*(from\\s+stock(\\.\\w+)?\\s+import|import\\s+stock\\b)"
+  ],
   "behaviors": {
-    "items.add": {"requirement": "ST-1", "words": "adding stores the exact name and quantity"},
-    "items.list": {"requirement": "ST-2", "words": "listing shows every stored item"},
-    "items.reject-negative": {"requirement": "ST-3", "words": "a negative quantity is refused"}
+    "items.add": {
+      "requirement": "ST-1",
+      "words": "adding stores the exact name and quantity"
+    },
+    "items.list": {
+      "requirement": "ST-2",
+      "words": "listing shows every stored item"
+    },
+    "items.reject-negative": {
+      "requirement": "ST-3",
+      "words": "a negative quantity is refused"
+    }
   },
   "open_questions": [],
   "known_bugs": {},
   "breaks": [
-    {"patch": "breaks/01-add-stores-zero-qty.patch", "sub_feature": "items.add", "repo": "api", "what": "the API stores every added item with quantity zero"},
-    {"patch": "breaks/02-list-drops-last-item.patch", "sub_feature": "items.list", "repo": "api", "what": "the API leaves the last item out of the listing"},
-    {"patch": "breaks/03-negative-qty-accepted.patch", "sub_feature": "items.reject-negative", "repo": "api", "what": "the API accepts a negative quantity"}
+    {
+      "patch": "breaks/01-add-stores-zero-qty.patch",
+      "sub_feature": "items.add",
+      "repo": "api",
+      "what": "the API stores every added item with quantity zero"
+    },
+    {
+      "patch": "breaks/02-list-drops-last-item.patch",
+      "sub_feature": "items.list",
+      "repo": "api",
+      "what": "the API leaves the last item out of the listing"
+    },
+    {
+      "patch": "breaks/03-negative-qty-accepted.patch",
+      "sub_feature": "items.reject-negative",
+      "repo": "api",
+      "what": "the API accepts a negative quantity"
+    }
   ],
   "changes": {
     "normalize-names": {
@@ -29,7 +73,9 @@
       "branch": "feature/normalize-names",
       "message": "Trim whitespace around item names",
       "claims": "Trims whitespace around item names on add so ' Widget' and 'Widget' are the same item. No other behavior change.",
-      "breaks": ["items.add"]
+      "breaks": [
+        "items.add"
+      ]
     }
   }
 }
