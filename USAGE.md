@@ -204,7 +204,7 @@ Don't edit `rules.md` or anything in `scripts/framework/`. They're identical in 
 
 ## Add checks for a feature
 
-vf-verify's add-checks mode builds the checks that test a behavior and calibrates each one. Name what you want, such as "add checks for checkout". The agent previews first: the behaviors in plain words, how it will use the app, what it will read back, what it won't prove, and the requirements that set the expected behavior. The agreed plan is saved in the feature's file.
+vf-verify's add-checks mode builds the checks that test a behavior and calibrates each one. Name what you want, such as "add checks for checkout". The agent previews first: the behaviors in plain words, how it will use the app, what it will read back, what it won't prove, and the requirements that set the expected behavior. The agreed plan is saved in the feature's file, with each source named so it can be reopened and the revision it was read at. Before a later run on that plan, the agent reopens the sources and asks you when one has changed; a source it has no tool to open is reported as unread.
 
 Ask "what should we add next?" for three to five suggestions, with one recommended. It builds nothing until you pick.
 
@@ -252,10 +252,10 @@ Use the app's verify skill, such as `verify-storefront`, to verify a change or a
 - "Use verify-storefront to verify my saved-card change."
 - "Use verify-storefront to verify every checkout behavior."
 
-With no change named, it lists what the harness can check, marks the behaviors your current changes touch, and waits for you to pick.
+With no change named, it lists what the harness can check, marks the behaviors your current changes touch and the ones whose last pass is behind your checkout's current commit, since code merged in the meantime may have changed them, and waits for you to pick. It tells you when your checkout is behind its remote branch, and leaves the pull to you.
 
 1. It runs `vf.py validate` and stops if the rules copy was edited or setup is unfinished.
-2. It traces your change through the code to find every behavior it could affect, and shows the preview.
+2. It traces your change through the code to find every behavior it could affect, and shows the preview. For a behavior whose last pass is behind, the change it traces is the commits merged since. Merged code tells it where to look, never what the behavior should be.
 3. For a behavior with no check, it builds one within the scope you agreed to. If you asked for existing checks only, the gap is reported instead.
 4. It runs each check through `vf.py verify`, which runs the doctor first and tests only an app that's ready and running your requested version. If the app is running other code, it stops and says so rather than restarting an app it didn't start.
 5. It confirms each check tests the agreed behavior. It never swaps in a different route to the same result, and never treats a failing check as a missing one.
@@ -282,7 +282,7 @@ A bench drifts from the app over time: features change, checks get edited, and a
 
 ### Find what has no check
 
-"Does this harness cover the app as it is today?" One agent per feature reads the app's code to find where the feature files no longer match it. Then every check runs on the real app, and any check whose code changed is recalibrated with its planned break. A wrong feature file gets fixed. A tool that can't test working behavior gets fixed and rerun. A bug in the app is reported with its record. The audit ends as clean, changed, or blocked.
+"Does this harness cover the app as it is today?" One agent per feature reads the app's code, starting from the commits merged since that feature's last pass, to find where the feature files no longer match it. Then every check runs on the real app, and any check whose code changed is recalibrated with its planned break. A wrong feature file gets fixed. A tool that can't test working behavior gets fixed and rerun. A bug in the app is reported with its record. The audit ends as clean, changed, or blocked.
 
 ### Find checks that cannot fail
 

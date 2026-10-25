@@ -26,7 +26,7 @@ Done when `vf.py validate` exits 0 and you have a list of stale sub-features, or
 
 ## 3. Read the source
 
-Spawn one read-only subagent per feature file, in parallel, on a mid-tier model, with the prompt in `references/reader-prompt.md`. Readers never run the app and never edit.
+Spawn one read-only subagent per feature file, in parallel, on a mid-tier model, with the prompt in `references/reader-prompt.md`. Give each reader the commit range from its sub-features' oldest last pass to HEAD in every repo, from step 2's warnings, or say no pass is recorded, so it opens from what merged since the harness last saw this feature. Readers never run the app and never edit.
 
 Done when every feature file has a returned report.
 
