@@ -9,12 +9,12 @@
   ],
   "rules": [
     {
-      "pattern": "fix|restore|repair|revert|patch (the|it|ledger|server|store|app)|edit (the )?(code|ledger|server|store|app|product)|change (the )?(code|ledger|server|store|app)|should I (change|edit|modify|update) .*(code|\\.py|\\.js|\\.go)|while keeping",
-      "answer": "No. Don't change the app's code in my checkout; that's my job. Report what failed and what you'd change, then stop."
-    },
-    {
       "pattern": "commit|push|pull request|PR\\b",
       "answer": "Don't commit or push anything in either repo. I'll review and commit myself."
+    },
+    {
+      "pattern": "fix|restore|repair|revert|patch (the|it|ledger|server|store|app)|edit (the )?(code|ledger|server|store|app|product)|change (the )?(code|ledger|server|store|app)|should I (change|edit|modify|update) .*(code|\\.py|\\.js|\\.go)|while keeping",
+      "answer": "No. Don't change the app's code in my checkout; that's my job. Report what failed and what you'd change, then stop."
     },
     {
       "pattern": "AGENTS\\.md|CLAUDE\\.md|instruction file|pointer|link the guide",

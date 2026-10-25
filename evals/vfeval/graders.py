@@ -94,6 +94,29 @@ class Context:
                 verdicts[match.group(1)] = (match.group(2), match.group(3).strip())
         return verdicts
 
+    def worktree_status_texts(self):
+        """status.md of the same harness in every other worktree of the project repo (verify-pr works in one)."""
+        texts = []
+        if not self.harness:
+            return texts
+        rel = self.harness.relative_to(self.project_root)
+        listing = scaffold.git(self.project_root, "worktree", "list", "--porcelain", check=False) or ""
+        for line in listing.splitlines():
+            if line.startswith("worktree "):
+                path = Path(line.split(" ", 1)[1]) / rel / "status.md"
+                if path.is_file() and path.resolve() != (self.harness / "status.md").resolve():
+                    texts.append(path.read_text())
+        return texts
+
+    def written_text(self):
+        """Everything the agent wrote with the file tools, for a draft kept in a file rather than in the reply."""
+        parts = []
+        for turn in self.turns:
+            for use in turn["tool_uses"]:
+                if use["name"] in ("Write", "Edit"):
+                    parts.append(str(use["input"].get("content") or use["input"].get("new_string") or ""))
+        return "\n".join(parts)
+
     def repos(self):
         return scaffold.repos_of(self.practice, self.workspace)
 
@@ -239,17 +262,22 @@ def validate_passes(ctx, args=""):
 
 
 @grader
-def status_verdict(ctx, expect):
-    """Each named behavior has the expected verdict in status.md: {id: Verified|Failed|Not verified}."""
+def status_verdict(ctx, expect, in_worktrees=False):
+    """Each named behavior has the expected verdict in status.md: {id: Verified|Failed|Not verified}.
+
+    With in_worktrees, a status.md of the same harness in another worktree of the repo counts too, since verify-pr
+    runs the checks in a worktree and leaves the evidence there for the developer to commit."""
     if missing := _harness_missing(ctx):
         return missing
     verdicts = ctx.verdicts()
+    elsewhere = [ctx.verdicts(text) for text in ctx.worktree_status_texts()] if in_worktrees else []
     hits, notes = 0, []
     for sub_id, wanted in expect.items():
         ids = resolve_ids(ctx, sub_id) or [sub_id]
         actual = [verdicts.get(i, ("missing", ""))[0] for i in ids]
-        hits += wanted in actual
-        notes.append(f"{sub_id} -> {ids}: {actual} (wanted {wanted})")
+        other = [v.get(i, ("missing", ""))[0] for v in elsewhere for i in ids]
+        hits += wanted in actual or wanted in other
+        notes.append(f"{sub_id} -> {ids}: {actual}" + (f" (in worktrees: {other})" if other else "") + f" (wanted {wanted})")
     return Result(hits / max(1, len(expect)), "\n".join(notes))
 
 
@@ -267,8 +295,10 @@ def no_new_commits(ctx):
 
 
 @grader
-def product_code_clean(ctx):
-    """The developer's checkout has no edits outside the skills directories, and no worktree was left behind."""
+def product_code_clean(ctx, allow_worktrees=False):
+    """The developer's checkout has no edits outside the skills directories, and no worktree was left behind.
+
+    allow_worktrees is for verify-pr, which keeps its worktree with the uncommitted evidence for the developer."""
     notes, clean = [], True
     for name, repo in ctx.repos().items():
         changed = [line for line in scaffold.git(repo, "status", "--porcelain", "--untracked-files=all", check=False).splitlines()
@@ -277,9 +307,11 @@ def product_code_clean(ctx):
         if changed:
             clean = False
             notes.append(f"{name}: edited outside the harness: {changed[:8]}")
-        if len(worktrees) > 1:
+        if len(worktrees) > 1 and not allow_worktrees:
             clean = False
             notes.append(f"{name}: {len(worktrees) - 1} worktree(s) left behind")
+        elif len(worktrees) > 1:
+            notes.append(f"{name}: {len(worktrees) - 1} worktree(s) kept, allowed here")
     return Result(clean, "\n".join(notes) or "clean")
 
 
@@ -496,6 +528,9 @@ def harness_unchanged(ctx):
 
 
 def _texts(ctx, scope):
+    """final: the last reply; all: every reply; any: every reply and every file the agent wrote (a draft comment)."""
+    if scope == "any":
+        return ctx.all_agent_text() + "\n" + ctx.written_text()
     return ctx.all_agent_text() if scope == "all" else ctx.final_text()
 
 

@@ -148,6 +148,23 @@ One rule was changed rather than enforced: vf-explain said to spawn a reader per
 
 What the second run says about the skill fixes: the ask placement held in every asking message across twelve runs; the verify mode built nothing under existing-checks-only in both runs and asked once instead of five times; and the existing-checks-only refusal in the developer's answers was never needed, since the agent did not propose building.
 
+### Third run, after merging main
+
+After `origin/main` was merged in (its source-revision tracking and behind-HEAD marking now in the skills), the smoke tier once more and the last two cases (2026-10-25, Opus 5.5, $43 in all):
+
+| Case | Score | Cost | Notes |
+| --- | --- | --- | --- |
+| add-checks-ledger | 0.94 | $33.34 | all six hidden breaks caught; failed only `questions_at_most`: it asked "should I commit the new checks?" eight times because the developer's sheet answered each with the overdraft rule, which matched first; the commit rule now comes first in every sheet |
+| audit-weak-ledger-legacy | 1.00 | $0.85 | |
+| explain-ledger | 1.00 | $0.26 | |
+| setup-ledger | 1.00 | $2.43 | |
+| setup-vault-blocked | 1.00 | $1.29 | |
+| verify-ledger-change | 1.00 | $1.00 | |
+| audit-coverage-ledger-drift | 1.00 | $1.26 | first run: the renamed route reported as drift, the new listing as a gap |
+| verify-pr-ledger | 1.00 | $2.19 | first run; graded 0.61 at first, see below |
+
+The verify-pr run did the job well and the graders did not know its workflow: verify-pr runs the checks in a worktree of the harness repo and leaves the evidence there, uncommitted, for the developer, and it put the drafted review comment in a file rather than in the reply. Three graders learned that: `status_verdict` can read the harness's `status.md` in the repo's other worktrees (`in_worktrees`), `report_names` can read files the agent wrote (`scope: any`), and `product_code_clean` can allow kept worktrees (`allow_worktrees`). The draft itself named the order regression, the base build it passed on, and the known LEDGER-41 failure as tracked elsewhere.
+
 ## Adding a practice repo or a case
 
 A practice repo needs: `repo/` with a README that says how to run it and a `REQUIREMENTS.md` with IDs, one item left open and, where it fits, one the code contradicts; `practice.json` (copy `ledger`'s); `hidden/answers.json` in the developer's voice, never revealing a break; `hidden/breaks/*.patch` made with `git diff` against `repo/`, one behavior each, each a bug a response could hide; `hidden/harness/` as a ready reference harness at zero coverage and `hidden/coverage/` with its checks, both following `rules.md`, so the fixture test proves the breaks are real and the harness is a worked example; and `tests/test_practice_<name>.py` (copy one). Keep it under 200 lines of app code and starting in a second.

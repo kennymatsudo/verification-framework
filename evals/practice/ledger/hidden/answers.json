@@ -11,6 +11,10 @@
   ],
   "rules": [
     {
+      "pattern": "commit|push|pull request|PR\\b",
+      "answer": "Don't commit or push anything. I'll review and commit myself."
+    },
+    {
       "pattern": "daily|limit|LR-7",
       "answer": "The daily transfer limit isn't decided yet. Leave it out and don't build a check for it."
     },
@@ -21,10 +25,6 @@
     {
       "pattern": "fix|restore|repair|revert|patch (the|it|ledger|server|store|app)|edit (the )?(code|ledger|server|store|app|product)|change (the )?(code|ledger|server|store|app)|should I (change|edit|modify|update) .*(code|\\.py|\\.js|\\.go)|while keeping",
       "answer": "No. Don't change the app's code in my checkout; that's my job. Report what failed and what you'd change, then stop."
-    },
-    {
-      "pattern": "commit|push|pull request|PR\\b",
-      "answer": "Don't commit or push anything. I'll review and commit myself."
     },
     {
       "pattern": "AGENTS\\.md|CLAUDE\\.md|instruction file|pointer|link the guide",
