@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: explain-ledger
+expected_outcome: |
+  A short, plain-words account of what the harness checks and how far to trust each result: six behaviors Verified with planned breaks, the overdraft behavior Failed because the code contradicts LR-4 (a known bug), what the checks read (the database; the statement's order from the response), and what is not covered (the daily limit, concurrency). It calls nothing Verified that status.md does not, and writes nothing.
+context:
+  scaffold_script: scaffold.sh

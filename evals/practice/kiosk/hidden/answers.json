@@ -1,0 +1,46 @@
+{
+  "persona": "You run the cafe and own the kiosk code. Busy and terse; you answer only from the facts below.",
+  "facts": [
+    "REQUIREMENTS.md is the source of truth; the menu and prices in KR-1 are fixed by design.",
+    "Sales tax (KR-6) is not decided; leave it out and build no check for it.",
+    "The agent may start and stop the server itself; Playwright with Chromium is installed for browser checks.",
+    "Never commit or push; the owner reviews and commits. Do not edit project files outside the harness folder.",
+    "When asked which behaviors to cover: all of REQUIREMENTS.md except the tax line.",
+    "Never change the app's code in the developer's checkout; a fix is the developer's job. Report what failed instead."
+  ],
+  "rules": [
+    {
+      "pattern": "commit|push|pull request|PR\\b",
+      "answer": "Don't commit or push anything. I'll review and commit myself."
+    },
+    {
+      "pattern": "tax|KR-6",
+      "answer": "Tax isn't decided yet. Leave it out and don't build a check for it."
+    },
+    {
+      "pattern": "fix|restore|repair|revert|patch (the|it|ledger|server|store|app)|edit (the )?(code|ledger|server|store|app|product)|change (the )?(code|ledger|server|store|app)|should I (change|edit|modify|update) .*(code|\\.py|\\.js|\\.go)|while keeping",
+      "answer": "No. Don't change the app's code in my checkout; that's my job. Report what failed and what you'd change, then stop."
+    },
+    {
+      "pattern": "AGENTS\\.md|CLAUDE\\.md|instruction file|pointer|link the guide",
+      "answer": "Don't edit the project's instruction files. Show me the pointer and I'll add it."
+    },
+    {
+      "pattern": "playwright|browser|chromium|install",
+      "answer": "Playwright with Chromium is already installed; use it. Don't install anything."
+    },
+    {
+      "pattern": "start|launch|running",
+      "answer": "Yes, start and stop the server yourself."
+    },
+    {
+      "pattern": "which|scope|what should|cover",
+      "answer": "All the behaviors in REQUIREMENTS.md except the tax line."
+    },
+    {
+      "pattern": "proceed|go ahead|build|approve|ok\\b|okay|shall I|continue|run the checks|plan",
+      "answer": "Yes, go ahead."
+    }
+  ],
+  "default": "Go ahead with your recommendation. REQUIREMENTS.md is the source of truth. Don't change the app's code or commit anything and don't edit project files outside the harness folder."
+}

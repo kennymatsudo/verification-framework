@@ -55,6 +55,25 @@ def make_project(directory, point="`echo {checkout} > pointed.txt`", after_edit=
     return project, harness
 
 
+def make_monorepo(directory):
+    """A monorepo whose harness sits in orders/ and lists orders and its neighbour mailer, both in one Git checkout."""
+    root = Path(directory) / "monorepo"
+    for folder in ("orders", "mailer"):
+        (root / folder).mkdir(parents=True)
+        (root / folder / "app.txt").write_text("first\n")
+    git(root, "init", "-q", "-b", "main")
+    (root / ".gitignore").write_text("pointed.txt\n")
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "first")
+    harness = root / "orders" / ".agents" / "skills" / "verify-orders"
+    harness.mkdir(parents=True)
+    (harness / "settings.md").write_text(
+        "# Orders verification settings\n\n## Repos\n\n- orders: .\n- mailer: ../mailer\n\n## Commands\n\n"
+        "- Start: make dev\n- Run scratch code: `echo {checkout} > pointed.txt`\n- After an edit: reloads\n"
+    )
+    return root, harness
+
+
 def run(harness, *args):
     output, errors = io.StringIO(), io.StringIO()
     with patch.object(sys, "argv", [str(SCRIPT), "--harness", str(harness), *args]), \
@@ -329,6 +348,48 @@ sys.exit(0 if record["passed"] else 1)
             self.assertEqual(result, 0, errors)
             self.assertEqual((project / "local.env").read_text().strip(), f"SERVICE_DIR={service.resolve()}")
             self.assertFalse(scratch.exists())
+
+    def test_one_session_serves_every_repo_in_a_shared_checkout(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
+            root, harness = make_monorepo(directory)
+            orders, mailer = root / "orders", root / "mailer"
+            (mailer / "app.txt").write_text("the mailer's own edit\n")
+            mailer_state = code_state.checkout_state(mailer, harness)
+
+            self.assertEqual(run(harness, "start", "orders")[0], 0)
+            cleanup.callback(run, harness, "end", "orders")
+            scratch = Path((orders / "pointed.txt").read_text().strip())
+
+            # A start, run, or end on the other repo names the repo whose session is open.
+            for action in (("start", "mailer"), ("run", "mailer", "mailer.send: skipped", "--", sys.executable, "-c", "pass"),
+                           ("end", "mailer")):
+                with self.subTest(action=action):
+                    result, _, errors = run(harness, *action)
+                    self.assertEqual(result, 1)
+                    self.assertIn("open for orders", errors)
+                    self.assertIn("vf.py break end orders", errors)
+            # Ordinary recording stays refused for both repos.
+            for name, locator in (("orders", "."), ("mailer", "../mailer")):
+                with self.subTest(repo=name), patch.dict(os.environ):
+                    os.environ.pop("VERIFY_PLANNED_BREAK", None)
+                    os.environ.pop("VERIFY_BREAK_SESSION", None)
+                    with self.assertRaisesRegex(code_state.StateError, "break end orders"):
+                        code_state.recorded_checkout(name, locator, None, orders, harness)
+            # A break run names the repo the session was started for and records each repo from its folder in the copy.
+            self.assertEqual(code_state.break_session_repo(harness), "orders")
+            planned = ordinary_state(harness, {"VERIFY_PLANNED_BREAK": "orders.pay: skipped"})
+            self.assertEqual(planned["orders"], code_state.checkout_state(scratch, harness))
+            self.assertEqual(planned["mailer"]["dirty_hash"], mailer_state["dirty_hash"])
+            status = run(harness, "status")[1]
+            self.assertIn(f"orders: break session open on {scratch}", status)
+            self.assertIn(f"mailer: break session for orders open on {scratch}", status)
+
+            self.assertEqual(run(harness, "end", "orders")[0], 0)
+            self.assertIsNone(code_state.open_session(mailer))
+            self.assertEqual(run(harness, "start", "mailer")[0], 0)
+            cleanup.callback(run, harness, "end", "mailer")
+            self.assertEqual(code_state.break_session_repo(harness), "mailer")
+            self.assertEqual(run(harness, "end", "mailer")[0], 0)
 
     def test_start_stops_when_the_app_cannot_run_scratch_code(self):
         with tempfile.TemporaryDirectory() as directory:

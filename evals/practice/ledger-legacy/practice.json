@@ -1,0 +1,54 @@
+{
+  "name": "ledger-legacy",
+  "base": "ledger",
+  "summary": "The ledger with a homegrown qa/ folder of smoke checks the team wrote before this framework. Four of the five checks can pass on broken code in ways the weak-checks rubric names; one is sound. No framework harness exists.",
+  "setup": {
+    "language": "python",
+    "shape": "single repo with a foreign harness",
+    "surface": "HTTP API",
+    "start": "agent",
+    "reload": "restart"
+  },
+  "requires": [
+    "python3",
+    "curl"
+  ],
+  "ports": [
+    8071
+  ],
+  "repos": {
+    "ledger": "."
+  },
+  "project_root": ".",
+  "harness": ".claude/skills/verify-ledger",
+  "requirements": "REQUIREMENTS.md",
+  "app_code_patterns": [
+    "(?m)^\\s*(from\\s+ledger(\\.\\w+)?\\s+import|import\\s+ledger\\b)"
+  ],
+  "behaviors": {},
+  "open_questions": [],
+  "known_bugs": {},
+  "breaks": [],
+  "changes": {},
+  "weak_checks": {
+    "check_create.py": "C1: judges the 201 status, never the stored row",
+    "check_transfer.py": "C6 and C4: a broad except returns PASS, and all() over no rows passes",
+    "check_statement.py": "C11 and C8: the expectation is read through ledger.store, and 'at least one' is accepted",
+    "check_overdraft.py": "C7: the expectation is taken from current behavior, not REQUIREMENTS.md LR-4",
+    "COVERAGE.md": "D3: rates every check strong with no recorded failure"
+  },
+  "sound_checks": [
+    "check_deposit.py"
+  ],
+  "fixture": {
+    "levels": [
+      "bare"
+    ],
+    "expect": [
+      {
+        "run": "python3 -c \"import ast,sys; [ast.parse(open(p).read()) for p in sys.argv[1:]]\" qa/lib.py qa/run_all.py qa/checks/check_create.py qa/checks/check_deposit.py qa/checks/check_transfer.py qa/checks/check_statement.py qa/checks/check_overdraft.py",
+        "exit": 0
+      }
+    ]
+  }
+}

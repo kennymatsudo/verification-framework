@@ -1,0 +1,16 @@
+diff --git a/relay/cli.py b/relay/cli.py
+index 327a15a..9ee07d3 100644
+--- a/relay/cli.py
++++ b/relay/cli.py
+@@ -29,7 +29,10 @@ def convert(source):
+         for number, record in enumerate(csv.DictReader(handle), start=2):
+             if record.get("name") is None or record.get("amount") is None:
+                 raise Malformed(f"line {number}: expected columns name,amount")
+-            rows.append({"name": record["name"].strip(), "amount_cents": to_cents(record["amount"], number)})
++            try:
++                rows.append({"name": record["name"].strip(), "amount_cents": to_cents(record["amount"], number)})
++            except Malformed:
++                continue
+     return {"rows": rows, "total_cents": sum(row["amount_cents"] for row in rows)}
+ 
+ 

@@ -1,0 +1,82 @@
+{
+  "name": "relay",
+  "summary": "A Python command-line tool with no server: every check runs the command itself on files it writes, and the harness points checks at a scratch checkout for planned breaks instead of restarting anything.",
+  "setup": {
+    "language": "python",
+    "shape": "single repo",
+    "surface": "command line",
+    "start": "none",
+    "reload": "none"
+  },
+  "requires": [
+    "python3"
+  ],
+  "ports": [],
+  "repos": {
+    "relay": "."
+  },
+  "project_root": ".",
+  "harness": ".claude/skills/verify-relay",
+  "requirements": "REQUIREMENTS.md",
+  "app_code_patterns": [
+    "(?m)^\\s*(from\\s+relay(\\.\\w+)?\\s+import|import\\s+relay\\b)"
+  ],
+  "behaviors": {
+    "convert.rows": {
+      "requirement": "CR-1",
+      "words": "rows convert to exact cents",
+      "match": "row|cents"
+    },
+    "convert.total": {
+      "requirement": "CR-2",
+      "words": "the total is the sum of the rows",
+      "match": "total"
+    },
+    "convert.reject-malformed": {
+      "requirement": "CR-3",
+      "words": "malformed input is rejected with no output",
+      "match": "malformed|bad amount|reject|exit (code )?2"
+    },
+    "convert.repeatable": {
+      "requirement": "CR-4",
+      "words": "converting again gives the same file",
+      "match": "again|twice|identical|repeat|replac"
+    }
+  },
+  "open_questions": [
+    {
+      "requirement": "CR-5",
+      "pattern": "currenc",
+      "about": "the undecided other currencies"
+    }
+  ],
+  "known_bugs": {},
+  "breaks": [
+    {
+      "patch": "breaks/01-float-rounding.patch",
+      "sub_feature": "convert.rows",
+      "what": "amounts go through a float and lose a cent"
+    },
+    {
+      "patch": "breaks/02-total-skips-last-row.patch",
+      "sub_feature": "convert.total",
+      "what": "the total leaves out the last row"
+    },
+    {
+      "patch": "breaks/03-malformed-row-skipped.patch",
+      "sub_feature": "convert.reject-malformed",
+      "what": "a malformed row is skipped silently and the file converts"
+    },
+    {
+      "patch": "breaks/04-partial-output-on-error.patch",
+      "sub_feature": "convert.reject-malformed",
+      "what": "an empty output file is written before the error"
+    },
+    {
+      "patch": "breaks/05-output-appended.patch",
+      "sub_feature": "convert.repeatable",
+      "what": "output is appended to an existing file instead of replacing it"
+    }
+  ],
+  "changes": {}
+}

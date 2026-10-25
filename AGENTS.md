@@ -61,7 +61,7 @@ Three things follow for every change, and each is a reason to say no to a featur
 ## Repo rules
 
 - One folder per skill: `skills/<name>/SKILL.md`, with `references/` for material only some branches read and `scripts/` for deterministic checks. The plugin auto-discovers skills, so no manifest edits.
-- Practice-repo runs (`dogfood/`, `docs/dogfood.md`) and pilot notes (`.local/pilots/`) stay local and gitignored. Tracked files never link to them; describe a finding from them in the tracked doc itself.
+- Practice-repo runs (`dogfood/`, `docs/dogfood.md`) and pilot notes (`.local/pilots/`) stay local and gitignored. Tracked files never link to them; describe a finding from them in the tracked doc itself. The eval suite's practice repos under `evals/practice/` are tracked fixtures, not dogfood; its results under `evals/results/` are gitignored.
 - Skills stand alone. No paths into other repos, the author's machine, or another skill collection's files.
 - Write for every agent (Claude Code, Codex, Cursor, and others): say "spawn a subagent", not a tool name, and name a model tier ("mid-tier"), not a model.
 - Name the kind of tool a skill needs (ticket tracker, chat, code host), never the product. Have the skill list the session's tools, match each by what it can search, and report a kind with no tool as unsearched, not empty.
@@ -94,7 +94,15 @@ Three things follow for every change, and each is a reason to say no to a featur
 - Exit codes: 0 means OK, 1 means it found a problem, 2 means it couldn't run.
 - Unit tests live in `tests/test_<script>.py`, not beside the script, so an install ships no tests. Each names its script's folder as `SCRIPTS`. Run everything with `python3 tests/run.py`, which runs each module in its own process so the suite takes as long as its slowest module; `python3 -m unittest discover -s tests` runs them one at a time.
 
+## Evaluating the skills
+
+- `evals/` runs the skills on small practice repos with a simulated developer and grades the outcome from the files left behind; `evals/README.md` says how. A change to a skill's procedure or wording runs at least the smoke tier (`python3 evals/run.py run --tag smoke`) before it merges, and a skill that gains a behavior gets a case that would fail without it.
+- Tier 0 is part of the unit tests: `tests/test_evals.py` and one `tests/test_practice_<name>.py` per practice repo prove the fixtures without an agent.
+- A practice repo stays under about 200 lines of app code and starts in a second; its `hidden/` folder (breaks, answers, the reference harness) is never copied into the agent's workspace, and its answer sheet never reveals a break. Graders judge files and transcripts, never the agent's own report where a file can answer.
+- The runner (`evals/vfeval/`) is Python 3 standard library only, like the framework scripts.
+
 ## Creating or changing a skill
 
 - **Validate.** Run `npx skills add . --list`, and `claude plugin validate .` if the Claude Code CLI is installed.
 - **Docs.** Add or update the skill's row in the README's skills index, and update USAGE.md wherever it describes the skill's behavior.
+- **Evals.** Run the smoke tier, and add or adjust a case when the change alters what the skill does.

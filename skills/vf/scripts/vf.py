@@ -27,8 +27,9 @@ so a run that stops before judging what it was run for is recorded as stopped ra
 
 vf.py run records started_at and finished_at, the code code_state.py reports, which must not change
 while the check runs, VERIFY_PLANNED_BREAK as planned_break with the repo of the break session this
-harness has open, and the verdict from the exit code: 0 passed, 1 a step failed, anything else stopped.
-With VERIFY_PLANNED_BREAK set and no session open, or sessions open on several repos, it stops before
+harness has open (the repo `break start` named, when several repos share its Git checkout), and the
+verdict from the exit code: 0 passed, 1 a step failed, anything else stopped.
+With VERIFY_PLANNED_BREAK set and no session open, or sessions open on several checkouts, it stops before
 running the check. It also records `harness_code`, a SHA-256 (line endings
 normalized) of settings.md, of every file under the harness's scripts/ apart from scripts/framework/ and
 other checks' entries under scripts/checks/, and of any file the check command names, so a planned break
@@ -515,6 +516,9 @@ def verify(harness, ids, start):
 def status(harness):
     """Compute every behavior's verdict and write status.md's Latest results; return the lines to print and the exit code."""
     validate = sibling("validate")
+    if not (harness / "status.md").exists():
+        # A first status.md, so the feature index's link to it resolves and setup can create it with this command.
+        validate.render_status(harness, {})
     verdicts, errors = mapped_verdicts(harness, validate)
     if errors:
         return [f"ERROR {error}" for error in errors] + ["status.md not written: fix the feature map first"], 1

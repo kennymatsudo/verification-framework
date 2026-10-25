@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: audit-weak-ledger-legacy
+expected_outcome: |
+  The audit names the four planted weak checks with the way each passes on broken code (status-only judgment, broad except and all() over nothing, reading the expectation through ledger.store with an 'at least one' assertion, an expectation copied from current behavior instead of LR-4) and the coverage table that rates unproven checks strong, while leaving the sound deposit check alone; nothing is edited or committed.
+context:
+  scaffold_script: scaffold.sh

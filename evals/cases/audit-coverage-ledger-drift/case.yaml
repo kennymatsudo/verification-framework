@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: audit-coverage-ledger-drift
+expected_outcome: |
+  The coverage audit reads each feature file against the code with per-feature readers and reports two findings: the statement feature's entry point and check drifted (the route moved to /history), and the new account listing has no feature or check. Nothing in the harness is edited.
+context:
+  scaffold_script: scaffold.sh

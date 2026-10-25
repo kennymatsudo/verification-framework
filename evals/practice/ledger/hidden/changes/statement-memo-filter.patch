@@ -1,0 +1,69 @@
+diff --git a/README.md b/README.md
+index 4931cca..438d6e0 100644
+--- a/README.md
++++ b/README.md
+@@ -16,7 +16,7 @@ The server listens on `http://127.0.0.1:8071` (override with `LEDGER_PORT`) and
+ | `GET /accounts/<id>` | | `{"id", "name", "balance"}` or 404 |
+ | `POST /accounts/<id>/transactions` | `{"amount": 25, "memo": "salary"}`; a negative amount withdraws | `201 {"id": <transaction id>, "balance": <new balance>}` |
+ | `POST /transfers` | `{"from": 1, "to": 2, "amount": 10}` | `201 {"id": <transfer id>}`, or `409 {"error": "insufficient funds"}` |
+-| `GET /accounts/<id>/statement` | | `{"transactions": [{"id", "amount", "memo", "balance_after", "at"}, ...]}` newest first |
++| `GET /accounts/<id>/statement` | optional `?memo=<text>` filters by memo | `{"transactions": [{"id", "amount", "memo", "balance_after", "at"}, ...]}` newest first |
+ 
+ Amounts are integers in cents. See [REQUIREMENTS.md](REQUIREMENTS.md) for the intended behavior.
+ 
+diff --git a/ledger/server.py b/ledger/server.py
+index 72602f7..8d533cf 100644
+--- a/ledger/server.py
++++ b/ledger/server.py
+@@ -3,6 +3,7 @@
+ import json
+ import os
+ import re
++from urllib.parse import parse_qs, urlsplit
+ from http.server import BaseHTTPRequestHandler, HTTPServer
+ from pathlib import Path
+ 
+@@ -35,8 +36,10 @@ class Handler(BaseHTTPRequestHandler):
+         return json.loads(self.rfile.read(length) or b"{}")
+ 
+     def dispatch(self, method):
++        parts = urlsplit(self.path)
++        self.query = parse_qs(parts.query)
+         for route_method, pattern, name in ROUTES:
+-            match = pattern.match(self.path)
++            match = pattern.match(parts.path)
+             if match and route_method == method:
+                 try:
+                     return getattr(self, name)(*[int(group) for group in match.groups()])
+@@ -75,7 +78,8 @@ class Handler(BaseHTTPRequestHandler):
+         self.reply(201, store.transfer(self.server.db, int(payload["from"]), int(payload["to"]), amount))
+ 
+     def statement(self, account_id):
+-        self.reply(200, store.statement(self.server.db, account_id))
++        memo = (self.query.get("memo") or [None])[0]
++        self.reply(200, store.statement(self.server.db, account_id, memo))
+ 
+ 
+ def main():
+diff --git a/ledger/store.py b/ledger/store.py
+index a62b204..ebecc7a 100644
+--- a/ledger/store.py
++++ b/ledger/store.py
+@@ -105,10 +105,12 @@ def transfer(conn, from_id, to_id, amount):
+     return {"id": cur.lastrowid}
+ 
+ 
+-def statement(conn, account_id):
++def statement(conn, account_id, memo=None):
+     account(conn, account_id)
+-    rows = conn.execute(
+-        "SELECT id, amount, memo, balance_after, at FROM transactions WHERE account_id = ? ORDER BY id DESC",
+-        (account_id,),
+-    ).fetchall()
++    query = "SELECT id, amount, memo, balance_after, at FROM transactions WHERE account_id = ?"
++    params = [account_id]
++    if memo:
++        query += " AND memo LIKE ?"
++        params.append(f"%{memo}%")
++    rows = conn.execute(query + " ORDER BY at, id", params).fetchall()
+     return {"transactions": [dict(row) for row in rows]}

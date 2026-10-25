@@ -1,0 +1,42 @@
+{
+  "practice": "ledger",
+  "prepare": "verified",
+  "change": "history-route",
+  "max_user_turns": 6,
+  "graders": [
+    {
+      "name": "report_names",
+      "patterns": [
+        "history",
+        "list|GET /accounts\\b|/accounts`"
+      ],
+      "weight": 3
+    },
+    {
+      "name": "subagent_used"
+    },
+    {
+      "name": "harness_unchanged",
+      "weight": 2
+    },
+    {
+      "name": "no_new_commits"
+    },
+    {
+      "name": "product_code_clean"
+    },
+    {
+      "name": "no_processes_left"
+    },
+    {
+      "name": "ask_is_last_line"
+    },
+    {
+      "name": "no_error_turns"
+    },
+    {
+      "name": "questions_at_most",
+      "n": 4
+    }
+  ]
+}

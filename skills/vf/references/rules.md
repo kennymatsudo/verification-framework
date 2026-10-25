@@ -1,6 +1,6 @@
 # Verification rules
 
-Rules version: 1
+Rules version: 3
 
 Copy this file into the harness as `rules.md`, unchanged; app specifics live in `settings.md`. `scripts/framework/vf.py validate` fails a copy that differs from the one vf last synced, whose hash this harness's `framework.sha256` records with every other framework file's. A section applies once the harness has that kind of piece. A piece that cannot follow a rule names the exception in its own help text and in the feature file that uses it.
 

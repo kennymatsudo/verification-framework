@@ -35,8 +35,8 @@ The cost is a longer window on scratch code, during which the developer can't us
 ### Support more break-session setups
 
 - **A person-only switch.** Where only a person can point the app at another checkout, `start` and `end` could print the step for the person to do and exit, and a second command could record that it was done. Agents have no terminal to wait on, so the script can't simply pause.
-- **Several repos in one session.** Each repo gets its own session today; whether nested sessions work together is untested.
-- **An app that starts per check** still needs a practice run.
+- **Several repos in one session.** Decided: repos in one Git checkout share one session, named for the repo `break start` was given; a break run with sessions open on two separate checkouts still stops, since a break names one repo.
+- **An app that starts per check** still needs a practice run. The eval suite's `relay` practice repo (a command-line tool with no server) avoids `per check` instead: its doctor writes a pointer file naming the checkout the checks run the command from, `Run scratch code` repoints it, and `After an edit` is `reloads`, so planned breaks run through the normal session. Whether that pattern should replace `per check` in the settings template is open.
 
 ### Require only the repos a run uses
 

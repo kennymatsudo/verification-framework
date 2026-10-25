@@ -30,10 +30,12 @@ process loaded; the doctor still establishes that, for example by saving this
 output at launch and comparing it with a fresh run.
 
 While break_session.py has a planned break session open on a repo, ordinary code
-recording refuses, including --checkout overrides. Only the owning harness may
-record the scratch copy with VERIFY_PLANNED_BREAK set. Commands break_session.py
-runs from settings.md set VERIFY_BREAK_SESSION to the session's repo name and get
-the checkout the app is being pointed at. An override must name that same checkout.
+recording refuses on every repo in that Git checkout, including --checkout overrides.
+Only the owning harness may record the scratch copy with VERIFY_PLANNED_BREAK set;
+another repo in the same checkout is then recorded from its own folder in the copy.
+Commands break_session.py runs from settings.md set VERIFY_BREAK_SESSION to the
+session's repo name and get the checkout the app is being pointed at. An override
+must name the folder the run would record.
 
 Exits 0 with the JSON, 2 when settings.md lists no repos, has an invalid repo
 line, a repo cannot be found or has no commit, or a session is open and the run
@@ -179,15 +181,23 @@ def require_session_owner(session, harness_dir):
         )
 
 
-def session_checkout(name, session, harness_dir):
-    """The checkout this run records while a session is open, or StateError when it may not record one."""
+def session_checkout(name, session, harness_dir, located=None):
+    """The checkout this run records while a session is open, or StateError when it may not record one.
+
+    The session copies the whole Git checkout, so a repo located anywhere in it, the session's own repo or
+    another one, is recorded from its folder in whichever copy the app is pointed at."""
     require_session_owner(session, harness_dir)
     on_scratch = session["app_checkout"] == session["scratch"]
     if os.environ.get("VERIFY_BREAK_SESSION") == session["repo"] or (on_scratch and os.environ.get("VERIFY_PLANNED_BREAK")):
+        copy = Path(session["worktree"] if on_scratch else session["top"])
+        for top in (Path(session["top"]), Path(session["worktree"])):
+            if located is not None and located.is_relative_to(top):
+                return copy / located.relative_to(top)
         return Path(session["app_checkout"])
     raise StateError(
-        f"{name}: a planned break session is open, so the app may be running the scratch copy at {session['scratch']}. "
-        f"Only planned break runs may record code until `python3 scripts/framework/vf.py break end {name}` closes it"
+        f"{name}: a planned break session is open for {session['repo']}, so the app may be running the scratch copy at "
+        f"{session['scratch']}. Only planned break runs may record code until "
+        f"`python3 scripts/framework/vf.py break end {session['repo']}` closes it"
     )
 
 
@@ -196,13 +206,14 @@ def recorded_checkout(name, locator, override, project, harness_dir):
     while a planned break session is open on either, the checkout the session allows. StateError when there is none."""
     checkout = validate.resolve_repo(locator, project)
     session = open_session(checkout) if checkout else None
+    located = checkout.resolve() if session else None
     if override is not None:
         path = override.resolve()
         checkout = path if validate.git(path, "rev-parse", "--show-toplevel") else None
         if not session and checkout:
             session = open_session(checkout)
     if session:
-        expected = session_checkout(name, session, harness_dir)
+        expected = session_checkout(name, session, harness_dir, located)
         if override is not None and checkout != expected:
             raise StateError(f"{name}: --checkout must name the session checkout at {expected}")
         checkout = expected
@@ -213,22 +224,23 @@ def recorded_checkout(name, locator, override, project, harness_dir):
 
 def break_session_repo(harness_dir):
     """The repo whose planned break session this harness has open on its scratch copy, which is the repo a
-    planned break run edited. StateError unless there is exactly one, so a break can't be recorded outside a session."""
+    planned break run edited. Repos in one Git checkout share its session, which names the repo `break start`
+    was given. StateError unless exactly one session is open, so a break can't be recorded outside a session."""
     harness_dir = harness_dir.resolve()
     project = validate.project_root(harness_dir)
-    found = []
-    for name, locator in listed_repos(harness_dir).items():
+    found = {}
+    for locator in listed_repos(harness_dir).values():
         checkout = validate.resolve_repo(locator, project)
         session = open_session(checkout) if checkout else None
         if session and Path(session["harness"]) == harness_dir and session["app_checkout"] == session["scratch"]:
-            found.append(name)
+            found[session["worktree"]] = session["repo"]
     if not found:
         raise StateError("VERIFY_PLANNED_BREAK is set but this harness has no break session open; "
                          "run the break through `vf.py break run`")
     if len(found) > 1:
-        raise StateError(f"break sessions are open on {', '.join(found)}, so this break can't name the repo it edited; "
+        raise StateError(f"break sessions are open on {', '.join(found.values())}, so this break can't name the repo it edited; "
                          f"end all but the one holding the break")
-    return found[0]
+    return next(iter(found.values()))
 
 
 def code_state(harness_dir, overrides):

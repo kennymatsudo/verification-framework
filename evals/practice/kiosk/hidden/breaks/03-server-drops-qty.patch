@@ -1,0 +1,15 @@
+diff --git a/server.js b/server.js
+index 4e383d2..2246f81 100644
+--- a/server.js
++++ b/server.js
+@@ -34,8 +34,8 @@ function priceOrder(items) {
+     const menuItem = MENU.find((m) => m.sku === item.sku);
+     const qty = Number(item.qty);
+     if (!menuItem || !Number.isInteger(qty) || qty < 1) throw new Error(`bad line ${JSON.stringify(item)}`);
+-    lines.push({ sku: menuItem.sku, name: menuItem.name, qty, price_cents: menuItem.price_cents });
+-    total += menuItem.price_cents * qty;
++    lines.push({ sku: menuItem.sku, name: menuItem.name, qty: 1, price_cents: menuItem.price_cents });
++    total += menuItem.price_cents;
+   }
+   return { lines, total_cents: total };
+ }

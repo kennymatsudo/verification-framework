@@ -1,0 +1,46 @@
+{
+  "practice": "shop-mono",
+  "prepare": "bare",
+  "max_user_turns": 8,
+  "graders": [
+    {
+      "name": "harness_ready",
+      "weight": 3
+    },
+    {
+      "name": "harness_in_project_root",
+      "weight": 3
+    },
+    {
+      "name": "zero_feature_files"
+    },
+    {
+      "name": "doctor_works",
+      "weight": 2
+    },
+    {
+      "name": "path_empty",
+      "path": "mail-sink",
+      "weight": 2
+    },
+    {
+      "name": "no_new_commits"
+    },
+    {
+      "name": "product_code_clean"
+    },
+    {
+      "name": "no_processes_left"
+    },
+    {
+      "name": "ask_is_last_line"
+    },
+    {
+      "name": "no_error_turns"
+    },
+    {
+      "name": "questions_at_most",
+      "n": 6
+    }
+  ]
+}

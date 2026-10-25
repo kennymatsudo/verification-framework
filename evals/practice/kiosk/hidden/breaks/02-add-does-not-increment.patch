@@ -1,0 +1,13 @@
+diff --git a/public/app.js b/public/app.js
+index f36e596..087afc9 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -31,7 +31,7 @@ function renderMenu() {
+ 
+ function addToCart(item) {
+   const line = cart.get(item.sku) || { ...item, qty: 0 };
+-  line.qty += 1;
++  line.qty = 1;
+   cart.set(item.sku, line);
+   renderCart();
+ }

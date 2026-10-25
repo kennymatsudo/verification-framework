@@ -1,0 +1,10 @@
+{
+  "name": "kiosk",
+  "version": "1.0.0",
+  "description": "A self-service ordering kiosk: a web page backed by a small Node server.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/"
+  },
+  "license": "MIT"
+}

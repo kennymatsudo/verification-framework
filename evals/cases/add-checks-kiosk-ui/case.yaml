@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: add-checks-kiosk-ui
+expected_outcome: |
+  Browser-driven checks for the kiosk's five settled behaviors, each proven with a planned break, that read what the customer sees for screen behaviors and the data file for stored orders; the undecided tax line (KR-6) is asked about, not inferred; hidden breaks that show only on the screen (a wrong total, a wrong confirmation number) are caught.
+context:
+  scaffold_script: scaffold.sh

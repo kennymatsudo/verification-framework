@@ -1,0 +1,130 @@
+{
+  "name": "ledger",
+  "summary": "A Python HTTP API over SQLite in one repo. An agent can start it from the checkout; it needs a restart after an edit. Requirements live in the repo with one open item and one requirement the code gets wrong.",
+  "setup": {
+    "language": "python",
+    "shape": "single repo",
+    "surface": "HTTP API",
+    "start": "agent",
+    "reload": "restart"
+  },
+  "requires": [
+    "python3",
+    "curl"
+  ],
+  "ports": [
+    8071
+  ],
+  "repos": {
+    "ledger": "."
+  },
+  "project_root": ".",
+  "harness": ".claude/skills/verify-ledger",
+  "requirements": "REQUIREMENTS.md",
+  "app_code_patterns": [
+    "(?m)^\\s*(from\\s+ledger(\\.\\w+)?\\s+import|import\\s+ledger\\b)"
+  ],
+  "behaviors": {
+    "accounts.open": {
+      "requirement": "LR-1",
+      "words": "opening an account",
+      "match": "open|creat"
+    },
+    "accounts.unknown-404": {
+      "requirement": "LR-2",
+      "words": "unknown account answers 404",
+      "match": "unknown|missing|404|does not exist|nonexist"
+    },
+    "transactions.deposit": {
+      "requirement": "LR-3",
+      "words": "a deposit raises the balance",
+      "match": "deposit"
+    },
+    "transactions.refuse-overdraft": {
+      "requirement": "LR-4",
+      "words": "an overdraft is refused",
+      "match": "withdraw.*(overdra|below zero|negative|insufficient|409|refus)|overdra(w|ft).*withdraw"
+    },
+    "transfers.move": {
+      "requirement": "LR-5",
+      "words": "a transfer moves money",
+      "match": "transfer.*(debit|credit|move|both)"
+    },
+    "transfers.refuse-overdraft": {
+      "requirement": "LR-6",
+      "words": "an oversized transfer is refused",
+      "match": "transfer.*(larger|more than|exceed|above|insufficient|409|refus|oversiz)"
+    },
+    "statement.newest-first": {
+      "requirement": "LR-8",
+      "words": "the statement lists newest first",
+      "match": "statement|newest|history"
+    }
+  },
+  "open_questions": [
+    {
+      "requirement": "LR-7",
+      "pattern": "daily|limit|LR-7",
+      "about": "the undecided daily transfer limit"
+    }
+  ],
+  "known_bugs": {
+    "transactions.refuse-overdraft": "the code lets a withdrawal overdraw; REQUIREMENTS.md LR-4 says refuse with 409 (ticket LEDGER-41)"
+  },
+  "breaks": [
+    {
+      "patch": "breaks/01-deposit-not-saved.patch",
+      "sub_feature": "transactions.deposit",
+      "what": "a deposit answers 201 with the new balance but never updates the stored balance"
+    },
+    {
+      "patch": "breaks/02-create-not-persisted.patch",
+      "sub_feature": "accounts.open",
+      "what": "opening an account answers 201 with an ID but rolls the row back"
+    },
+    {
+      "patch": "breaks/03-transfer-no-credit.patch",
+      "sub_feature": "transfers.move",
+      "what": "a transfer debits the source and never credits the destination"
+    },
+    {
+      "patch": "breaks/04-transfer-overdraft-allowed.patch",
+      "sub_feature": "transfers.refuse-overdraft",
+      "what": "an oversized transfer is accepted"
+    },
+    {
+      "patch": "breaks/05-statement-oldest-first.patch",
+      "sub_feature": "statement.newest-first",
+      "what": "the statement lists oldest first"
+    },
+    {
+      "patch": "breaks/06-unknown-account-200.patch",
+      "sub_feature": "accounts.unknown-404",
+      "what": "an unknown account answers 200 with an empty account"
+    }
+  ],
+  "changes": {
+    "statement-memo-filter": {
+      "patch": "changes/statement-memo-filter.patch",
+      "branch": "feature/statement-memo-filter",
+      "message": "Let the statement be filtered by memo",
+      "claims": "Adds `?memo=<text>` to GET /accounts/<id>/statement so clients can filter the statement by memo. No change to existing behavior.",
+      "breaks": [
+        "statement.newest-first"
+      ]
+    },
+    "history-route": {
+      "patch": "changes/history-route.patch",
+      "branch": "feature/history-route",
+      "message": "Rename the statement route to history and add an account list",
+      "claims": "GET /accounts/<id>/statement is now GET /accounts/<id>/history, and GET /accounts lists every account.",
+      "breaks": [
+        "statement.newest-first"
+      ],
+      "drift": {
+        "renamed_entry_point": "statement.newest-first",
+        "unmapped_behavior": "GET /accounts lists every account"
+      }
+    }
+  }
+}

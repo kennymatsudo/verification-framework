@@ -1,0 +1,13 @@
+diff --git a/public/app.js b/public/app.js
+index f36e596..dea9ec0 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -15,7 +15,7 @@ function cartTotal() {
+ function renderMenu() {
+   const list = document.getElementById("menu");
+   list.innerHTML = "";
+-  for (const item of menu) {
++  for (const item of menu.slice(0, -1)) {
+     const li = document.createElement("li");
+     li.dataset.sku = item.sku;
+     li.innerHTML = `<span>${item.name} <span class="price">${dollars(item.price_cents)}</span></span>`;

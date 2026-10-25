@@ -1,0 +1,13 @@
+diff --git a/ledger/store.py b/ledger/store.py
+index a62b204..80afb40 100644
+--- a/ledger/store.py
++++ b/ledger/store.py
+@@ -47,7 +47,7 @@ def create_account(conn, name):
+     try:
+         cur = conn.execute("INSERT INTO accounts (name) VALUES (?)", (name,))
+         account_id = cur.lastrowid
+-        conn.execute("COMMIT")
++        conn.execute("ROLLBACK")
+     except Exception:
+         conn.execute("ROLLBACK")
+         raise

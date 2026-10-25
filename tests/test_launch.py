@@ -28,6 +28,18 @@ time.sleep(600)
 """
 
 
+def ended(pid):
+    """Whether the process has exited. A zombie has: the launcher's process is reparented, and the new
+    parent may reap it seconds later, so its ID can still be signalled."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] in ("Z", "X")
+    except OSError:
+        return False
+
 
 class Launch(unittest.TestCase):
     def setUp(self):
@@ -89,8 +101,7 @@ class Launch(unittest.TestCase):
         self.assertIn(f"process {pid} stopped; record removed", stopped.stdout)
         self.assertFalse((self.harness / "evidence" / "launch" / "record.json").exists())
         time.sleep(0.2)
-        with self.assertRaises(ProcessLookupError):
-            os.kill(pid, 0)
+        self.assertTrue(ended(pid), f"process {pid} still runs after stop")
         self.assertEqual(self.launch("stop").stdout.strip(), "nothing to stop")
         doctor = self.launch("doctor")
         self.assertEqual(doctor.returncode, 1)

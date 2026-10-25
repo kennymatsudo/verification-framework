@@ -1,0 +1,12 @@
+diff --git a/ledger/store.py b/ledger/store.py
+index a62b204..a9144e2 100644
+--- a/ledger/store.py
++++ b/ledger/store.py
+@@ -68,7 +68,6 @@ def post_transaction(conn, account_id, amount, memo):
+         if row is None:
+             raise NotFound(account_id)
+         new_balance = row["balance"] + amount
+-        conn.execute("UPDATE accounts SET balance = ? WHERE id = ?", (new_balance, account_id))
+         cur = conn.execute(
+             "INSERT INTO transactions (account_id, amount, memo, balance_after, at) VALUES (?, ?, ?, ?, ?)",
+             (account_id, amount, memo, new_balance, time.time()),

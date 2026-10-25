@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: setup-ledger
+expected_outcome: |
+  A ready harness for the ledger API: settings with working Start, Stop, and Doctor commands, a doctor proven against the real app, a setup record, and zero feature coverage. Nothing committed, no product code edited, the app stopped at the end, and every question ends the message on one `Needs you:` line.
+context:
+  scaffold_script: scaffold.sh

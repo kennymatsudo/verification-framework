@@ -1,0 +1,50 @@
+{
+  "practice": "ledger-legacy",
+  "prepare": "bare",
+  "max_user_turns": 6,
+  "graders": [
+    {
+      "name": "report_names",
+      "patterns": [
+        "check_create",
+        "check_transfer",
+        "check_statement",
+        "check_overdraft"
+      ],
+      "weight": 4
+    },
+    {
+      "name": "report_names",
+      "patterns": [
+        "COVERAGE|strong"
+      ]
+    },
+    {
+      "name": "report_omits",
+      "patterns": [
+        "check_deposit[^\\n]*(weak|fake|hollow|cannot fail|can't fail|always pass)"
+      ],
+      "weight": 2
+    },
+    {
+      "name": "product_code_clean",
+      "weight": 2
+    },
+    {
+      "name": "no_new_commits"
+    },
+    {
+      "name": "no_processes_left"
+    },
+    {
+      "name": "ask_is_last_line"
+    },
+    {
+      "name": "no_error_turns"
+    },
+    {
+      "name": "questions_at_most",
+      "n": 4
+    }
+  ]
+}

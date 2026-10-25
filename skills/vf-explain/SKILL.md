@@ -19,7 +19,7 @@ You own an honest, short answer to "how far can I trust this?" for someone who d
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up. Say also that with no harness there is nothing to explain yet, and, with several, ask which with the session's structured question tool if it has one, else a `Needs you:` line.
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 1` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. An incomplete setup means no pass can be trusted yet, so say so. Keep its errors and warnings: a format error or "last pass is N commits behind HEAD" is a trust fact.
+Run `<harness>/scripts/framework/vf.py validate --written-for 3` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. An incomplete setup means no pass can be trusted yet, so say so. Keep its errors and warnings: a format error or "last pass is N commits behind HEAD" is a trust fact.
 
 Done when one harness is chosen and its `vf.py validate` output is in hand, or you stopped with the reason.
 
@@ -53,7 +53,7 @@ For each check in scope, answer each question yes, no, or not recorded, with its
 
 Add the behavior's `caveats` as what a pass doesn't show. For every no, say in user terms what bug could still pass, such as "a bug that skips sending the email but reports success would still pass".
 
-For questions 1 and 2 across more than three check scripts, spawn one mid-tier subagent per script with `references/check-reader.md`, and check each quoted line yourself before using it.
+Read every check in scope yourself when they fit in one sitting, so each quoted line is one you saw. When they do not (a dozen scripts or more, or thousands of lines), spawn one mid-tier subagent per script with `references/check-reader.md` for questions 1 and 2, and check each quoted line yourself before using it.
 
 Done when every check in scope has all five answers, each with a quoted line, a field, or "not recorded".
 

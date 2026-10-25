@@ -102,6 +102,10 @@ Start with vf if you're not sure which you need.
 
 [Choose a skill](USAGE.md#choose-a-skill) has an example request for each job.
 
+## Evaluating the skills
+
+The skills are tested the way they test apps: `evals/` holds seven small practice repos (a Python API, a browser app, a monorepo, two repos with a compiled service, a command-line tool, a service that needs a secret, a homegrown harness), each with hidden bugs as patches the agent never sees. `python3 evals/run.py run --tag smoke` runs one case per skill with a simulated developer answering and grades the outcome: were the hidden bugs caught by the checks the agent built, did it ask about the open requirement instead of guessing, did it leave the checkout clean. [evals/README.md](evals/README.md) has the cases and how to run them, including with `claude plugin eval`.
+
 ## Requirements
 
 | Need | Required | Used for |
