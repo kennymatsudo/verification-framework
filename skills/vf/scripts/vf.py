@@ -515,6 +515,9 @@ def verify(harness, ids, start):
 def status(harness):
     """Compute every behavior's verdict and write status.md's Latest results; return the lines to print and the exit code."""
     validate = sibling("validate")
+    if not (harness / "status.md").exists():
+        # A first status.md, so the feature index's link to it resolves and setup can create it with this command.
+        validate.render_status(harness, {})
     verdicts, errors = mapped_verdicts(harness, validate)
     if errors:
         return [f"ERROR {error}" for error in errors] + ["status.md not written: fix the feature map first"], 1

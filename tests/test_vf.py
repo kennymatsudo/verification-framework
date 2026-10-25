@@ -645,6 +645,17 @@ class HarnessCommands(unittest.TestCase):
         self.assertIn("status.md not written: fix the feature map first", result.stdout)
         self.assertEqual((self.harness / "status.md").read_text(), before)
 
+    def test_status_creates_the_first_status_md_the_index_links(self):
+        # Setup writes the index, which links ../status.md, and then runs status to create that file.
+        self.write_map()
+        (self.harness / "features" / "README.md").write_text(
+            "# App feature map\n\nRead [the latest results](../status.md).\n\n## Features\n\n- [App](app.md): pay and refund.\n")
+        (self.harness / "status.md").unlink(missing_ok=True)
+        result = self.framework("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.harness / "status.md").read_text().startswith("# Verification status\n\n## Latest results\n"))
+        self.assertIn("- app.refund: Not verified. No check yet.", (self.harness / "status.md").read_text())
+
     def test_status_warns_when_the_latest_pass_is_not_on_this_checkouts_head(self):
         self.write_map()
         (self.project / "app.txt").write_text("second\n")

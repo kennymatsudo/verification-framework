@@ -37,6 +37,10 @@
     },
     {
       "name": "no_error_turns"
+    },
+    {
+      "name": "questions_at_most",
+      "n": 8
     }
   ]
 }

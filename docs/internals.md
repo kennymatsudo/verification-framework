@@ -97,7 +97,7 @@ The twelve framework scripts are Python and identical in every harness, so a clo
 | --- | --- | --- |
 | `rules.md`, `scripts/framework/`, the skill copies beside the harness | vf's setup mode, as copies | Every skill |
 | `settings.md` | Setup, then vf-verify when a tool needs a setting | `validate.py`, `code_state.py`, every skill |
-| `status.md` | `vf.py status`, through every accepted run | `validate.py`, every skill |
+| `status.md` | `vf.py status`, which creates it on its first run and rewrites it through every accepted run | `validate.py`, every skill |
 | `notes.md` | Setup for the Setup record; skills for known failures, misleading passes, untested cases | `validate.py`, vf-explain's `trust_facts.py`, every skill |
 | `features/` | add-checks mode; verify mode when a change alters a behavior; audit mode when a description drifts | `validate.py`, vf-verify, audit mode |
 | `tools.md`, `scripts/` | Setup for the doctor, vf-verify for every later tool | Skills, and agents debugging without a skill |
