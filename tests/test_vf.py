@@ -478,6 +478,42 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(self.record()["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"})
 
+    def test_a_planned_break_in_a_checkout_two_repos_share_names_the_repo_its_session_was_started_for(self):
+        (self.project / "mailer").mkdir()
+        (self.project / "mailer" / "app.txt").write_text("first\n")
+        git(self.project, "add", "mailer")
+        git(self.project, "commit", "-qm", "mailer")
+        settings = self.harness / "settings.md"
+        settings.write_text(settings.read_text().replace("- app: .\n", "- app: .\n- mailer: mailer\n"))
+        self.open_break_session()
+        scratch = Path((self.project / "pointed.txt").read_text().strip())
+        (scratch / "mailer" / "app.txt").write_text("broken\n")
+        env = {"VERIFY_PLANNED_BREAK": "app.pay: payment skipped"}
+
+        result = self.run_check(env=env, exit=1, steps=FAILED_STEP)
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        record = self.record()
+        self.assertEqual(record["planned_break"]["repo"], "app")
+        self.assertTrue(record["code"]["mailer"]["dirty"])
+        self.assertFalse(vf.sibling("code_state").checkout_state(self.project / "mailer", self.harness)["dirty"])
+
+        # Sessions on two separate checkouts still leave the break without one repo to name.
+        service = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, service)
+        git(service, "init", "-q", "-b", "main")
+        (service / "app.txt").write_text("first\n")
+        git(service, "add", ".")
+        git(service, "commit", "-qm", "first")
+        settings.write_text(settings.read_text().replace("- mailer: mailer\n", f"- mailer: mailer\n- service: {service}\n"))
+        framework_vf = str(self.harness / "scripts/framework/vf.py")
+        started = subprocess.run([sys.executable, framework_vf, "break", "start", "service"], capture_output=True, text=True)
+        self.assertEqual(started.returncode, 0, started.stdout + started.stderr)
+        self.addCleanup(subprocess.run, [sys.executable, framework_vf, "break", "end", "service"], capture_output=True)
+        result = self.run_check(env=env, exit=1, steps=FAILED_STEP)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("break sessions are open on app, service", result.stderr)
+
     def test_a_kept_recording_and_snapshot_move_into_the_run_folder(self):
         failed = [{"event": "step", "name": "order is paid", "passed": False, "at": 4.0,
                    "snapshot": {"screenshot": "step-1-failed.png", "text": "step-1-failed.txt"}}]

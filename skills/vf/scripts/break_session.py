@@ -31,7 +31,9 @@ end points the app back at the developer's checkout, removes the copy, closes th
 reports whether the developer's checkout still has its starting fingerprint. Ending a repo with no
 session does nothing, so end is safe to repeat after a crash.
 
-While a session is open, code_state.py refuses ordinary code recording on REPO, including --checkout
+A session copies REPO's whole Git checkout, so settings repos in that checkout share it: run and end
+take the repo start named, and a start for another of them while it is open is refused. While a
+session is open, code_state.py refuses ordinary code recording on every repo in it, including --checkout
 overrides. Only the harness that opened the session may run or end it, or record its scratch code.
 Commands from settings.md run from the project root
 with {repo} and {checkout} replaced by the repo name and the checkout path, and with
@@ -150,12 +152,21 @@ def restore(session, folder, harness):
     copy_files(session["untracked"], folder / "untracked", worktree)
 
 
+def require_session_repo(session, repo):
+    """GuardError unless the open session was started for repo; repos in one Git checkout share its one session."""
+    owner = session["repo"]
+    if owner != repo:
+        raise GuardError(f"{repo} shares its Git checkout with {owner}, and the break session there is open for {owner}; "
+                         f"name {owner} in `vf.py break` commands, or close it with `vf.py break end {owner}`")
+
+
 def load_session(checkout, repo, harness):
     """This harness's open session on the repo and the folder it lives in; GuardError when none is open."""
     session = code_state.open_session(checkout)
     if not session:
         raise GuardError(f"no break session is open for {repo}; start one with `vf.py break start {repo}`")
     code_state.require_session_owner(session, harness)
+    require_session_repo(session, repo)
     return session, code_state.session_folder(checkout)
 
 
@@ -172,6 +183,7 @@ def start(harness, repo):
     session = code_state.open_session(checkout)
     if session:
         code_state.require_session_owner(session, harness)
+        require_session_repo(session, repo)
         raise GuardError(f"a break session is already open for {repo}; see `vf.py break status`, or close it with `vf.py break end {repo}`")
     point = command_setting(harness, "Run scratch code")
     command_setting(harness, "After an edit")
@@ -354,7 +366,8 @@ def status(harness):
             state = "at its starting state"
         else:
             state = "holds an edit"
-        print(f"{repo}: break session open on {session['scratch']}, {state}")
+        shared = f" for {session['repo']}" if session["repo"] != repo else ""
+        print(f"{repo}: break session{shared} open on {session['scratch']}, {state}")
     return 0
 
 
@@ -367,6 +380,7 @@ def end(harness, repo):
         print(f"No break session is open for {repo}.")
         return 0
     code_state.require_session_owner(session, harness)
+    require_session_repo(session, repo)
     folder = code_state.session_folder(located)
     checkout, top = Path(session["checkout"]), Path(session["top"])
     worktree = Path(session["worktree"])
