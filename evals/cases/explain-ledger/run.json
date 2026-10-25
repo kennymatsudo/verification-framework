@@ -14,7 +14,7 @@
     {
       "name": "report_names",
       "patterns": [
-        "break"
+        "break|broke|broken"
       ]
     },
     {
@@ -28,9 +28,6 @@
     {
       "name": "harness_unchanged",
       "weight": 2
-    },
-    {
-      "name": "subagent_used"
     },
     {
       "name": "no_new_commits"

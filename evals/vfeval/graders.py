@@ -362,6 +362,33 @@ def asked_about(ctx, pattern, before_building=True):
     return Result(0, f"no question matched /{pattern}/; questions: {[q[:80] for _, q in ctx.questions()]}")
 
 
+def sub_feature_definitions(harness):
+    """{id: behavior text} from the Sub-features sections only, without plan or proof lines."""
+    found = {}
+    for path in sorted((harness / "features").glob("*.md")) if harness and (harness / "features").is_dir() else []:
+        if path.name == "README.md":
+            continue
+        in_section = False
+        for line in path.read_text().splitlines():
+            if line.startswith("## "):
+                in_section = line.strip() == "## Sub-features"
+            elif in_section and line.startswith("- ") and ":" in line:
+                sub_id, rest = line[2:].split(":", 1)
+                found[sub_id.strip()] = rest.strip()
+    return found
+
+
+@grader
+def open_item_left_out(ctx, pattern):
+    """The open requirement was named as left out (asked about, or listed as a gap) and no check was built for it."""
+    mentioned = re.search(pattern, ctx.all_agent_text(), re.IGNORECASE)
+    built = [sub_id for sub_id, text in sub_feature_definitions(ctx.harness).items()
+             if re.search(pattern, f"{sub_id} {text}", re.IGNORECASE) and scaffold.proof_command(ctx.harness, sub_id)]
+    asked = any(re.search(pattern, q or "", re.IGNORECASE) for _, q in ctx.questions())
+    return Result(bool(mentioned) and not built,
+                  f"named: {bool(mentioned)} ({'asked' if asked else 'listed as a gap' if mentioned else 'never mentioned'}); checks built for it: {built or 'none'}")
+
+
 @grader
 def never_asked(ctx, pattern):
     """No question matched the pattern: the sources already settled it."""

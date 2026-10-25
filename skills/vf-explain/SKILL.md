@@ -53,7 +53,7 @@ For each check in scope, answer each question yes, no, or not recorded, with its
 
 Add the behavior's `caveats` as what a pass doesn't show. For every no, say in user terms what bug could still pass, such as "a bug that skips sending the email but reports success would still pass".
 
-For questions 1 and 2 across more than three check scripts, spawn one mid-tier subagent per script with `references/check-reader.md`, and check each quoted line yourself before using it.
+Read every check in scope yourself when they fit in one sitting, so each quoted line is one you saw. When they do not (a dozen scripts or more, or thousands of lines), spawn one mid-tier subagent per script with `references/check-reader.md` for questions 1 and 2, and check each quoted line yourself before using it.
 
 Done when every check in scope has all five answers, each with a quoted line, a field, or "not recorded".
 

@@ -15,9 +15,8 @@
       "weight": 2
     },
     {
-      "name": "asked_about",
+      "name": "open_item_left_out",
       "pattern": "daily|limit|LR-7",
-      "before_building": true,
       "weight": 2
     },
     {

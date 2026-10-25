@@ -8,9 +8,8 @@
       "weight": 4
     },
     {
-      "name": "asked_about",
+      "name": "open_item_left_out",
       "pattern": "tax|KR-6",
-      "before_building": true,
       "weight": 2
     },
     {
