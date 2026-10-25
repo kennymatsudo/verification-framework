@@ -36,3 +36,6 @@ AGENTS.local.md
 
 # Skills eval results (evals/run.py and claude plugin eval)
 /evals/results/
+
+# Worktrees that agent sessions create for isolated work
+/.claude/worktrees/
