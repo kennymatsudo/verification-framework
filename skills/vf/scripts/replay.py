@@ -8,16 +8,18 @@ Reads evidence files at evidence/<check>/<run>.json, in the format rules.md
 defines. The page goes in the run's folder beside the evidence file (the
 folder named like the file), as replay.html, unless --out names another path.
 It opens on each failed step with a button that plays the moment it was
-decided, captions each step and action under the video rather than over the
-page being recorded, and lists the whole timeline. A run with no recording gets the same page without the
-video. The page loads nothing from the network. A replay shows what happened;
-the steps decide the verdict.
+decided, marks every verdict on a strip under the video, captions each step
+and action under the video rather than over the page being recorded, and
+lists the whole timeline with the time of each step. A run with no recording
+gets the same page without the video. The page loads nothing from the
+network. A replay shows what happened; the steps decide the verdict.
 
 When the evidence sits in a harness, a folder holding rules.md, each run also
 rewrites the harness's recordings.html, the page a person opens to see how the
 checks are doing. It gives each check one line for its latest run, naming its
-first problem, and opens the rest on request: every failure, the behaviors the
-run judged, its code, and earlier runs. Planned breaks are left out, since they fail on purpose. It builds the
+first problem and the code it ran on, and opens the rest on request: every
+step and behavior with the moment it was decided, the run's code, and earlier
+runs. Planned breaks are left out, since they fail on purpose. It builds the
 replay page of any run that lacks one or whose page predates this script's
 page format, since a run's evidence never changes. A search box narrows it to
 checks matching every typed word. --recordings writes that page alone, for the
@@ -39,11 +41,11 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-# Starts playback a little before a failed step's verdict, so the action that led to it is on screen.
+# Starts playback a little before a step's verdict, so the action that led to it is on screen.
 LEAD_SECONDS = 3
 # The replay page's format. Bump it whenever a change to page() gives new pages something old
 # ones lack; the recordings page then rebuilds every older replay page from its evidence.
-REPLAY_FORMAT = 5
+REPLAY_FORMAT = 7
 REPLAY_FORMAT_TAG = re.compile(r'<meta name="replay-format" content="(\d+)">')
 # Earlier runs a check's details list; older ones stay in its evidence folder.
 HISTORY_RUNS = 10
@@ -153,14 +155,14 @@ def verdict(record):
     return "No verdict", "The run observed but decided nothing."
 
 
-def versions(record):
-    """Each repo's branch and short commit, such as "app main a1b2c3d (uncommitted changes)"."""
+def versions(record, separator=", "):
+    """Each repo's branch and short commit, such as "app main a1b2c3d (local edits)"."""
     described = []
     for name, source in (record.get("code") or {}).items():
         branch = f"{source['branch']} " if source.get("branch") else ""
-        dirty = " (uncommitted changes)" if source.get("dirty") else ""
+        dirty = " (local edits)" if source.get("dirty") else ""
         described.append(f"{name} {branch}{str(source.get('commit', '?'))[:7]}{dirty}")
-    return ", ".join(described)
+    return separator.join(described)
 
 
 def started(record):
@@ -172,79 +174,147 @@ def started(record):
         return value
 
 
-# The replay page's styles and script. Plain strings, not f-strings, so CSS and JavaScript braces stay single.
-REPLAY_STYLE = """
+def time_html(record):
+    """When the run started, as a time element the page's script turns into local time."""
+    when = html.escape(str(record.get("started_at") or ""))
+    return f'<time datetime="{when}">{html.escape(started(record))}</time>'
+
+
+def clock(seconds):
+    """Seconds into the video as a player shows them: 27.4 is "0:27"."""
+    return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
+
+
+def counted(number, noun):
+    """A count with its noun, pluralized: "1 step", "3 steps"."""
+    return f"{number} {noun}{'' if number == 1 else 's'}"
+
+
+# Colors both pages share, in the system's light or dark setting.
+TOKENS = """
 :root {
   color-scheme: light dark;
-  --text: #1d1d1f; --muted: #6e6e73; --line: #e5e5ea; --card: #fff; --page: #f5f5f7; --hover: #f0f0f3;
-  --accent: #0a66c2; --now: #fff4cc; --selected: #e6f0fb;
-  --pass: #1b6e3a; --fail: #b3261e; --fail-bg: #fbe7e5;
+  --text: #1a1a1a; --muted: #6b6b66; --faint: #a3a39c; --line: #e2e0d8; --rule: #1a1a1a; --card: #fffefb; --page: #f7f6f2; --hover: #f1efe8; --chip: #edebe3;
+  --accent: #1d4ed8; --now: #fbf1c7; --selected: #e8eef9;
+  --pass: #2f7d4a; --fail: #b42318; --fail-soft: #fbe9e6; --warn: #9a6700; --other: #6b6b66;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #f5f5f7; --muted: #a1a1a6; --line: #38383d; --card: #1c1c1e; --page: #111113; --hover: #26262a;
-    --accent: #4c9cf0; --now: #3a3214; --selected: #1d2b3d;
-    --pass: #6fd08c; --fail: #ff8a80; --fail-bg: #3f1a17;
+    --text: #ecebe6; --muted: #9a9a93; --faint: #6d6d67; --line: #2e2e2b; --rule: #ecebe6; --card: #1b1b19; --page: #141412; --hover: #222220; --chip: #262624;
+    --accent: #7aa2ff; --now: #3a3214; --selected: #1d2742;
+    --pass: #6ccf86; --fail: #ff8a7a; --fail-soft: #3a1c18; --warn: #f0c060; --other: #9a9a93;
   }
 }
 * { box-sizing: border-box; }
-body { font: 15px/1.45 system-ui, -apple-system, sans-serif; margin: 0; background: var(--page); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
-header { padding: 14px 20px 10px; border-bottom: 1px solid var(--line); background: var(--card); }
-header a { color: var(--accent); font-size: 13px; }
-h1 { font-size: 20px; margin: 4px 0 2px; }
+html { -webkit-text-size-adjust: 100%; }
+body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; background: var(--page); color: var(--text); font-feature-settings: "tnum"; }
+h1, h2 { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif; font-weight: 500; letter-spacing: -0.01em; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+.mono, .time, .slug, .commit, .code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.87em; }
+.badge { display: inline-flex; align-items: baseline; gap: 7px; font-size: 13px; font-weight: 600; color: var(--other); white-space: nowrap; }
+.badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; transform: translateY(-1px); }
+.badge.passed { color: var(--pass); }
+.badge.failed { color: var(--fail); }
+.badge.stopped { color: var(--warn); }
+.muted { color: var(--muted); }
+.ago::before { content: " · "; }
+kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: var(--card); color: var(--muted); }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+[hidden] { display: none !important; }
+"""
+
+# Shows each run's time in the reader's time zone, with how long ago it was; without JavaScript the page keeps UTC.
+TIME_SCRIPT = """
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const ago = (date) => {
+  const minutes = (date - Date.now()) / 60000;
+  for (const [unit, size] of [['day', 1440], ['hour', 60], ['minute', 1]]) {
+    if (Math.abs(minutes) >= size || unit === 'minute') return relative.format(Math.round(minutes / size), unit);
+  }
+};
+for (const time of document.querySelectorAll('time[datetime]')) {
+  const date = new Date(time.getAttribute('datetime'));
+  if (isNaN(date)) continue;
+  time.title = time.textContent;
+  // The year shows only for a run from another year, so a date fits on one line.
+  time.textContent = date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(date.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
+  time.insertAdjacentHTML('afterend', `<span class="ago">${ago(date)}</span>`);
+}
+"""
+
+# The replay page's styles and script. Plain strings, not f-strings, so CSS and JavaScript braces stay single.
+REPLAY_STYLE = TOKENS + """
+body { display: flex; flex-direction: column; height: 100vh; }
+header { padding: 18px 28px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+header a.back { font-size: 13px; color: var(--muted); }
+header a.back:hover { color: var(--accent); }
+h1 { font-size: 26px; margin: 6px 0 6px; line-height: 1.2; }
+.slug { color: var(--muted); font-weight: 400; margin-left: 10px; font-size: 14px; }
+.outcome { margin: 0 0 4px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; font-size: 15px; }
 .meta { color: var(--muted); font-size: 13px; margin: 0; }
-.status { font-weight: 600; }
-.status.failed, .status.stopped { color: var(--fail); }
-.status.passed { color: var(--pass); }
-.layout { display: grid; grid-template-columns: minmax(0, 1fr) 400px; flex: 1; min-height: 0; }
-.player { overflow: auto; padding: 16px 20px 32px; }
-.stage { position: sticky; top: -16px; background: var(--page); padding-top: 16px; margin-top: -16px; z-index: 1; }
-video { width: 100%; max-height: 52vh; object-fit: contain; background: #000; display: block; border-radius: 8px 8px 0 0; }
-.caption { background: #1d1d1f; color: #fff; padding: 8px 12px; min-height: 38px; font-size: 14px; }
-.caption.problem { background: #b3261e; }
-.track { position: relative; height: 26px; background: var(--card); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; }
-.track .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); }
-.track button { position: absolute; top: 3px; transform: translateX(-50%); width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: var(--fail); color: #fff; font-size: 11px; line-height: 18px; cursor: pointer; }
-.track button.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
-.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
-kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--card); }
-.detail { margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
-.detail.fail { border-color: var(--fail); background: var(--fail-bg); }
-.detail h2 { font-size: 16px; margin: 0 0 6px; }
-.detail .result { font-weight: 600; margin: 0 0 6px; }
+.meta .code { font-size: 12.5px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; flex: 1; min-height: 0; }
+.player { overflow: auto; padding: 24px 28px 40px; }
+.stage { position: sticky; top: -24px; background: var(--page); padding-top: 24px; margin-top: -24px; z-index: 1; }
+video { width: 100%; max-height: 54vh; object-fit: contain; background: #0c0c0c; display: block; }
+.caption { background: #1a1a1a; color: #f3f2ee; padding: 9px 14px; min-height: 40px; font-size: 14px; border-top: 1px solid #2c2c2c; }
+.caption.fail { background: #7f1d14; }
+.caption.pass { background: #1f5c36; }
+.track { position: relative; height: 22px; background: var(--card); border: 1px solid var(--line); border-top: 0; }
+.track .head { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--text); opacity: .7; }
+.track button { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); width: 10px; padding: 0; border: 0; background: none; cursor: pointer; }
+.track button::before { content: ""; position: absolute; left: 4px; top: 4px; bottom: 4px; width: 2px; background: var(--muted); }
+.track button.fail::before { background: var(--fail); width: 3px; left: 3.5px; }
+.track button.pass::before { background: var(--pass); }
+.track button:hover::before, .track button.selected::before { top: 1px; bottom: 1px; }
+.track button.selected::after { content: ""; position: absolute; left: 50%; bottom: -1px; width: 0; height: 0; border: 4px solid transparent; border-bottom-color: var(--text); transform: translate(-50%, 100%); }
+.hint { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
+.detail { margin-top: 24px; background: var(--card); border: 1px solid var(--line); padding: 18px 20px; }
+.detail.fail { border-left: 3px solid var(--fail); }
+.detail.pass { border-left: 3px solid var(--pass); }
+.detail h2 { font-size: 20px; margin: 0 0 8px; }
+.detail .result { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
 .detail .result.fail { color: var(--fail); } .detail .result.pass { color: var(--pass); }
-.detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.4 ui-monospace, monospace; margin: 8px 0; }
-.detail img { display: block; max-width: 100%; margin: 10px 0; border: 1px solid var(--line); border-radius: 6px; }
-.detail a, .note a { color: var(--accent); }
-.detail ul { margin: 6px 0 0; padding-left: 0; list-style: none; }
+.detail pre { margin: 10px 0 0; padding: 10px 12px; background: var(--chip); }
+.detail img { display: block; max-width: 100%; margin: 14px 0; border: 1px solid var(--line); }
+.detail .note { margin: 0; }
 .note { color: var(--muted); }
 aside { border-left: 1px solid var(--line); background: var(--card); display: flex; flex-direction: column; min-height: 0; }
-.summary { padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 600; }
+.summary { padding: 14px 20px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 14px; }
 .summary .fail { color: var(--fail); }
-#steps { overflow: auto; flex: 1; margin: 0; padding: 6px 0 24px; list-style: none; }
-.group > .title { display: flex; gap: 8px; align-items: baseline; width: 100%; padding: 8px 16px; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+#steps { overflow: auto; flex: 1; margin: 0; padding: 4px 0 32px; list-style: none; }
+.group { border-bottom: 1px solid var(--line); }
+.group:last-child { border-bottom: 0; }
+.group > .title { display: flex; gap: 10px; align-items: baseline; width: 100%; padding: 11px 20px; border: 0; background: none; color: inherit; font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
 .group > .title:hover, .row:hover { background: var(--hover); }
-.group > .title .chevron { color: var(--muted); font-size: 11px; width: 10px; flex: none; }
+.group > .title .chevron { color: var(--faint); font-size: 10px; width: 10px; flex: none; }
 .group > .title .label { flex: 1; min-width: 0; }
-.group > .title .count { color: var(--muted); font-weight: 400; font-size: 13px; white-space: nowrap; }
+.group > .title .count { color: var(--muted); font-weight: 400; font-size: 12.5px; white-space: nowrap; }
 .group.failed > .title .count { color: var(--fail); }
-.group ul { margin: 0; padding: 0 0 4px; list-style: none; }
-.row { display: flex; gap: 8px; align-items: baseline; padding: 4px 16px 4px 34px; cursor: pointer; font-size: 14px; }
-.row .icon { flex: none; width: 14px; text-align: center; font-weight: 700; }
-.row.pass .icon { color: var(--pass); } .row.fail .icon { color: var(--fail); } .row.action .icon { color: var(--muted); }
+.group ul { margin: 0; padding: 0 0 8px; list-style: none; }
+.row { display: flex; gap: 10px; align-items: baseline; padding: 5px 20px 5px 40px; cursor: pointer; font-size: 14px; }
+.row .icon { flex: none; width: 12px; text-align: center; font-weight: 700; font-size: 12px; }
+.row.pass .icon { color: var(--pass); } .row.fail .icon { color: var(--fail); } .row.action .icon { color: var(--faint); }
 .row.fail { font-weight: 600; }
 .row.action { color: var(--muted); }
 .row .label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 400; }
+.time { color: var(--muted); font-weight: 400; }
 .now { background: var(--now); }
-.selected, .selected:hover { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent); }
-[hidden] { display: none !important; }
+.selected, .selected:hover { background: var(--selected); box-shadow: inset 2px 0 0 var(--accent); }
+/* Without a video there is nothing to put beside the steps, so the page reads top to bottom. */
+.layout.novideo { display: flex; flex-direction: column; max-width: 720px; width: 100%; margin: 0 auto; flex: none; }
+.novideo aside { order: 0; border: 1px solid var(--line); margin: 28px 28px 0; }
+.novideo .player { order: 1; overflow: visible; }
+.novideo #steps { overflow: visible; }
 @media (max-width: 860px) {
   body { display: block; height: auto; }
+  header, .player { padding-left: 16px; padding-right: 16px; }
   .layout { display: block; }
   .player { overflow: visible; }
   aside { border-left: 0; border-top: 1px solid var(--line); }
   #steps { overflow: visible; }
+  .novideo aside { margin: 20px 16px 0; }
 }
 """
 
@@ -257,24 +327,29 @@ const detail = document.getElementById('detail');
 const list = document.getElementById('steps');
 const entries = data.timeline;
 const failed = entries.filter((entry) => entry.kind === 'fail');
+const verdicts = entries.filter((entry) => entry.kind === 'pass' || entry.kind === 'fail');
+// j and k move between failures, or between every verdict when nothing failed.
+const stops = failed.length ? failed : verdicts;
 const clock = (seconds) => seconds === null ? '' : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 const text = (tag, value, className) => { const node = document.createElement(tag); node.textContent = value; if (className) node.className = className; return node; };
 const details = (entry) => [entry.detail, entry.evidence ? JSON.stringify(entry.evidence, null, 2) : ''].filter(Boolean).join('\\n');
-// A failure plays from a few seconds before its verdict, so the action that led to it is on screen.
-const playFrom = (entry) => entry.kind === 'fail' ? Math.max(entry.video_at - data.lead, 0) : entry.video_at;
+const steps = (count) => `${count} step${count === 1 ? '' : 's'}`;
+// A verdict plays from a few seconds before it was decided, so the action that led to it is on screen.
+const playFrom = (entry) => verdicts.includes(entry) ? Math.max(entry.video_at - data.lead, 0) : entry.video_at;
 const seek = (seconds) => {
   if (!video || seconds === null) return;
   const go = () => { video.currentTime = Math.max(seconds, 0); };
   if (video.readyState >= 1) go(); else video.addEventListener('loadedmetadata', go, { once: true });
 };
 
-// Each step mark starts a group holding the checks and actions after it, so a long run reads as a few parts.
+// Each step mark starts a group holding the verdicts and actions after it, so a long run reads as a few parts.
+const plain = (label) => label.toLowerCase().replace(/[\\s.:!]+$/, '');
 const groups = [];
 for (const entry of entries) {
   if (entry.kind === 'step' || !groups.length) groups.push({ head: entry.kind === 'step' ? entry : null, entries: [] });
   // A recorder often marks the step's own action with the step's words; the group's title already says it.
   const group = groups[groups.length - 1];
-  if (entry.kind !== 'step' && !(entry.kind === 'action' && group.head && entry.label === group.head.label)) group.entries.push(entry);
+  if (entry.kind !== 'step' && !(entry.kind === 'action' && group.head && plain(entry.label) === plain(group.head.label))) group.entries.push(entry);
 }
 const rows = new Map();
 const heads = new Map();
@@ -286,14 +361,15 @@ const expand = (group, open) => {
 };
 for (const group of groups) {
   const fails = group.entries.filter((entry) => entry.kind === 'fail').length;
-  const checks = group.entries.filter((entry) => entry.kind !== 'action').length;
+  const decided = group.entries.filter((entry) => entry.kind !== 'action').length;
   const item = text('li', '', fails ? 'group failed' : 'group');
   group.button = text('button', '', 'title');
   group.button.type = 'button';
   group.chevron = text('span', '', 'chevron');
   group.button.appendChild(group.chevron);
   group.button.appendChild(text('span', group.head ? group.head.label : 'Before the first step', 'label'));
-  group.button.appendChild(text('span', fails ? `✕ ${fails} of ${checks}` : checks ? `✓ ${checks}` : '', 'count'));
+  group.button.appendChild(text('span', fails ? `✕ ${fails} of ${decided}` : decided ? `✓ ${decided}` : '', 'count'));
+  if (group.head) group.button.appendChild(text('span', clock(group.head.video_at), 'time'));
   item.appendChild(group.button);
   group.list = text('ul', '');
   for (const entry of group.entries) {
@@ -325,8 +401,9 @@ const show = (entry) => {
   detail.appendChild(text('h2', entry.label));
   if (entry.kind === 'step') {
     const inside = groupOf(entry).entries.filter((other) => other.kind !== 'action');
-    const fails = inside.filter((other) => other.kind === 'fail');
-    detail.appendChild(text('p', fails.length ? `${fails.length} of ${inside.length} checks here failed.` : inside.length ? `All ${inside.length} checks here passed.` : 'No checks were decided here.', 'note'));
+    const fails = inside.filter((other) => other.kind === 'fail').length;
+    const note = fails ? `${fails} of ${steps(inside.length)} failed here.` : inside.length ? `${steps(inside.length)} passed here.` : 'No step was decided here.';
+    detail.appendChild(text('p', note, 'note'));
   }
   if (details(entry)) detail.appendChild(text('pre', details(entry)));
   if (entry.snapshot && entry.snapshot.screenshot) {
@@ -365,13 +442,13 @@ const choose = (entry, play) => {
 
 const markers = [];
 if (video) {
-  // Failure marks sit on a strip under the video, placed once its length is known.
+  // Every verdict sits on a strip under the video, placed once its length is known.
   const head = text('div', '', 'head');
   track.appendChild(head);
   const place = () => {
     if (!Number.isFinite(video.duration) || video.duration <= 0) return;
-    for (const entry of failed.filter((entry) => entry.video_at !== null)) {
-      const button = text('button', '✕');
+    for (const entry of verdicts.filter((entry) => entry.video_at !== null)) {
+      const button = text('button', '', entry.kind);
       button.type = 'button';
       button.title = `${clock(entry.video_at)} ${entry.label}`;
       button.style.left = `${Math.min(entry.video_at / video.duration, 1) * 100}%`;
@@ -389,10 +466,11 @@ if (video) {
     if (Number.isFinite(video.duration) && video.duration > 0) head.style.left = `${Math.min(now / video.duration, 1) * 100}%`;
     let latest = null;
     for (const entry of shown) if (entry.video_at <= now) latest = entry;
-    const problem = failed.find((entry) => entry.video_at !== null && entry.video_at <= now && now < entry.video_at + 3);
+    // For a few seconds after a verdict the caption names it; otherwise it names the step under way.
+    const decided = verdicts.find((entry) => entry.video_at !== null && entry.video_at <= now && now < entry.video_at + 3);
     const step = shown.filter((entry) => entry.kind === 'step' && entry.video_at <= now).pop();
-    caption.textContent = problem ? `Problem: ${problem.label}` : step ? step.label : '';
-    caption.classList.toggle('problem', Boolean(problem));
+    caption.textContent = decided ? `${decided.kind === 'fail' ? 'Failed' : 'Passed'}: ${decided.label}` : step ? step.label : '';
+    caption.className = `caption ${decided ? decided.kind : ''}`;
     if (latest === current) return;
     if (current) (rows.get(current) || heads.get(current)).classList.remove('now');
     current = latest;
@@ -406,21 +484,21 @@ if (video) {
 
 // j or the down arrow jumps to the next failure, k or the up arrow to the previous one.
 document.addEventListener('keydown', (event) => {
-  if (event.metaKey || event.ctrlKey || event.altKey || !failed.length) return;
+  if (event.metaKey || event.ctrlKey || event.altKey || !stops.length) return;
   const forward = event.key === 'j' || event.key === 'ArrowDown';
   if (!forward && event.key !== 'k' && event.key !== 'ArrowUp') return;
   event.preventDefault();
-  const at = failed.indexOf(selected);
-  const next = at === -1 ? (forward ? 0 : failed.length - 1) : (at + (forward ? 1 : -1) + failed.length) % failed.length;
-  choose(failed[next], true);
+  const at = stops.indexOf(selected);
+  const next = at === -1 ? (forward ? 0 : stops.length - 1) : (at + (forward ? 1 : -1) + stops.length) % stops.length;
+  choose(stops[next], true);
 });
 
-// The recordings page's Watch links open this page at #at=<seconds into the video>, a little before a failure;
+// The recordings page's Watch links open this page at #at=<seconds into the video>, a little before a verdict;
 // otherwise the page opens on the first failure, ready to play from just before it.
 const start = location.hash ? Number(new URLSearchParams(location.hash.slice(1)).get('at')) : NaN;
 const reach = start + data.lead + 0.05;
 const linked = Number.isFinite(start)
-  ? failed.find((entry) => entry.video_at !== null && entry.video_at >= start && entry.video_at <= reach)
+  ? verdicts.find((entry) => entry.video_at !== null && entry.video_at >= start && entry.video_at <= reach)
     || entries.filter((entry) => entry.video_at !== null && entry.video_at <= reach).pop()
   : null;
 const first = linked || failed[0] || entries[0];
@@ -429,46 +507,52 @@ if (Number.isFinite(start)) seek(start);
 """
 
 
-def page(record, video_src, link=lambda path: path):
+def page(record, video_src, link=lambda path: path, title=None):
     """The replay page's HTML: the video beside a list of the run's steps, with the chosen step's evidence under the video.
 
-    Its script reads the timeline from an embedded JSON block, so the page needs no network.
+    title is the feature the check proves, when known. Its script reads the timeline from an embedded
+    JSON block, so the page needs no network.
     """
-    status, summary = verdict(record)
+    status, headline, note, _ = outcome(record)
     data = {"timeline": timeline(record, link), "lead": LEAD_SECONDS}
     # Keeps a step's text from closing the script element that carries the data.
     payload = json.dumps(data).replace("</", "<\\/")
-    title = html.escape(str(record.get("check", "check run")))
-    checks = [step for step in record.get("steps") or [] if isinstance(step, dict)]
-    fails = sum(1 for step in checks if step.get("passed") is False)
+    check = html.escape(str(record.get("check", "check run")))
+    heading = f'{html.escape(title)} <span class="slug">{check}</span>' if title else check
+    fails = len(failed_steps(record))
+    steps = len(record["steps"])
     tally = (
-        f'<span class="fail">✕ {fails} of {counted(len(checks), "step")} failed</span>' if fails
-        else f"✓ All {counted(len(checks), 'step')} passed" if checks else "No steps decided"
+        f'<span class="fail">✕ {fails} of {counted(steps, "step")} failed</span>' if fails
+        else f"✓ All {counted(steps, 'step')} passed" if steps else "No step was decided"
     )
+    jumps = "jump between failures" if fails else "jump between steps"
     stage = (
         f'<div class="stage"><video id="video" controls preload="metadata" src="{html.escape(video_src)}"></video>'
-        '<div id="caption" class="caption"></div><div id="track" class="track" aria-label="Failures in the video"></div></div>'
-        '<p class="hint">Click a step to play it. <kbd>j</kbd> <kbd>k</kbd> or <kbd>↓</kbd> <kbd>↑</kbd> jump between failures. '
+        '<div id="caption" class="caption"></div><div id="track" class="track" aria-label="Verdicts in the video"></div></div>'
+        f'<p class="hint">Click a step to play it. <kbd>j</kbd> <kbd>k</kbd> or <kbd>↓</kbd> <kbd>↑</kbd> {jumps}. '
         f'<a href="{html.escape(video_src)}">Open the video file</a></p>'
-        if video_src else '<p class="note">This run kept no recording, so its steps and evidence are all there is to replay.</p>'
+        if video_src else '<p class="note">No video was kept for this run.</p>'
     )
+    lead = {"Failed": "Failed step: ", "Didn't finish": "Stopped: "}.get(status, "")
+    about = f'<span class="muted">{lead}</span>{html.escape(headline)}' + (f' <span class="muted">· {html.escape(note)}</span>' if note else "")
+    meta = " · ".join(part for part in (f'<span class="code">{html.escape(versions(record))}</span>' if versions(record) else "", time_html(record) if record.get("started_at") else "") if part)
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="replay-format" content="{REPLAY_FORMAT}">
-<title>Replay: {title}</title>
+<title>Replay: {check}</title>
 <style>{REPLAY_STYLE}</style>
 </head>
 <body>
 <header>
-<a href="{html.escape(link("../recordings.html"))}">&larr; All check runs</a>
-<h1>{title}</h1>
-<p class="meta"><span class="status {RESULT_KEYS[status]}">{html.escape(status)}.</span> {html.escape(summary)}
-{html.escape(versions(record))}{' · started ' + html.escape(started(record)) if record.get('started_at') else ''}</p>
+<a class="back" href="{html.escape(link("../recordings.html"))}">&larr; All check runs</a>
+<h1>{heading}</h1>
+<p class="outcome"><span class="badge {RESULT_KEYS[status]}">{html.escape(status)}</span> <span>{about}</span></p>
+<p class="meta">{meta}</p>
 </header>
-<div class="layout">
+<div class="layout{'' if video_src else ' novideo'}">
 <main class="player">
 {stage}
 <section id="detail" class="detail" aria-live="polite"></section>
@@ -479,7 +563,7 @@ def page(record, video_src, link=lambda path: path):
 </aside>
 </div>
 <script type="application/json" id="data">{payload}</script>
-<script>{REPLAY_SCRIPT}</script>
+<script>{REPLAY_SCRIPT}{TIME_SCRIPT}</script>
 </body>
 </html>
 """
@@ -499,11 +583,6 @@ def listed_runs(evidence_dir):
 def has_video(record):
     """Whether the run names a recording."""
     return isinstance(record.get("recording"), dict) and bool(record["recording"].get("video"))
-
-
-def counted(number, noun):
-    """A count with its noun, pluralized: "1 step", "3 steps"."""
-    return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
 def clip_label(name):
@@ -567,23 +646,28 @@ def behavior_wording(features):
     return {sub_id: words for _, _, wording, _ in features for sub_id, words in wording.items()}
 
 
-def behavior_results(record):
-    """Each sub-feature the run covers as (ID, "failed", "passed", or "not judged"), by the steps judging it.
+def behavior_judges(record):
+    """Each sub-feature the run covers, with the steps that judged it, in run order.
 
     Follows the Checks rule in rules.md: a step judges the sub-features it names, and in a check
     covering one sub-feature, a step naming none judges that one.
     """
     ids = [str(sub_id) for sub_id in record.get("sub_features") or []]
-    verdicts = {sub_id: [] for sub_id in ids}
+    judges = {sub_id: [] for sub_id in ids}
     for step in record["steps"]:
         named = step.get("sub_features")
         judged = [str(sub_id) for sub_id in named] if isinstance(named, list) else ids if len(ids) == 1 else []
         for sub_id in judged:
-            if sub_id in verdicts and isinstance(step.get("passed"), bool):
-                verdicts[sub_id].append(step["passed"])
+            if sub_id in judges and isinstance(step.get("passed"), bool):
+                judges[sub_id].append(step)
+    return judges
+
+
+def behavior_results(record):
+    """Each sub-feature the run covers as (ID, "failed", "passed", or "not judged"), by the steps judging it."""
     return [
-        (sub_id, "failed" if False in found else "passed" if found else "not judged")
-        for sub_id, found in verdicts.items()
+        (sub_id, "failed" if any(step["passed"] is False for step in steps) else "passed" if steps else "not judged")
+        for sub_id, steps in behavior_judges(record).items()
     ]
 
 
@@ -592,13 +676,19 @@ def failed_steps(record):
     return [step for step in record["steps"] if step.get("passed") is False]
 
 
+def verdict_moments(record):
+    """Seconds into the video at which each step's verdict was decided, by step name; None when the video doesn't show it."""
+    moments = {}
+    for entry in timeline(record):
+        if entry["kind"] in ("pass", "fail"):
+            moments.setdefault(entry["label"], entry["video_at"])
+    return {str(step.get("name", "")): moments.get(str(step.get("name", ""))) for step in record["steps"]}
+
+
 def watch_moment(record, step):
-    """Seconds into the video a little before a failed step's verdict, or None when the video doesn't show it."""
-    entry = next(
-        (entry for entry in timeline(record) if entry["kind"] == "fail" and entry["label"] == str(step.get("name", ""))),
-        None,
-    )
-    return max(entry["video_at"] - LEAD_SECONDS, 0) if entry and entry["video_at"] is not None else None
+    """Seconds into the video a little before a step's verdict, or None when the video doesn't show it."""
+    at = verdict_moments(record).get(str(step.get("name", "")))
+    return max(at - LEAD_SECONDS, 0) if at is not None else None
 
 
 def outcome(record):
@@ -614,9 +704,9 @@ def outcome(record):
         return status, f"All {counted(len(steps), 'step')} passed", "", None
     if status == "Didn't finish":
         shown = [entry for entry in timeline(record) if entry["video_at"] is not None]
-        before = f"{counted(len(failed), 'step')} had failed before it stopped" if failed else "nothing had failed before it stopped"
         watch = max(shown[-1]["video_at"] - LEAD_SECONDS, 0) if shown else None
-        return status, str(record.get("stopped")), f"No verdict after {counted(len(steps), 'step')}; {before}.", watch
+        note = f"Stopped after {counted(len(steps), 'step')}, {len(failed) or 'none'} failed" if steps else "Stopped before any step"
+        return status, str(record.get("stopped")), note, watch
     if failed:
         return status, str(failed[0].get("name", "")), f"{len(failed)} of {counted(len(steps), 'step')} failed", watch_moment(record, failed[0])
     return status, verdict(record)[1], "", None
@@ -669,54 +759,65 @@ def link_html(href, text, kind):
     return f'<a class="button {kind}" href="{html.escape(href)}"{title}>{html.escape(clip_label(text) if kind == "clip" else text)}</a>'
 
 
-def time_html(record):
-    """When the run started, as a time element the page's script turns into local time."""
-    when = html.escape(str(record.get("started_at") or ""))
-    return f'<time datetime="{when}">{html.escape(started(record))}</time>'
+def moment_html(base, at, video):
+    """A step's time in the video with a link that plays it, or nothing when the video doesn't show it."""
+    if not video or at is None:
+        return ""
+    return (f' <span class="time">{clock(at)}</span>'
+            f' <a class="watch" href="{html.escape(base)}/replay.html#at={max(at - LEAD_SECONDS, 0):g}">Watch</a>')
 
 
 def details_html(check, path, record, earlier, features, evidence_dir):
-    """What a reader opens a check for: every failure, the behaviors it judged, its code, and earlier runs."""
+    """What a reader opens a check for: every step and behavior with when it was decided, its code, and earlier runs."""
     status, headline, _, _ = outcome(record)
     folder = run_folder(path)
     base = f"evidence/{path.parent.name}/{folder.name}"
     video = has_video(record)
+    moments = verdict_moments(record)
     parts = []
     if status == "Didn't finish":
-        parts.append(
-            "<h3>Why it didn't finish</h3>"
-            "<p class=\"muted\">The run ended before it could decide, so it says nothing either way about the steps it didn't reach.</p>"
-            f"<pre>{html.escape(headline)}</pre>"
-        )
-    failed = failed_steps(record)
-    if failed:
+        parts.append(f"<h3>Why it stopped</h3><pre>{html.escape(headline)}</pre>")
+
+    if record["steps"]:
         items = []
-        for step in failed:
-            moment = watch_moment(record, step) if video else None
-            watch = f' <a href="{html.escape(base)}/replay.html#at={moment:g}">Watch</a>' if moment is not None else ""
+        for step in record["steps"]:
+            kind = "fail" if step.get("passed") is False else "pass"
+            name = str(step.get("name", ""))
             detail = f'<pre>{html.escape(str(step["detail"]))}</pre>' if step.get("detail") else ""
-            items.append(f'<li><strong>{html.escape(str(step.get("name", "")))}</strong>{watch}{detail}</li>')
-        parts.append(f'<h3>{"Failed steps" if status == "Failed" else "Failed before it stopped"}</h3><ol class="failures">{"".join(items)}</ol>')
+            items.append(
+                f'<li class="{kind}"><span class="icon">{"✕" if kind == "fail" else "✓"}</span>'
+                f'<span class="name">{html.escape(name)}</span>{moment_html(base, moments.get(name), video)}{detail}</li>'
+            )
+        parts.append(f'<h3>Steps</h3><ol class="steps">{"".join(items)}</ol>')
 
     wording = behavior_wording(features)
-    results = behavior_results(record)
-    if results:
+    judges = behavior_judges(record)
+    if judges:
         def listed(group):
-            return "".join(f'<li title="{html.escape(sub_id)}">{html.escape(wording.get(sub_id, sub_id))}</li>' for sub_id, _ in group)
-        by_result = {result: [item for item in results if item[1] == result] for result in ("failed", "passed", "not judged")}
-        block = "<h3>Behaviors this run judged</h3>"
-        if len(by_result["not judged"]) == len(results) and record["steps"]:
+            lines = []
+            for sub_id, steps in group:
+                result = "fail" if any(step["passed"] is False for step in steps) else "pass" if steps else "none"
+                icon = {"fail": "✕", "pass": "✓", "none": "·"}[result]
+                judged = ", ".join(
+                    f'{html.escape(str(step.get("name", "")))}{moment_html(base, moments.get(str(step.get("name", ""))), video)}'
+                    for step in steps
+                )
+                by = f' <span class="muted">· {judged}</span>' if judged else ' <span class="muted">· not judged by any step that ran</span>'
+                lines.append(f'<li class="{result}" title="{html.escape(sub_id)}"><span class="icon">{icon}</span>'
+                             f'<span class="name">{html.escape(wording.get(sub_id, sub_id))}</span>{by}</li>')
+            return "".join(lines)
+        if not any(judges.values()) and record["steps"]:
             block = (
                 "<h3>Behaviors this check covers</h3>"
-                '<p class="muted">Its steps aren\'t tagged with the behaviors they test, so this run can\'t tell which of these passed.</p>'
-                f'<details><summary>{counted(len(results), "behavior")}</summary><ul class="behaviors">{listed(results)}</ul></details>'
+                '<p class="muted">Its steps don\'t name the behaviors they judge, so the run can\'t say which passed.</p>'
+                '<ul class="behaviors">' + "".join(
+                    f'<li title="{html.escape(sub_id)}">{html.escape(wording.get(sub_id, sub_id))}</li>' for sub_id in judges
+                ) + "</ul>"
             )
-            by_result = {"failed": [], "passed": [], "not judged": []}
-        if by_result["failed"]:
-            block += f'<p class="label fail">Failed</p><ul class="behaviors">{listed(by_result["failed"])}</ul>'
-        for result, label in (("passed", "passed"), ("not judged", "not judged by any step that ran")):
-            if by_result[result]:
-                block += f'<details><summary>{counted(len(by_result[result]), "behavior")} {label}</summary><ul class="behaviors">{listed(by_result[result])}</ul></details>'
+        else:
+            rank = {"fail": 0, "pass": 1, "none": 2}
+            ordered = sorted(judges.items(), key=lambda item: rank["fail" if any(step["passed"] is False for step in item[1]) else "pass" if item[1] else "none"])
+            block = f'<h3>Behaviors</h3><ul class="behaviors">{listed(ordered)}</ul>'
         parts.append(block)
 
     parts.append(f"<h3>Code</h3>{code_cells(record)}")
@@ -729,7 +830,7 @@ def details_html(check, path, record, earlier, features, evidence_dir):
             rows.append(
                 f'<li><span class="dot {RESULT_KEYS[earlier_status]}" title="{html.escape(earlier_status)}"></span>'
                 f'{time_html(earlier_record)} <span class="word">{html.escape(earlier_status)}</span>'
-                f'<span class="muted"> {html.escape(earlier_headline)}</span> '
+                f'<span class="muted"> {html.escape(earlier_headline)} · {html.escape(versions(earlier_record))}</span> '
                 f'<a href="{html.escape(earlier_base)}/replay.html">Replay</a></li>'
             )
         hidden = len(earlier) - HISTORY_RUNS
@@ -737,109 +838,91 @@ def details_html(check, path, record, earlier, features, evidence_dir):
         parts.append(f'<h3>Earlier runs</h3><ul class="history">{"".join(rows)}</ul>{more}')
 
     clips = [link for link in run_links(path, record, folder, evidence_dir) if link[2] == "clip"]
-    replay_label = "Open the replay: video, timeline, and evidence" if video else "Open the run: timeline and evidence"
     parts.append(
         '<p class="open">'
-        f'<a class="button secondary" href="{html.escape(base)}/replay.html">{replay_label}</a>'
+        f'<a class="button secondary" href="{html.escape(base)}/replay.html">{"Open the replay" if video else "Open the run"}</a>'
         + "".join(link_html(*link) for link in clips) + "</p>"
     )
     return "".join(parts)
 
 
 # The recordings page's styles and script. Plain strings, not f-strings, so CSS and JavaScript braces stay single.
-RECORDINGS_STYLE = """
-:root {
-  color-scheme: light dark;
-  --text: #1d1d1f; --muted: #6e6e73; --line: #e5e5ea; --card: #fff; --page: #f5f5f7;
-  --accent: #0a66c2; --accent-text: #fff; --chip: #eef2f7;
-  --pass: #1b6e3a; --pass-bg: #e3f4e8; --fail: #b3261e; --fail-bg: #fbe7e5; --other: #6e6e73; --other-bg: #ededf0;
-  --warn: #8a5300; --warn-bg: #fff1d6;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #f5f5f7; --muted: #a1a1a6; --line: #38383d; --card: #1c1c1e; --page: #111113;
-    --accent: #4c9cf0; --accent-text: #0b1a2a; --chip: #2a2f38;
-    --pass: #6fd08c; --pass-bg: #173822; --fail: #ff8a80; --fail-bg: #3f1a17; --other: #a1a1a6; --other-bg: #2c2c2e;
-    --warn: #ffc56b; --warn-bg: #3a2a10;
-  }
-}
-* { box-sizing: border-box; }
-body { font: 15px/1.45 system-ui, -apple-system, sans-serif; margin: 0; background: var(--page); color: var(--text); }
-main { max-width: 1040px; margin: 0 auto; padding: 0 20px 48px; }
-.intro { padding: 28px 0 4px; }
-.eyebrow { color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; margin: 0 0 2px; }
-h1 { font-size: 24px; margin: 0 0 16px; }
-.bar { position: sticky; top: 0; z-index: 2; background: var(--page); padding: 12px 0; margin-bottom: 12px; box-shadow: 0 1px 0 var(--line), 0 6px 12px -10px rgba(0,0,0,.25); }
-.search { display: flex; align-items: center; gap: 12px; }
-#search { flex: 1; font: inherit; padding: 9px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); }
-#search:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+RECORDINGS_STYLE = TOKENS + """
+main { max-width: 920px; margin: 0 auto; padding: 0 28px 64px; }
+.intro { padding: 44px 0 20px; }
+h1 { font-size: 34px; margin: 0 0 4px; line-height: 1.15; }
+.intro .meta { color: var(--muted); font-size: 14px; margin: 0; }
+.bar { position: sticky; top: 0; z-index: 2; background: var(--page); padding: 14px 0 12px; border-bottom: 1px solid var(--rule); margin-bottom: 4px; }
+.search { display: flex; align-items: baseline; gap: 16px; }
+#search { flex: 1; min-width: 0; font: inherit; padding: 6px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; color: var(--text); }
+#search::placeholder { color: var(--faint); }
+#search:focus { outline: 0; border-bottom-color: var(--text); }
 .hint, #matches { color: var(--muted); font-size: 13px; white-space: nowrap; }
-kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--card); }
-.filters { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.filters button { font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
-.filters button span { color: var(--muted); margin-left: 4px; }
-.filters button[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--page); }
-.filters button[aria-pressed="true"] span { color: inherit; opacity: .7; }
-article.check { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin: 0 0 10px; }
-article.check:target { outline: 2px solid var(--accent); }
-.row { display: grid; grid-template-columns: 104px 1fr auto; gap: 14px; align-items: start; padding: 14px 18px; }
+.filters { display: flex; gap: 22px; margin-top: 12px; flex-wrap: wrap; }
+.filters button { font: inherit; font-size: 13.5px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.filters button span { color: var(--faint); margin-left: 5px; }
+.filters button:hover { color: var(--text); }
+.filters button[aria-pressed="true"] { color: var(--text); font-weight: 600; box-shadow: 0 1px 0 var(--text); }
+.filters button[aria-pressed="true"] span { color: var(--muted); font-weight: 400; }
+article.check { border-bottom: 1px solid var(--line); }
+article.check:target .row { box-shadow: inset 3px 0 0 var(--accent); }
+.row { display: grid; grid-template-columns: 124px 1fr auto; gap: 20px; align-items: baseline; padding: 22px 0 20px; }
 .main { min-width: 0; }
-h2 { font-size: 16px; margin: 0; }
-.slug { font: 12px ui-monospace, monospace; color: var(--muted); font-weight: 400; margin-left: 6px; }
+h2 { font-size: 20px; margin: 0; line-height: 1.25; }
+.slug { color: var(--muted); font-weight: 400; margin-left: 10px; font-size: 14px; }
 .purpose { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
-.what { margin: 2px 0 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.note { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
-.ago::before { content: " · "; }
-.badge { justify-self: start; font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--other-bg); color: var(--other); white-space: nowrap; }
-.badge.passed { background: var(--pass-bg); color: var(--pass); }
-.badge.failed { background: var(--fail-bg); color: var(--fail); }
-.badge.stopped { background: var(--warn-bg); color: var(--warn); }
-.actions { display: flex; gap: 8px; align-items: center; }
-.actions .muted { font-size: 13px; white-space: nowrap; }
-.button { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; text-decoration: none; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--line); color: var(--text); background: var(--card); }
-.button:hover { border-color: var(--accent); color: var(--accent); }
-.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.button.primary:hover { filter: brightness(1.1); color: var(--accent-text); }
-.button.secondary { color: var(--accent); }
-.button.clip { font-weight: 400; }
-.toggle { font: inherit; font-size: 13px; padding: 5px 10px; border: 0; background: none; color: var(--accent); cursor: pointer; white-space: nowrap; }
-.toggle::after { content: " ▸"; }
-.toggle[aria-expanded="true"]::after { content: " ▾"; }
-.details { border-top: 1px solid var(--line); padding: 4px 18px 16px 136px; font-size: 14px; }
-.details h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 6px; }
-.details pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 ui-monospace, monospace; background: var(--chip); padding: 6px 8px; border-radius: 6px; margin: 4px 0 0; }
-.details details { margin: 4px 0; }
-.details summary { cursor: pointer; }
-ol.failures { margin: 0; padding-left: 20px; }
-ol.failures li { margin: 0 0 8px; }
-ol.failures strong { color: var(--fail); }
-ul.behaviors { margin: 2px 0 6px; padding-left: 20px; }
-.label { margin: 0; font-weight: 600; }
-.label.fail { color: var(--fail); }
+.what { margin: 10px 0 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.what .muted { font-size: 13px; }
+.note { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.code { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.actions { display: flex; gap: 18px; align-items: baseline; white-space: nowrap; }
+.actions .muted { font-size: 13px; }
+.button { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; padding: 6px 12px; border: 1px solid var(--line); color: var(--text); background: var(--card); border-radius: 3px; }
+.button:hover { border-color: var(--text); text-decoration: none; }
+.button.primary { border-color: var(--text); }
+.button.primary::after { content: " →"; }
+.button.secondary { color: var(--text); }
+.button.clip { font-weight: 400; color: var(--muted); }
+.toggle { font: inherit; font-size: 13.5px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.toggle:hover { color: var(--text); }
+.toggle::after { content: " +"; }
+.toggle[aria-expanded="true"]::after { content: " −"; }
+.details { padding: 0 0 28px 144px; font-size: 14px; }
+.details h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 22px 0 8px; }
+.details h3:first-child { margin-top: 0; }
+.details pre { background: var(--chip); padding: 8px 10px; margin: 6px 0 2px; }
+ol.steps, ul.behaviors { list-style: none; margin: 0; padding: 0; }
+ol.steps li, ul.behaviors li { padding: 4px 0 4px 24px; position: relative; }
+.icon { position: absolute; left: 0; width: 14px; text-align: center; font-weight: 700; font-size: 12px; }
+li.pass > .icon { color: var(--pass); } li.fail > .icon { color: var(--fail); } li.none > .icon { color: var(--faint); }
+li.fail > .name { font-weight: 600; color: var(--fail); }
+.time { color: var(--muted); margin-left: 4px; }
+a.watch { margin-left: 2px; }
 ul.history { list-style: none; margin: 0; padding: 0; }
-ul.history li { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ul.history li { padding: 3px 0; }
 ul.history .word { margin-left: 6px; font-weight: 600; }
-.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--other); margin-right: 8px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--other); margin-right: 8px; }
 .dot.passed { background: var(--pass); } .dot.failed { background: var(--fail); } .dot.stopped { background: var(--warn); }
-.open { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
-table.code-table { border-collapse: collapse; width: 100%; max-width: 640px; table-layout: fixed; font-size: 13px; }
-.code-table th, .code-table td { text-align: left; padding: 1px 8px 1px 0; vertical-align: baseline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.code-table col.repo { width: 150px; } .code-table col.commit { width: 70px; } .code-table col.notes { width: 170px; }
+.open { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 0; }
+table.code-table { border-collapse: collapse; width: 100%; max-width: 640px; table-layout: fixed; font-size: 13.5px; }
+.code-table th, .code-table td { text-align: left; padding: 2px 10px 2px 0; vertical-align: baseline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.code-table col.repo { width: 150px; } .code-table col.commit { width: 80px; } .code-table col.notes { width: 180px; }
 .code-table th { font-weight: 400; color: var(--muted); }
 .code-table .branch { font-weight: 600; }
 .code-table .branch.muted { font-weight: 400; }
-.tag { display: inline-block; font-size: 11px; padding: 0 7px; border-radius: 999px; background: var(--chip); color: var(--muted); margin-left: 4px; }
-.tag.warn { background: var(--warn-bg); color: var(--warn); }
-.commit { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
-.muted { color: var(--muted); }
-.empty { background: var(--card); border: 1px dashed var(--line); border-radius: 12px; padding: 28px; text-align: center; color: var(--muted); }
-.empty strong { color: var(--text); font-size: 16px; }
-.footnote { color: var(--muted); font-size: 13px; margin-top: 18px; }
-code { font: 13px ui-monospace, monospace; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
-[hidden] { display: none !important; }
+.tag { display: inline-block; font-size: 11px; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); margin-left: 6px; }
+.tag.warn { border-color: var(--warn); color: var(--warn); }
+.commit { color: var(--muted); }
+.empty { border: 1px dashed var(--line); padding: 36px 28px; text-align: center; color: var(--muted); margin-top: 8px; }
+.empty strong { display: block; color: var(--text); font-size: 17px; font-weight: 500; margin-bottom: 6px; }
+.footnote { color: var(--muted); font-size: 13px; margin-top: 28px; }
+code { font: 12.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--chip); padding: 1px 5px; border-radius: 3px; }
 @media (max-width: 760px) {
-  .row { grid-template-columns: 1fr; gap: 6px; }
-  .details { padding-left: 18px; }
+  main { padding: 0 16px 48px; }
+  .intro { padding-top: 28px; }
+  .row { grid-template-columns: 1fr; gap: 8px; padding: 18px 0 16px; }
+  .details { padding-left: 0; }
+  .hint { display: none; }
 }
 """
 
@@ -847,21 +930,6 @@ RECORDINGS_SCRIPT = """
 const search = document.getElementById('search');
 const matches = document.getElementById('matches');
 const checks = [...document.querySelectorAll('article.check')];
-const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-const ago = (date) => {
-  const minutes = (date - Date.now()) / 60000;
-  for (const [unit, size] of [['day', 1440], ['hour', 60], ['minute', 1]]) {
-    if (Math.abs(minutes) >= size || unit === 'minute') return relative.format(Math.round(minutes / size), unit);
-  }
-};
-for (const time of document.querySelectorAll('time[datetime]')) {
-  const date = new Date(time.getAttribute('datetime'));
-  if (isNaN(date)) continue;
-  time.title = time.textContent;
-  // The year shows only for a run from another year, so a date fits on one line.
-  time.textContent = date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(date.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
-  time.insertAdjacentHTML('afterend', `<span class="ago">${ago(date)}</span>`);
-}
 let result = 'all';
 const filter = () => {
   const words = search.value.toLowerCase().split(/\\s+/).filter(Boolean);
@@ -904,10 +972,11 @@ if (search) {
 def recordings_page(harness_dir):
     """Build the runs page: one line per check for its latest run, the ones that need a look first.
 
-    Each check shows its first problem in one line; Details opens every failure, the behaviors the
-    run judged, its code, and earlier runs; the replay page holds the video and full timeline.
-    Planned breaks are left out, since they fail on purpose; the feature map links each one.
-    Links start from the harness directory; times show locally when JavaScript runs, otherwise in UTC.
+    Each check shows its first problem and its code in one line; Details opens every step and behavior
+    with the moment it was decided, the run's code, and earlier runs; the replay page holds the video
+    and full timeline. Planned breaks are left out, since they fail on purpose; the feature map links
+    each one. Links start from the harness directory; times show locally when JavaScript runs,
+    otherwise in UTC.
     """
     evidence_dir = harness_dir / "evidence"
     runs_by_check = {}
@@ -922,7 +991,6 @@ def recordings_page(harness_dir):
     features = feature_metadata(harness_dir)
     wording = behavior_wording(features)
     app = harness_dir.resolve().name.removeprefix("verify-")
-    newest_code = next(iter(runs_by_check.values()))[0][1].get("code") or {} if runs_by_check else {}
     counts = {status: 0 for status in STATUS_ORDER}
     blocks = []
     for check, runs in ordered_checks:
@@ -932,18 +1000,13 @@ def recordings_page(harness_dir):
         key = RESULT_KEYS[status]
         title, purpose = check_feature(check, features)
         anchor = "check-" + re.sub(r"[^a-z0-9-]+", "-", check.lower())
-        code = record.get("code") or {}
-        differs = [name for name in sorted(set(code) | set(newest_code)) if code.get(name) != newest_code.get(name)]
-        flag = (
-            ' <span class="tag warn" title="This check last ran before the newest run, on different code in these repos. '
-            f'Rerun it to know whether its result still holds.">Earlier code: {html.escape(", ".join(differs))}</span>' if differs else ""
-        )
         links = run_links(path, record, run_folder(path), evidence_dir)
         actions = "".join(link_html(*link) for link in links if link[2] == "primary")
         if not links and status != "Passed":
             actions = '<span class="muted">No video kept</span>'
         lead = {"Failed": "Failed step: ", "Didn't finish": "Stopped: "}.get(status, "")
         heading = f'{html.escape(title)} <span class="slug">{html.escape(check)}</span>' if title else html.escape(check)
+        code = versions(record, " · ")
         searchable = " ".join([
             check, title or "", purpose, *(str(sub_id) for sub_id in record.get("sub_features") or []),
             *(wording.get(str(sub_id), "") for sub_id in record.get("sub_features") or []),
@@ -954,7 +1017,8 @@ def recordings_page(harness_dir):
             f'<article class="check" id="{anchor}" data-result="{key}" data-search="{html.escape(searchable.lower())}">'
             f'<div class="row"><span class="badge {key}">{html.escape(status)}</span>'
             f'<div class="main"><h2>{heading}</h2>{f'<p class="purpose">{html.escape(purpose)}</p>' if purpose else ""}<p class="what">{f'<span class="muted">{lead}</span>' if lead else ""}{html.escape(headline)}</p>'
-            f'<p class="note">{html.escape(note) + " · " if note else ""}{time_html(record)}{flag}</p></div>'
+            f'<p class="note">{html.escape(note) + " · " if note else ""}{time_html(record)}</p>'
+            f'{f'<p class="code">{html.escape(code)}</p>' if code else ""}</div>'
             f'<div class="actions">{actions}<button class="toggle" type="button" aria-expanded="false" aria-controls="{anchor}-details">Details</button></div></div>'
             f'<div class="details" id="{anchor}-details" hidden>{details_html(check, path, record, runs[1:], features, evidence_dir)}</div>'
             "</article>"
@@ -962,15 +1026,18 @@ def recordings_page(harness_dir):
 
     if blocks:
         body = "".join(blocks)
+        newest = max((runs[0][1] for runs in runs_by_check.values()), key=lambda record: str(record.get("started_at") or ""))
+        intro = f'<p class="meta">{counted(len(blocks), "check")} · last run {time_html(newest)}</p>'
     else:
         body = (
             '<div class="empty"><strong>No check has run yet.</strong>'
-            "<p>Each check run shows up here once vf.py run accepts it. A check that drives a screen keeps "
-            "its video when it fails, or when it runs with <code>VERIFY_KEEP_RECORDING=1</code>.</p></div>"
+            "<p>Runs appear here as vf.py run accepts them. A screen check keeps its video when it fails, "
+            "or when <code>VERIFY_KEEP_RECORDING=1</code> is set.</p></div>"
         )
+        intro = '<p class="meta">Check runs</p>'
     left_out = (
-        f'<p class="footnote">{counted(breaks, "run")} that broke the code on purpose, to prove a check can fail, '
-        f'{"is" if breaks == 1 else "are"} left out. <a href="features/README.md">The feature map</a> links each one from the behavior it proves.</p>'
+        f'<p class="footnote">{counted(breaks, "run")} that broke the code on purpose {"is" if breaks == 1 else "are"} left out; '
+        f'<a href="features/README.md">the feature map</a> links each from the behavior it proves.</p>'
         if breaks else ""
     )
     filters = "".join(
@@ -982,18 +1049,18 @@ def recordings_page(harness_dir):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(app)} · Verification framework</title>
+<title>{html.escape(app)} · check runs</title>
 <style>{RECORDINGS_STYLE}</style>
 </head>
 <body>
 <main>
 <div class="intro">
-<p class="eyebrow">Verification framework</p>
 <h1>{html.escape(app)}</h1>
+{intro}
 </div>
 <div class="bar"{"" if blocks else " hidden"}>
 <div class="search">
-<input id="search" type="search" placeholder="Search by check, behavior, step, branch, or commit" aria-label="Search checks">
+<input id="search" type="search" placeholder="Search checks, steps, branches, commits" aria-label="Search checks">
 <span id="matches" aria-live="polite"></span>
 <span class="hint"><kbd>/</kbd> to search</span>
 </div>
@@ -1002,11 +1069,11 @@ def recordings_page(harness_dir):
 {filters}
 </div>
 </div>
-<p id="no-match" class="empty" hidden>No check matches. Try fewer words, part of a branch or step name, or the All filter.</p>
+<p id="no-match" class="empty" hidden>No check matches.</p>
 {body}
 {left_out}
 </main>
-<script>{RECORDINGS_SCRIPT}</script>
+<script>{TIME_SCRIPT}{RECORDINGS_SCRIPT}</script>
 </body>
 </html>
 """
@@ -1045,9 +1112,10 @@ def write_recordings(harness_dir):
     page format. Evidence stays unchanged. Returns the page's path, or None, writing nothing, outside a harness."""
     if not is_harness(harness_dir):
         return None
+    features = feature_metadata(harness_dir)
     for path, _ in listed_runs(harness_dir / "evidence"):
         if not replay_is_current(run_folder(path) / "replay.html"):
-            write_page(path)
+            write_page(path, features=features)
     target = harness_dir / "recordings.html"
     write_atomically(target, recordings_page(harness_dir))
     return target
@@ -1062,16 +1130,23 @@ def write_replay(evidence_path, out=None):
     return target, video, write_recordings(harness_of(evidence_path))
 
 
-def write_page(evidence_path, out=None):
-    """Write one run's replay page. Returns the page's path and the video path the evidence names."""
+def write_page(evidence_path, out=None, features=None):
+    """Write one run's replay page. Returns the page's path and the video path the evidence names.
+
+    features is the harness's feature metadata when the caller has it; otherwise it is read from the
+    harness, if the evidence sits in one, to title the page with the feature the check proves.
+    """
     record = load(evidence_path)
     target = out or run_folder(evidence_path) / "replay.html"
     video = video_path(record, evidence_path)
     def link(path):
         return Path(os.path.relpath(evidence_root(evidence_path) / path, target.resolve().parent)).as_posix()
 
+    if features is None:
+        features = feature_metadata(harness_of(evidence_path)) if is_harness(harness_of(evidence_path)) else []
+    title = check_feature(str(record.get("check") or evidence_path.parent.name), features)[0]
     source = link(record["recording"]["video"]) if video else None
-    write_atomically(target, page(record, source, link))
+    write_atomically(target, page(record, source, link, title))
     return target, video
 
 
