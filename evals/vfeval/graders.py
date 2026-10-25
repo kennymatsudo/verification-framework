@@ -458,15 +458,41 @@ def no_app_code_in_checks(ctx):
     return Result(not hits, "\n".join(hits) or "no app imports in harness scripts")
 
 
+def map_lines(text):
+    """The `- id: ...` lines under Sub-features and How to prove it: what a feature file promises and how it is proven."""
+    lines, section = set(), None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            section = line.strip()
+        elif section in ("## Sub-features", "## How to prove it") and line.startswith("- "):
+            lines.add(line.strip())
+    return lines
+
+
 @grader
 def harness_unchanged(ctx):
-    """No existing check, feature file, or setting was changed or removed: nothing was loosened to pass."""
+    """Nothing was loosened: no check script or setting changed, and no existing sub-feature or proof line was changed or removed.
+
+    A verify run may add a behavior the change introduced to the feature map, with No check yet, since the verify mode
+    asks for that; so additions pass and only edits to what existed are failures."""
     if missing := _harness_missing(ctx):
         return missing
     before = ctx.manifest.get("harness_hashes", {})
     now = scaffold.harness_hashes(ctx.harness)
     changed = [rel for rel, digest in before.items() if now.get(rel) != digest]
-    return Result(not changed, f"changed or removed: {changed or 'none'}; added: {sorted(set(now) - set(before)) or 'none'}")
+    loosened = []
+    for rel in changed:
+        if not rel.startswith("features/"):
+            loosened.append(rel)
+            continue
+        reference = scaffold.hidden(ctx.practice, "coverage", *Path(ctx.practice["project_root"]).parts, *Path(ctx.practice["harness"]).parts, rel)
+        if not reference.is_file():
+            reference = scaffold.hidden(ctx.practice, "harness", *Path(ctx.practice["project_root"]).parts, *Path(ctx.practice["harness"]).parts, rel)
+        current = (ctx.harness / rel).read_text() if (ctx.harness / rel).is_file() else ""
+        lost = sorted(map_lines(reference.read_text()) - map_lines(current)) if reference.is_file() else ["(no reference copy to compare)"]
+        if lost:
+            loosened.append(f"{rel}: {lost[:3]}")
+    return Result(not loosened, f"loosened: {loosened or 'none'}; feature files with additions only: {[c for c in changed if c.startswith('features/') and c not in loosened and not any(str(l).startswith(c) for l in loosened)] or 'none'}; added files: {sorted(set(now) - set(before)) or 'none'}")
 
 
 def _texts(ctx, scope):

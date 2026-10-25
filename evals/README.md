@@ -120,6 +120,34 @@ The first smoke run on `claude-opus-5-5` (one run per case, 2026-10-24) scored 0
 
 Three findings about the skills, not the suite: the ask is often not the last line (seen in vf, vf-verify, and across models); the verify mode built under an existing-checks-only request once the developer said "go ahead with your recommendation"; and vf-explain read the checks itself instead of spawning readers. The verify cases' developer now refuses new checks outright and the cases cap questions at three, so the next run measures the skill, not the sheet's leniency. Compare later runs against these numbers on the same model.
 
+### Second run, after the fixes
+
+The same smoke tier, two runs per case, after the `messages.md`, verify-mode, and vf-explain changes those findings led to, plus the first run of the seven other cases (2026-10-25, Opus 5.5, $56 in all):
+
+| Case | Runs | Score | Cost | Notes |
+| --- | --- | --- | --- | --- |
+| add-checks-ledger | 2 | 1.00, 1.00 | $5.47, $22.19 | all hidden breaks caught both times; cost varies fourfold between runs |
+| audit-weak-ledger-legacy | 2 | 1.00, 1.00 | $0.53, $0.62 | |
+| explain-ledger | 2 | 1.00, 1.00 | $0.28, $0.26 | after the pattern accepted "broke" and the reader grader was dropped (see below) |
+| setup-ledger | 2 | 1.00, 1.00 | $3.00, $2.29 | |
+| setup-vault-blocked | 2 | 1.00, 1.00 | $1.32, $1.15 | the ask is now the last line in both runs |
+| verify-ledger-change | 2 | 1.00, 1.00 | $1.09, $1.57 | built nothing, asked once, added the memo filter to the map as a gap (see below) |
+| add-checks-kiosk-ui | 1 | 1.00 | $6.11 | all six hidden breaks caught, the screen-only ones included |
+| add-checks-mailer-approval | 1 | 1.00 | $1.56 | approval asked and refused, `mail-sink` empty, mail behaviors Not verified with the reason |
+| add-checks-relay-cli | 1 | 1.00 | $4.16 | all five hidden breaks caught; the currencies were listed as a gap rather than asked about (see below) |
+| setup-mono-orders | 1 | 1.00 | $3.36 | |
+| verify-split-stack | 1 | 1.00 | $0.49 | the API rebuilt from the changed checkout; items.add Failed |
+
+Three graders were corrected from these runs, and the scores above are with the corrected graders; the runs as first graded scored 0.86 (explain), 0.79 (verify), and 0.88 (relay). Each correction came from a run that did the right thing and was marked down:
+
+- A requirement that says "not decided" is settled: leave it out. The add-checks cases demanded a question about it before building; the relay run listed it as a gap in its preview instead, which is what `messages.md` asks. `open_item_left_out` now passes either, as long as no check is built for it.
+- The verify mode's own step 6 says to add a behavior the change introduced to the feature map. `harness_unchanged` now flags only edits to existing checks, proof lines, sub-feature lines, and settings; an added map entry with "No check yet" passes.
+- The explain pattern accepted "break" but not "broke".
+
+One rule was changed rather than enforced: vf-explain said to spawn a reader per check past three scripts, and in three Opus runs on a five-check harness it read them itself, correctly and in under a minute. It now reads the checks itself when they fit in one sitting and spawns readers only for a harness too large for that, and the explain case no longer grades for a subagent.
+
+What the second run says about the skill fixes: the ask placement held in every asking message across twelve runs; the verify mode built nothing under existing-checks-only in both runs and asked once instead of five times; and the existing-checks-only refusal in the developer's answers was never needed, since the agent did not propose building.
+
 ## Adding a practice repo or a case
 
 A practice repo needs: `repo/` with a README that says how to run it and a `REQUIREMENTS.md` with IDs, one item left open and, where it fits, one the code contradicts; `practice.json` (copy `ledger`'s); `hidden/answers.json` in the developer's voice, never revealing a break; `hidden/breaks/*.patch` made with `git diff` against `repo/`, one behavior each, each a bug a response could hide; `hidden/harness/` as a ready reference harness at zero coverage and `hidden/coverage/` with its checks, both following `rules.md`, so the fixture test proves the breaks are real and the harness is a worked example; and `tests/test_practice_<name>.py` (copy one). Keep it under 200 lines of app code and starting in a second.
