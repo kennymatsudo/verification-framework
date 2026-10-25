@@ -335,12 +335,12 @@ Three limits to keep in mind:
 
 A check that uses a screen records a video and keeps it when the run fails, or when you ask by setting `VERIFY_KEEP_RECORDING=1`.
 
-Open `recordings.html` in the harness to see how the checks are doing. Each check gets one line for its latest run, failing checks first: the result (Failed, Passed, or Didn't finish), the first failed step or the reason it stopped, and when it ran. A Watch button opens the video a few seconds before the failure. Details show every failed step, each repo's branch and commit, earlier runs, and the replay page. Filter or search at the top.
+Open `recordings.html` in the harness to see how the checks are doing. Each check gets one line for its latest run, failing checks first: the result (Failed, Passed, or Didn't finish), the first failed step or the reason it stopped, when it ran, and each repo's branch and commit. A Watch button opens the video a few seconds before the failure. Details show every step and every behavior with the moment in the video it was decided, each with its own Watch link, then the run's code, earlier runs, and the replay page. Filter or search at the top.
 
 Two commands work on a single run:
 
 ```sh
-scripts/framework/vf.py replay <record>                  # replay page: video beside the steps, j/k jump between failures
+scripts/framework/vf.py replay <record>                  # replay page: video beside the steps, every verdict marked on a strip under it
 scripts/framework/vf.py clip <record> --steps 2-3        # short MP4 of those steps, for a pull request
 scripts/framework/vf.py clip <record> --steps 2-3 --demo # same, with waits cut short and the result held on screen
 ```

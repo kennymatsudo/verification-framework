@@ -93,8 +93,8 @@ class ReplayTest(unittest.TestCase):
             self.assertEqual(target, evidence.with_suffix("") / "replay.html")
             page = target.read_text()
             self.assertIn('src="video.webm"', page)
-            self.assertIn("Failed.", page)
-            self.assertIn("app a1b2c3d (uncommitted changes)", page)
+            self.assertIn('<span class="badge failed">Failed</span> <span><span class="muted">Failed step: </span>order is paid', page)
+            self.assertIn("app a1b2c3d (local edits)", page)
             entries = data(page)["timeline"]
             self.assertEqual([entry["label"] for entry in entries][:2], ["Opens the store before recording", "Step 1: Customer pays"])
             self.assertIsNone(entries[0]["video_at"], "a mark before the recording began cannot be played")
@@ -126,7 +126,8 @@ class ReplayTest(unittest.TestCase):
             page = target.read_text()
             self.assertIsNone(video)
             self.assertNotIn("<video", page)
-            self.assertIn("kept no recording", page)
+            self.assertIn("No video was kept for this run.", page)
+            self.assertIn('<div class="layout novideo">', page, "nothing to put beside the steps, so one column")
             self.assertTrue(all(entry["video_at"] is None for entry in data(page)["timeline"]))
 
     def test_marks_and_steps_that_are_not_objects_are_skipped(self):
@@ -183,7 +184,7 @@ class ReplayTest(unittest.TestCase):
             orders = orders[:orders.index("</article>")]
             self.assertNotIn("Watch", orders, "nothing to watch without a video")
             self.assertIn("No video kept", orders)
-            self.assertIn('href="evidence/orders-api/1/replay.html">Open the run: timeline and evidence</a>', orders)
+            self.assertIn('href="evidence/orders-api/1/replay.html">Open the run</a>', orders)
             self.assertIn('href="evidence/checkout-pay/1/checkout-pay-step-1-customer-pays-2026-10-03-1402.mp4"', recordings)
             self.assertIn(">Clip: step 1</a>", recordings)
             self.assertNotIn(">Video<", recordings, "the raw video is reached from its replay page")
@@ -234,7 +235,7 @@ class ReplayTest(unittest.TestCase):
             recordings = replay.recordings_page(evidence.parents[2])
             self.assertIn('class="badge passed">Passed</span>', recordings, "the break's failure doesn't stand in for the latest run")
             self.assertNotIn('class="dot ', recordings, "nor does it show in the history")
-            self.assertIn("1 run that broke the code on purpose, to prove a check can fail, is left out.", recordings)
+            self.assertIn("1 run that broke the code on purpose is left out; ", recordings)
 
     def test_details_list_the_behaviors_the_run_judged_in_their_wording(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -252,15 +253,23 @@ class ReplayTest(unittest.TestCase):
             recordings = replay.recordings_page(evidence.parents[2])
             self.assertIn('<h2>Checkout <span class="slug">checkout-pay</span></h2>', recordings)
             self.assertIn('</h2><p class="purpose">A shopper pays.</p>', recordings, "the feature's summary says what the check tests")
-            self.assertIn('<p class="label fail">Failed</p><ul class="behaviors"><li title="checkout.unlisted">checkout.unlisted</li></ul>', recordings,
-                          "an ID with no wording shows as itself")
-            self.assertIn('1 behavior passed</summary><ul class="behaviors"><li title="checkout.pay">Paying with a new card creates a paid order.</li>', recordings)
-            self.assertIn("1 behavior not judged by any step that ran", recordings)
+            unlisted = '<li class="fail" title="checkout.unlisted"><span class="icon">✕</span><span class="name">checkout.unlisted</span>'
+            self.assertIn(unlisted, recordings, "an ID with no wording shows as itself")
+            # Each behavior names the step that judged it and the moment in the video, 3 seconds early.
+            paid = ('<span class="name">Paying with a new card creates a paid order.</span> <span class="muted">· order is created '
+                    '<span class="time">0:07</span> <a class="watch" href="evidence/checkout-pay/1/replay.html#at=4">Watch</a></span>')
+            self.assertIn(paid, recordings)
+            refund = '<span class="name">checkout.refund</span> <span class="muted">· not judged by any step that ran</span>'
+            self.assertIn(refund, recordings)
+            self.assertLess(recordings.index(unlisted), recordings.index(paid), "failed behaviors first")
+            self.assertLess(recordings.index(paid), recordings.index(refund), "then passed, then not judged")
             self.assertNotIn("bin/verify", recordings, "only Sub-features lines are wording")
             searchable = recordings[recordings.index('data-search="') + len('data-search="'):]
             self.assertIn("paying with a new card creates a paid order", searchable[:searchable.index('"')])
             subprocess.run([sys.executable, str(SCRIPT), evidence.name], cwd=evidence.parent, check=True, capture_output=True)
             self.assertIn("Paying with a new card", (evidence.parents[2] / "recordings.html").read_text(), "run from inside its check folder")
+            page = (evidence.with_suffix("") / "replay.html").read_text()
+            self.assertIn('<h1>Checkout <span class="slug">checkout-pay</span></h1>', page, "the replay page is titled like the list")
 
     def test_a_feature_summary_is_its_first_plain_sentence(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -276,7 +285,7 @@ class ReplayTest(unittest.TestCase):
             evidence = write(directory, dict(RECORD, sub_features=["checkout.pay", "checkout.refund"]))
             recordings = replay.recordings_page(evidence.parents[2])
             self.assertIn("<h3>Behaviors this check covers</h3>", recordings)
-            self.assertIn("so this run can't tell which of these passed.", recordings)
+            self.assertIn("so the run can't say which passed.", recordings)
             self.assertNotIn("not judged by any step", recordings)
 
     def test_a_step_naming_no_sub_feature_judges_a_check_covering_one(self):
@@ -336,14 +345,19 @@ class ReplayTest(unittest.TestCase):
             evidence.parent.mkdir(parents=True)
             evidence.write_text(json.dumps(RECORD))
             recordings = replay.recordings_page(harness)
-            self.assertIn('<p class="eyebrow">Verification framework</p>\n<h1>shop</h1>', recordings)
+            self.assertIn('<h1>shop</h1>\n<p class="meta">1 check · last run <time datetime="2026-10-03T14:02:11Z">', recordings)
             self.assertIn('class="badge failed">Failed</span>', recordings)
             self.assertIn('<p class="what"><span class="muted">Failed step: </span>order is paid</p>', recordings)
             self.assertIn('<p class="note">1 of 2 steps failed · ', recordings)
+            self.assertIn('<p class="code">app a1b2c3d (local edits)</p>', recordings, "the line names the code it ran on")
             # The failed step is 19.4s into the video; the link starts the replay a few seconds before it.
             self.assertIn('href="evidence/checkout-pay/1/replay.html#at=16.4">Watch the failure</a>', recordings)
-            self.assertIn("<h3>Failed steps</h3>", recordings)
-            self.assertIn("<pre>status=pending</pre>", recordings)
+            self.assertIn("<h3>Steps</h3>", recordings)
+            self.assertIn('<li class="fail"><span class="icon">✕</span><span class="name">order is paid</span> <span class="time">0:19</span> '
+                          '<a class="watch" href="evidence/checkout-pay/1/replay.html#at=16.4">Watch</a><pre>status=pending</pre></li>', recordings)
+            self.assertIn('<li class="pass"><span class="icon">✓</span><span class="name">order is created</span> <span class="time">0:07</span> '
+                          '<a class="watch" href="evidence/checkout-pay/1/replay.html#at=4">Watch</a></li>', recordings,
+                          "a passed step shows the moment it was decided too")
             searchable = recordings[recordings.index('data-search="') + len('data-search="'):]
             for word in ("checkout.pay", "order is paid", "a1b2c3d", "failed"):
                 self.assertIn(word, searchable[:searchable.index('"')])
@@ -354,9 +368,9 @@ class ReplayTest(unittest.TestCase):
             recordings = replay.recordings_page(evidence.parents[2])
             self.assertIn('class="badge stopped">Didn&#x27;t finish</span>', recordings)
             self.assertIn('<p class="what"><span class="muted">Stopped: </span>the browser failed</p>', recordings)
-            self.assertIn("No verdict after 2 steps; 1 step had failed before it stopped.", recordings)
+            self.assertIn('<p class="note">Stopped after 2 steps, 1 failed · ', recordings)
             self.assertIn("Watch where it stopped</a>", recordings)
-            self.assertIn("<h3>Failed before it stopped</h3>", recordings)
+            self.assertIn("<h3>Why it stopped</h3><pre>the browser failed</pre>", recordings)
             self.assertIn('data-result="stopped" aria-pressed="false">Didn&#x27;t finish <span>1</span>', recordings)
             self.assertNotIn('data-result="failed"', recordings, "a result no check has gets no filter")
 
@@ -375,16 +389,18 @@ class ReplayTest(unittest.TestCase):
         self.assertNotIn("not on main", worker_row)
         self.assertIn('title="Checked out at a commit, not on a branch">no branch</td>', worker_row)
 
-    def test_a_check_that_ran_on_other_code_than_the_newest_run_is_flagged(self):
+    def test_each_check_names_the_code_its_latest_run_tested(self):
         with tempfile.TemporaryDirectory() as directory:
             evidence = write(directory, dict(RECORD, started_at="2026-10-04T10:00:00Z"))
-            older = dict(RECORD, check="orders-api", started_at="2026-10-02T10:00:00Z", code={"app": {"commit": "ffff000", "dirty": False}})
+            older = dict(RECORD, check="orders-api", started_at="2026-10-02T10:00:00Z",
+                         code={"app": {"commit": "ffff000", "branch": "main", "dirty": False}})
             (evidence.parents[1] / "orders-api").mkdir()
             (evidence.parents[1] / "orders-api" / "1.json").write_text(json.dumps(older))
             recordings = replay.recordings_page(evidence.parents[2])
             orders = recordings[recordings.index('id="check-orders-api"'):]
-            self.assertIn(">Earlier code: app</span>", orders)
-            self.assertEqual(recordings.count(">Earlier code:"), 1)
+            self.assertIn('<p class="code">app main ffff000</p>', orders)
+            self.assertIn('<p class="code">app a1b2c3d (local edits)</p>', recordings[:recordings.index('id="check-orders-api"')])
+            self.assertIn("app main ffff000", orders[orders.index('data-search="'):orders.index('">')], "a commit is searchable")
 
     @unittest.skipUnless(NODE, "needs Node.js to execute replay JavaScript")
     def test_replay_page_opens_at_its_links_moment_or_else_just_before_the_first_failure(self):
