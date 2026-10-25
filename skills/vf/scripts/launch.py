@@ -94,7 +94,7 @@ def write_record(harness, record):
 
 
 def alive(pid):
-    """Whether the process is still running. A process this one cannot signal counts as running."""
+    """Whether the process is still running. A process this one cannot signal counts as running; a zombie counts as exited."""
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -103,10 +103,16 @@ def alive(pid):
         return True
     try:
         # A child this process started may be a zombie; reap it so it reads as exited.
-        finished, _ = os.waitpid(pid, os.WNOHANG)
-        return finished == 0
+        if os.waitpid(pid, os.WNOHANG)[0]:
+            return False
     except ChildProcessError:
-        return True
+        pass
+    # Once the launcher exits the app belongs to another parent, which may reap it late; until then it is a
+    # zombie that os.kill still finds. /proc shows the state; where there is none (macOS), it counts as running.
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] not in ("Z", "X")
+    except (OSError, IndexError):
+        return not Path("/proc/self/stat").exists()
 
 
 def tail(harness, lines=20):
