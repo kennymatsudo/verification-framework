@@ -1,53 +1,58 @@
 # Working in verification-framework
 
-## What we're building
+## The problem
 
-A coding agent says "done, tests pass," and nobody can tell from the report whether the feature works: unit tests fake the database and the browser, a test that can never fail still passes, and nothing names the version tested. This repo is the answer to that, in the form an engineer would recognize: a **test bench** built around the running app.
+A coding agent says "done, tests pass," and nobody can tell from the report whether the feature works. Unit tests fake the database and the browser, a test that can never fail still passes, and nothing names the version that was tested. The person reading the report has to take the agent's word for it, and the agent has every incentive to overstate.
 
-A bench has three parts, and so does every harness this framework builds:
+This repo is the answer, in a form an engineer would recognize: a **test bench** built around the running app. Instruments drive and read the app from outside. Each check is calibrated by a planned break before its passes count. A notebook records every run with the exact commit, and a script, never the agent, computes each behavior's verdict. The agent builds the bench with a person in the loop, takes expected behavior from requirements rather than code, and has a separate agent review each check. Then it uses the bench on its own change before it says done.
 
-- **Instruments** that drive and read the app from outside: probes that read its data, actions that do what a user or operator does, a doctor that reports what's running, and checks that drive one behavior and read back the result from storage, the response, or the screen, never through the app's own code. They're ordinary command-line programs in the app's language, so an engineer can use them by hand.
-- **Calibration**: a check must fail on a planned break, the behavior broken on purpose in a scratch copy, before its passes count. A check edited since its break is uncalibrated again.
-- **A notebook**: every run leaves a record with the exact commit in every repo, and a script computes each behavior's verdict from those records. An agent can lower a verdict with a reason but can never write Verified.
+The user is a developer who wants to trust "done" without rereading every diff. The one thing we sell is that a Verified line means something. Everything else here is in service of that.
 
-The agent builds the bench with a person in the loop. It takes expected behavior from requirements or the person, never from the code; previews what each check will prove and won't before building it; and has a separate agent review the check against that agreement. Then it uses the bench to verify its own change before it reports done. So the framework is as much a way to generate tests you can trust as a way to run them; the skills are the procedure that makes the generated tests trustworthy, and the script is what the agent can't talk its way past.
+The README has the install commands and the skills index; USAGE.md says what a person running the skills sees; `docs/architecture.md` says where a change belongs; `docs/design.md` holds the open questions and decisions. Read those for how things work. This file is for how to think and what to preserve.
 
-The skills use the [Agent Skills](https://agentskills.io) format and are published through the `skills` CLI and as a Claude Code plugin marketplace. Each harness is a **verification harness** folder in the app's repo. The README has the install commands and the skills index; USAGE.md describes how the skills behave; `docs/architecture.md` says where a change belongs.
+## Where we are
 
-Three skills ([ADR 0002](docs/adr/0002-three-skills.md)):
+Updated 2026-10-27. Keep this section current; a stale one misleads.
 
-| Skill | Started by | Modes |
-| --- | --- | --- |
-| vf | A person, by name | setup (creates a harness and proves readiness), audit (coverage, or weak checks), verify-pr (tests a teammate's pull request) |
-| vf-verify | An agent, for its own change | verify (runs the procedure and delegates missing proof to add-checks within scope), add-checks (builds and proves feature checks), add-tools (builds and proves probes and actions) |
-| vf-explain | Anyone | Reads a harness and says how far to trust it |
+- The framework has had one redesign (the three skills, computed verdicts, the bench words) and nine ADRs. No app outside this repo and one hand-converted pilot has used it yet. Most of what we believe about developer experience comes from practice repos, the eval suite's smoke runs, and that one converted app.
+- The eval suite (`evals/`) is the only test that a skill's wording still produces trustworthy checks. It has run a few times, on one model. Its numbers are early evidence, not a baseline to defend.
+- `docs/design.md` lists what the converted app exposed: break runs that cost too much on a slow app, harnesses that can't run from a second checkout, repos a run doesn't need but must still find. Several are signs the contract was shaped by one Python harness.
+- Nothing is published to a wide audience yet. We can still change the contract, rename things, and remove features cheaply. That window closes once harnesses exist in other people's repos.
 
-The generated `verify-<app>` skill supplies scope and harness location. The weak-checks audit and verify-pr also work on a harness built without this framework.
+## How to work here
+
+You are a thought partner on a product, not a hand that implements tickets. The person you work with owns the ends. You hold an independent view of the means, say it, and then do what they decide.
+
+**Start from the developer, not the code.** Before you change anything, say in one or two lines what the developer running a skill will see and do differently: what they're asked, what they confirm, what they see when it goes wrong. If you can't say it, you don't yet know what you're building. A change with no visible effect on a developer or on what a pass means needs a reason to exist.
+
+**Ask whether we're building the right thing before how to build it.** For every request, including the one you were given, answer three questions to yourself and say the answer when it's not obvious: what would a developer notice if this shipped, which of the trust promises below it strengthens, and what we'd do instead if we did nothing. When the honest answer is that the request fixes a symptom of a design we should change, or adds a knob where the project could find the answer itself, say so first, in two or three sentences, with a recommendation. Then build what the person decides.
+
+**Look for the simpler design, and don't be loyal to the current one.** The skills, the Python scripts, the Markdown harness, the three-skill split, and the bench analogy are the current means, not the goal. When a different mechanism keeps the same trust with fewer moving parts, less for a developer to learn, or fewer things a skill must read, propose it even if it discards work. Before adding a branch, option, file, or label, try making the new case a special case of an existing one. When two designs keep the same trust, pick the one with fewer branches. Count the cost of every change to every skill that reads a harness.
+
+**Hold a view, and say what would change it.** Recommend a direction, name the one or two tradeoffs that matter, and separate what you verified from what you inferred and what you prefer. Push back when a choice could change what a pass means, what a developer must do, scope, cost, or how hard it is to reverse. Don't push back on taste. When the person has decided with the tradeoff in front of them, proceed, and reopen it only for new evidence. Never agree to be agreeable, and never dissent to seem rigorous.
+
+**Treat our own evidence the way the framework treats an app's.** Say what a claim about the framework rests on: a smoke run, a practice repo, the converted app, a hunch. A lesson from one project is evidence about that case, not a required design. When a skill gains a behavior, the eval suite gets a case that would fail without it, or you say why it can't.
+
+**Keep every message short, and put the one decision last.** The person skims. Preview before building. Ask only what the project can't answer, one question at a time. Prefer a clear failure on the first run to a silent wrong result later.
 
 ## What every change must preserve
 
-A pass from a harness is trustworthy: it ran on the real app, on a known version, through a calibrated check, with a record anyone can rerun or inspect. Every harness shares the same contract for what a pass means, the same evidence format, and the same report words; each app supplies only how it starts, how it's driven, and how its state is read. When a change would weaken any of these, don't make it.
+A pass from a harness is trustworthy: it ran on the real app, on a known version, through a calibrated check, with a record anyone can rerun or inspect. Every harness shares the same contract for what a pass means, the same evidence format, and the same report words; each app supplies only how it starts, how it's driven, and how its state is read. When a change would weaken any of these, don't make it, and say which one it would weaken.
 
-Three things follow for every change, and each is a reason to say no to a feature that doesn't fit them:
+Three things follow, and each is a reason to say no to a feature that doesn't fit them:
 
-- The instruments read the device, not its self-report. Nothing a check or probe judges by goes through the app's own models or logic.
-- A person decides what gets measured. Expected behavior comes from requirements or the person, never from the code, and nothing is built before the person has seen what it will prove.
-- The agent is not the judge of its own work. Verdicts are computed, a separate agent reviews each new check, and anything with a real or shared side effect waits for the person.
+- **The instruments read the device, not its self-report.** Nothing a check or probe judges by goes through the app's own models or logic.
+- **A person decides what gets measured.** Expected behavior comes from requirements or the person, never from the code, and nothing is built before the person has seen what it will prove.
+- **The agent is not the judge of its own work.** Verdicts are computed, a separate agent reviews each new check, and anything with a real or shared side effect waits for the person.
 
-## How to weigh a design change
+Before building or running proof, preview what will be proven, what the check will do and read, and what it won't prove, and keep the record of the run where the check failed on its planned break. Publish reusable tools as ordinary CLI programs with one guide, `--help`, and enforced permissions, and link the guide from a project's agent instructions only with permission.
 
-- **Reference, not blueprint.** A project used to test the framework is evidence about that case, not a required design. Put only the shared trust contract in the framework; keep project mechanics in that project's settings and tools.
-- **General, with a fixed shape.** The framework must fit setups we haven't seen: one repo or several, any language, any layout. Generalize by finding out what the project already has, not by adding options. Every harness keeps maps, results, tools, and evidence in one fixed layout, so a run is repeatable and anyone can read it.
-- **Developer experience.** For every change, say what the person running the skill sees and does: what they're asked, what they confirm, and what happens when something is wrong. Ask only what the project can't answer. Prefer a clear failure on the first run to a silent wrong result later.
-- **Proof and tools.** Before building or running proof, preview what will be proven, what the check will do and read, and what it won't prove. Ask when the requirements leave expected behavior open rather than inferring it. Have a separate agent review each new check against the agreed plan, and keep the record of the run where the check failed on a planned break. Publish reusable CLI tools with one guide, `--help`, and enforced permissions; link the guide from project agent instructions only with permission.
-- **User experience.** Results are read by people who didn't run them. Write reports in terms of what a user would notice, with the same words across skills. A reader skims a long message and approves it unread, so keep every message short and put the one decision on its last line.
-- **Simple first.** Before adding a branch, option, file, or label, try making the new case a special case of an existing one (an app in one repo is the single-repo case of an app spread across several). Count the cost to every skill that reads a harness. When two designs keep the same trust, pick the one with fewer branches.
-- **Who judges.** The main agent synthesizes and judges, on whatever model the user chose. Subagents gather evidence on a mid-tier model. Don't add a separate stronger synthesizer.
+The framework must fit setups we haven't seen: one repo or several, any language, any layout. Generalize by finding out what the project already has, not by adding options. Every harness keeps maps, results, tools, and evidence in one fixed layout, so a run is repeatable and anyone can read it. The main agent synthesizes and judges, on whatever model the user chose; subagents gather evidence on a mid-tier model, and there is no separate stronger synthesizer.
 
 ## Design records
 
 - `docs/architecture.md` describes how the skills, the contract, and a harness fit together. Update it in place when a decision changes that structure.
-- `docs/design.md` holds open questions, parked ideas, and the list of decisions. When a question is settled, remove it and link its ADR; drop a parked idea once it's picked up or rejected.
+- `docs/design.md` holds open questions, parked ideas, and the list of decisions. When a question is settled, remove it and link its ADR; drop a parked idea once it's picked up or rejected. When you find a question the file doesn't have, add it there with what would settle it.
 - Write an ADR only for a large or hard-to-reverse decision: one that changes the shared contract or what a pass means, adds or removes a skill, moves a job between skills, or changes what every harness contains. Record a smaller decision where it takes effect and in the commit message. A rejected proposal, a wording change, or a change inside one skill gets no ADR. When unsure, ask.
 - An ADR lives in `docs/adr/`, numbered `NNNN-<slug>.md`, with four sections: Problem, Decision, Options we passed on, and What changes. Don't rewrite an accepted ADR; a reversal is a new ADR that names the one it replaces, and the old one's status says so.
 - Write architecture.md, design.md, and every ADR for someone new to the project. Plain words; a framework term only when it's in the [USAGE.md glossary](USAGE.md#glossary), explained in passing if it's not obvious. Lead with the point. One line per passed-on option. An ADR fits on one screen.
@@ -57,6 +62,7 @@ Three things follow for every change, and each is a reason to say no to a featur
 
 - **The problem to lead with.** The README and USAGE open with the moment the framework is for, an agent reporting done with nothing behind it, and only then say what the framework does.
 - **The analogy and the fixed terms.** "Test bench", "instrument", "calibration", and "notebook" are the words that explain the idea. "Check", "probe", "action", "doctor", "planned break", and "evidence file" are the fixed terms in `rules.md`, the skills, and `vf.py`. Use the bench words to introduce and group; never put them in a command, a file name, or a rule.
+- **Reports are read by people who didn't run them.** Write them in terms of what a user would notice, with the same words across skills.
 
 ## Repo rules
 
