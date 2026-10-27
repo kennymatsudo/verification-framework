@@ -140,7 +140,7 @@ Ready means setup worked once, not that the app is running now, so every run sta
 | `commands` | `start` (may name a repo's checkout as `{checkout:<repo>}`, which `vf.py` fills with that repo's checkout or a planned break's scratch copy; `none` when each check starts the app itself, `user` when only a person can); `stop` (or `none`); `doctor`; `ready_line` (the exact text the doctor prints when ready); `probe` (the command that looks up the app's current data, or `null`); `reloads` (`true` when the app picks up an edit to its checkout without a restart, `false` when a break must restart it) |
 | `tools` | One entry per harness command, keyed by a short name; see [tool entry checks](#tool-entry-checks) |
 
-A string still containing a template blank (`<` followed by a lowercase letter) counts as unfilled, except in a tool entry's prose, where `<id>` is an example input. Any other top-level key is an error. `README.md`, `notes.md`, `status.md`, and `tools.md` must also exist, and `tools.md` must be what `vf.py tools` would write now.
+A string still containing a template blank (`<` followed by a lowercase letter) counts as unfilled, except in a tool entry's prose, where `<id>` is an example input. `README.md`, `notes.md`, `status.md`, and `tools.md` must also exist, and `tools.md` must be what `vf.py tools` would write now.
 
 ### Repository locations
 
@@ -155,7 +155,7 @@ Each entry under `repos` is `"<name>": "<location>"`, listed even when there's o
 
 The `features/` folder has one `<slug>.json` per feature a user can see. Each splits the feature into **behaviors** (one thing a user would notice; the skills also call them sub-features) and says how each is proven. `validate.py` parses every `.json` file there; a `.md` beside one is prose it ignores.
 
-A feature file has `name`, `summary`, and `behaviors`, and optionally `reach` (how a user gets there), `sources` (where its requirements were read, with the revision), and `gotchas`, each a list of strings. Any other key is an error.
+A feature file has `name`, `summary`, and `behaviors`, and optionally `reach` (how a user gets there), `sources` (where its requirements were read, with the revision), and `gotchas`, each a list of strings. Other top-level keys are ignored, so a team can keep its own; a behavior entry or a tool entry with a key the format doesn't name is an error.
 
 **IDs.** Each key under `behaviors` is a behavior's ID, such as `checkout.saved-card`. An ID uses lowercase letters, digits, dots, dashes, and underscores, starts with a letter or digit, and is unique across the map. The same ID appears in every evidence file that tests it and in its `status.md` line. Its `words` say what a user would notice: `"a returning shopper can pay with a saved card"`.
 
