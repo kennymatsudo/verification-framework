@@ -6,6 +6,12 @@ A reference project can reveal a missing shared rule or an integration gap, but 
 
 ## Open questions
 
+### Pay down the scaffolding before publishing
+
+[A second redesign with fewer parts and the same trust](redesign-proposal.md) proposes keeping the trust core as it is and replacing what grew around it: one skill instead of three, one structured manifest instead of five Markdown files with grammars, one vendored `vf.py` instead of twelve scripts, and a `Start` command that takes the checkout instead of the two scratch-code settings. It claims to settle five of the questions below. Each of its numbered decisions would be an ADR.
+
+**What settles it:** a decision to take step 1 (one skill) and a smoke run showing the one-skill agent never starts setup or an audit unasked.
+
 ### Add independent judges where an agent grades its own work
 
 The check reviewer and the weak-checks verifiers are independent judges: each gets the artifact and the sources, never the author's reasoning. One moment still lets the author judge itself: **the author picks its own planned break**, so it can pick one the check is sure to catch. A fresh agent that hasn't seen the check could pick the break from the behavior and the code. Checks that catch their own breaks but miss hidden ones would show the author's breaks were too easy. It adds a subagent to every check built, so measure it on practice repos first.
