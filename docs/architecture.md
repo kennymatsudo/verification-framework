@@ -120,7 +120,7 @@ The weak-checks audit and verify-pr also work on a harness this framework didn't
 | You want to change | Edit |
 | --- | --- |
 | What a pass means, the evidence format, or the report words | `rules.md`, the manifest template, `validate.py`, USAGE.md, and internals.md, together |
-| The message shape | Both copies of `references/messages.md`, kept identical, and USAGE.md |
+| The message shape | `references/messages.md` and USAGE.md |
 | Something only some apps need | A field in the manifest template, not a rule |
 | How one job is done | That mode's file under `references/`, then the eval smoke tier (`evals/README.md`) |
 | Who does which job | The modes involved, USAGE.md, the README index, and an ADR |

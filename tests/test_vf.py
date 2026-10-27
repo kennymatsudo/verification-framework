@@ -178,6 +178,15 @@ class Sync(unittest.TestCase):
         recorded = vf.read_lock(self.harness / validate.FRAMEWORK_LOCK)
         self.assertEqual(recorded["../vf/SKILL.md"], vf.file_hash((installed / "vf" / "SKILL.md").read_bytes()))
 
+    def test_names_the_files_of_an_earlier_harness_format_without_touching_them(self):
+        self.harness.mkdir(parents=True)
+        (self.harness / "settings.md").write_text("## Setup\n- Status: ready\n")
+        result = run_sync(self.harness)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("WARN: settings.md is from an earlier harness format", result.stdout)
+        self.assertIn("harness.json", result.stdout)
+        self.assertTrue((self.harness / "settings.md").is_file(), "sync leaves the team's files alone")
+
     def test_copies_the_skill_into_every_skills_directory_at_the_project_root(self):
         other = self.tmp / ".claude" / "skills"
         other.mkdir(parents=True)

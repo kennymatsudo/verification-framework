@@ -805,7 +805,23 @@ def sync(harness_dir, restore=False):
     if not lock.is_file() or lock.read_text() != lock_text:
         lines.append(f"{'replaced' if lock.is_file() else 'created'} {lock.relative_to(harness_dir)}")
         lock.write_text(lock_text)
+    lines += earlier_format_warnings(harness_dir)
     return lines or ["framework copies already current"], 0
+
+
+# Files an earlier harness format kept that this one does not read. sync leaves them, since the team owns the
+# harness's own files, but names them so a developer knows why validate fails until harness.json exists.
+EARLIER_FORMAT_FILES = ["settings.md", "features/README.md"]
+
+
+def earlier_format_warnings(harness_dir):
+    """One line per file from an earlier harness format still in the harness; sync neither reads nor removes them."""
+    found = [name for name in EARLIER_FORMAT_FILES if (harness_dir / name).is_file()]
+    if not found:
+        return []
+    return [f"WARN: {', '.join(found)} {'is' if len(found) == 1 else 'are'} from an earlier harness format and no longer read; this harness needs "
+            "harness.json and features/<slug>.json (see rules.md and the installed vf's references/harness.md), and vf.py validate "
+            "fails until it has them. Carry the settings over, then remove the old files."]
 
 
 def main():

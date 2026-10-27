@@ -45,6 +45,11 @@
       "requirement": "ST-3",
       "words": "a negative quantity is refused",
       "match": "negative|refus|reject"
+    },
+    "items.require-name": {
+      "requirement": "ST-4",
+      "words": "the API refuses an item with no name",
+      "match": "name|require"
     }
   },
   "open_questions": [],
@@ -67,6 +72,12 @@
       "sub_feature": "items.reject-negative",
       "repo": "api",
       "what": "the API accepts a negative quantity"
+    },
+    {
+      "patch": "breaks/04-nameless-item-accepted.patch",
+      "sub_feature": "items.require-name",
+      "repo": "api",
+      "what": "the API stores an item with no name"
     }
   ],
   "changes": {

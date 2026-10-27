@@ -25,6 +25,15 @@
       "plan": "add with quantity -1; expect exit 1, a refusal message, and no stored item of that name. Reads the exit code, the message, and the data file.",
       "check": "python3 .claude/skills/verify-stock/scripts/checks/reject.py",
       "reads": "state"
+    },
+    "items.require-name": {
+      "words": "the API refuses an item with no name and stores nothing",
+      "plan": "post an item with no name straight to the API; read the data file to confirm nothing was stored. Drives the API alone, so only the api repo's code runs and is recorded.",
+      "check": "python3 .claude/skills/verify-stock/scripts/checks/fields.py",
+      "reads": "state",
+      "repos": [
+        "api"
+      ]
     }
   }
 }

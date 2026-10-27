@@ -1,0 +1,12 @@
+diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -65,7 +65,7 @@
+ 			reply(w, 200, items)
+ 		case http.MethodPost:
+ 			var item Item
+-			if err := json.NewDecoder(r.Body).Decode(&item); err != nil || item.Name == "" {
++			if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+ 				reply(w, 400, map[string]string{"error": "name and qty are required"})
+ 				return
+ 			}

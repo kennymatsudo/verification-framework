@@ -47,7 +47,7 @@ Each is under 200 lines of app code and starts in about a second. Together they 
 | `ledger` | Python HTTP API over SQLite, one repo, restart on edit | The anchor: six hidden breaks where the response lies and only the database tells; an open requirement (daily limit); a requirement the code gets wrong (overdrafts) |
 | `kiosk` | Node server and a web page, state in a JSON file, page files reload | Browser-driven checks; breaks that show only on the screen (wrong total, wrong confirmation number) or only in storage |
 | `shop-mono` | Monorepo, Python orders service and Node mailer, harness per app | Project root is the app folder; the mailer sends real mail, so its checks need an approval the developer refuses |
-| `split-stack` | Two repos side by side, Go API and Python command-line client | An `env:` repo locator; a compiled app whose doctor stamps the build with the code it came from |
+| `split-stack` | Two repos side by side, Go API and Python command-line client | An `env:` repo locator; a compiled app whose doctor stamps the build with the code it came from; one behavior whose check drives the API alone and names `repos: ["api"]`, so a run records and a break must hit only that repo |
 | `relay` | Python command-line tool, no server | Nothing to start or stop; checks run the command on files they write; breaks run from a scratch checkout the harness points at |
 | `vault` | Service that refuses to start without a token only a person can fetch | Setup must stop as incomplete with the real blocker and invent nothing |
 | `ledger-legacy` | The ledger with a homegrown `qa/` folder of smoke checks | A harness this framework did not build: four planted weak checks and one sound one for the weak-checks audit |

@@ -74,7 +74,7 @@ Linking the ignored folders into the worktree made the first converted app's doc
 
 **Still open:** whether commands that restart the app (`start`) work from a linked worktree, which is untested; whether links or copies suit each kind of state (links share state the app writes, copies freeze a snapshot); whether planned-break scratch copies need the same list.
 
-**What settles it:** the first converted app running one verify-pr from a linked worktree, with clean code state in its evidence and a restart through `Run scratch code`, plus a second app whose stack runs outside its repo, where a worktree needs no links.
+**What settles it:** the first converted app running one verify-pr from a linked worktree, with clean code state in its evidence and a restart through `start`, plus a second app whose stack runs outside its repo, where a worktree needs no links.
 
 ### Exercise three pieces on a second app
 

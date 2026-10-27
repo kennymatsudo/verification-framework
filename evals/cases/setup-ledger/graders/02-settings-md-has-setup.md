@@ -4,4 +4,4 @@ focus: trace
 weight: 1
 ---
 
-settings.md has Setup Status ready, and notes.md's Setup record cites doctor output saved under evidence/doctor.
+harness.json's setup block has status ready and a doctor_proof that cites doctor output saved under evidence/doctor.
