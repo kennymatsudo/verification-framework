@@ -1,16 +1,16 @@
 ---
 name: vf
 description: >-
-  Prove an app works on the real thing through its verification harness: verify
-  a change, build the checks and the probes and actions the harness lacks, each
-  proven on the real app, and explain how far to trust a pass. Use when a
-  verify-<app> skill delegates here, or for "verify this change", "check
-  checkout on this branch", "add checks for checkout", "what should we add
-  next?", "add this script as a tool", "can I trust these checks?", "how is
-  checkout checked?". Setting up or updating a harness, auditing it, and
-  verifying a teammate's pull request are jobs a person starts by name, such as
-  "/vf set up verification for this app"; with no harness, offer setup and
-  build nothing.
+  Verify a change on the real app with its verification harness, and build the
+  proof the harness lacks: checks for a feature, and the probes and actions they
+  need, each proven on the real app; or explain how far to trust a pass. Use
+  before claiming a change works, when a verify-<app> skill delegates here, or
+  for "verify this change", "prove it on the running app", "check checkout on
+  this branch", "add checks for checkout", "what should we add next?", "add this
+  script as a tool", "can I trust these checks?", "how is checkout checked?".
+  With no harness yet, offer setup and build nothing. Setting up or updating a
+  harness, auditing it, and verifying a teammate's pull request are jobs a
+  person starts by name, such as "/vf set up verification for this app".
 ---
 
 # Verification framework
