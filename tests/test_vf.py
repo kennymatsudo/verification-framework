@@ -185,6 +185,20 @@ class Sync(unittest.TestCase):
         self.assertIn("created ../../../.claude/skills/vf-explain/SKILL.md", result.stdout)
         self.assertFalse((self.tmp / ".cursor").exists(), "a skills directory the team doesn't use is not created")
 
+    def test_an_audit_script_an_earlier_framework_vendored_is_removed_and_not_recopied(self):
+        run_sync(self.harness)
+        for name in ("break_checks.py", "smells.py", "weakened.py"):
+            self.assertNotIn(name, vf.FRAMEWORK_SCRIPTS)
+            self.assertFalse(self.framework_copy(name).exists(), f"{name} belongs to the installed skill only")
+        stale = self.framework_copy("smells.py")
+        stale.write_text("# vendored by an earlier framework\n")
+        lock = self.harness / validate.FRAMEWORK_LOCK
+        lock.write_text(lock.read_text() + f"{vf.file_hash(stale.read_bytes())}  scripts/framework/smells.py\n")
+        result = run_sync(self.harness)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("removed scripts/framework/smells.py", result.stdout)
+        self.assertFalse(stale.exists())
+
     def test_removes_a_file_an_earlier_sync_recorded_that_the_framework_no_longer_ships(self):
         run_sync(self.harness)
         stale = self.harness.parent / "vf" / "references" / "dropped.md"

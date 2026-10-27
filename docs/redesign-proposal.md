@@ -97,7 +97,7 @@ Sequence, each step its own ADR and its own smoke run, so a regression is caught
 
 0. **The invocation experiment, without merging.** On a branch, make vf agent-invocable and add the `verify-bare-offers-setup` case. Run the smoke tier. This settles the one open question about decision 4 in a day.
 1. Decision 1 (Start takes the checkout, `Reloads`, `VERIFY_CHECKOUT_<REPO>`): done as ADR 0010 and ADR 0011.
-2. Decision 2 (vendor only what bears trust), with the viewer decided explicitly.
+2. Decision 2 (vendor only what bears trust): done as ADR 0012 for the audit scripts, with the viewer kept vendored; `locate.py` leaves with decision 4 and `trust_facts.py` with decision 3.
 3. Decision 3 (the manifest, per feature), with per-behavior repos.
 4. Decision 4 (one skill), then 5 if wanted.
 

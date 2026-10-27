@@ -44,7 +44,7 @@ Every harness gets an identical `rules.md`, so anyone can check it for edits, up
 
 Two terms used throughout: the **doctor** is the harness's readiness check, a command that confirms the app is up and running the requested code. A **planned break** is a deliberate bug, made in a scratch copy of the code, that a new check must catch before its passes count.
 
-Setup copies twelve Python scripts unchanged into each harness's `scripts/framework/`. `vf.py` is the one command people and skills call for runs and records; the scripts below sit behind it, and the skills run `locate.py`, `trust_facts.py`, and the three audit scripts by path.
+Setup copies nine Python scripts unchanged into each harness's `scripts/framework/`: the ones a run, a verdict, a launch, or a replay needs, plus `locate.py` and `trust_facts.py`. `vf.py` is the one command people and skills call for runs and records; the scripts below sit behind it, and the skills run `locate.py` and `trust_facts.py` by path. The three audit scripts stay in the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)).
 
 | Script | Job |
 | --- | --- |

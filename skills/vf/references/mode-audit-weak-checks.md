@@ -15,7 +15,7 @@ For a harness vf built: Run `<harness>/scripts/framework/vf.py validate --writte
 Then run, in parallel where possible, keeping each output:
 
 - The unit suite. If it fails, stop and report the failing tests; an audit of a red suite measures nothing.
-- For Python check code, the three audit scripts, from `<harness>/scripts/framework/` for a harness vf built and otherwise from the installed vf's `scripts/`. Run them; read their `--help` only for flags.
+- For Python check code, the three audit scripts from the installed vf's `scripts/`. Run them; read their `--help` only for flags. A copy of vf committed beside a harness has no `scripts/`: then do what each script does by hand, as the next bullet says for other languages, and name in the readout that the sweep was manual.
   - `break_checks.py --harness <dir> --suite "<suite command>" --match "<check name regex>"`. In a scratch copy, it stubs each check function to return its all-clear value and runs the suite. `SURVIVED` means no unit test can tell that check from a broken one. Add `--copy <path>` for anything else the suite imports.
   - `smells.py <dirs>`: leads for tests with no assertion, existence-only assertions, self-comparisons, skips, and broad excepts that swallow a failure.
   - `weakened.py --path <dir> --match "<regex>"`: every deleted test, removed assertion, new skip, and changed check since the last `Audit harness checks` commit, else 30 days.

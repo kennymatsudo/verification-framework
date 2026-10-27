@@ -107,6 +107,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0009: A planned break names its repo, and its edit travels with the record](adr/0009-a-break-names-its-repo-and-its-edit-travels-with-the-record.md)
 - [0010: Start takes the checkout, so one command points the app at the code under test](adr/0010-start-takes-the-checkout.md)
 - [0011: A behavior names the repos its check runs](adr/0011-a-behavior-names-the-repos-its-check-runs.md)
+- [0012: Vendor only what bears trust](adr/0012-vendor-only-what-bears-trust.md)
 
 ## Parked ideas
 

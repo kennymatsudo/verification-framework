@@ -101,8 +101,10 @@ SOURCE_RULES = SCRIPTS_DIR.parent / "references" / "rules.md"
 COMMITTED_SKILLS = ["vf", "vf-verify", "vf-explain"]
 LEFT_OUT_OF_SKILL_COPIES = {"scripts", "__pycache__"}
 INSTALL_COMMAND = "npx skills add kennymatsudo/verification-framework"
+# What every harness carries: the scripts that record runs, run breaks, compute verdicts, launch the app, find the
+# harness, gather trust facts, and show recordings. The audit scripts stay in the installed skill (ADR 0012).
 FRAMEWORK_SCRIPTS = ["validate.py", "code_state.py", "break_session.py", "launch.py", "replay.py", "clip.py",
-                     "locate.py", "break_checks.py", "smells.py", "weakened.py", "trust_facts.py", "vf.py"]
+                     "locate.py", "trust_facts.py", "vf.py"]
 SCRIPT_COMMANDS = {
     "validate": ("validate.py", "check the harness's rules copy, settings, feature map, and Verified results"),
     "code-state": ("code_state.py", "print every repo's Git state for an evidence file's code field"),

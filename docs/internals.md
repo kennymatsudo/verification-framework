@@ -70,7 +70,6 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 │   ├── framework/              framework copies, never edited
 │   │   ├── vf.py  validate.py  code_state.py  break_session.py
 │   │   ├── launch.py  replay.py  clip.py  locate.py  trust_facts.py
-│   │   ├── break_checks.py  smells.py  weakened.py
 │   │   └── framework.sha256    hash of each framework file as copied
 │   ├── doctor.py               app's own tool, in the app's language
 │   └── check_pay_order.py      app's own check
@@ -89,7 +88,7 @@ Times in file names are UTC, with dashes so they sort in order. These locations 
 
 Beside the harness, the same skills directory holds `vf/`, `vf-verify/`, and `vf-explain/`: copies of the framework skills without their `scripts/`, so a clone of the repo needs no install. `sync` writes them, records their hashes in `framework.sha256` under paths such as `../vf/SKILL.md`, and writes the same copies into every other known skills directory at the project root.
 
-The twelve framework scripts are Python and identical in every harness, so a clone of the repo holds everything the skills run. Call the run and record scripts through `vf.py`: `validate`, `code-state`, `break`, `replay`, and `clip` run the script of that name; `start`, `stop`, and `doctor` run `launch.py`; `run`, `verify`, `status`, `not-verified`, and `sync` are its own. The skills run `locate.py`, `trust_facts.py`, and the three audit scripts directly, by path. The app's tools are written in the app's language, so they can reuse its database drivers and settings.
+The nine framework scripts are Python and identical in every harness, so a clone of the repo holds everything a run, a verdict, or a replay needs. Call the run and record scripts through `vf.py`: `validate`, `code-state`, `break`, `replay`, and `clip` run the script of that name; `start`, `stop`, and `doctor` run `launch.py`; `run`, `verify`, `status`, `not-verified`, and `sync` are its own. The skills run `locate.py` and `trust_facts.py` directly, by path. The three audit scripts of the weak-checks audit are not copied into a harness; they run from the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)). The app's tools are written in the app's language, so they can reuse its database drivers and settings.
 
 **Who writes and reads each file:**
 
@@ -421,7 +420,7 @@ Clips need ffmpeg and ffprobe. Replay pages, screenshots, and logs need neither.
 
 ## Other scripts
 
-`sync` copies these into every harness's `scripts/framework/` with the rest, and the skills run them from there, given the harness's folder. The installed vf keeps the source copies, since the weak-checks audit also runs them against a harness this framework didn't build.
+`sync` copies `trust_facts.py` and `locate.py` into every harness's `scripts/framework/` with the rest, and the skills run them from there, given the harness's folder. The audit scripts live only in the installed vf's `scripts/`: they judge a harness's own test code, not a run, and the weak-checks audit also runs them against a harness this framework didn't build.
 
 ### trust_facts.py (run by vf-explain)
 
@@ -435,7 +434,7 @@ Runs before vf picks a playbook, the ordered list of modes it will run for a req
 
 ### Audit scripts (vf, weak-checks mode)
 
-Three scripts for harnesses whose checks are written in Python. They run against any harness, including one this framework didn't build. For other languages, the skill follows the same steps by hand.
+Three scripts for harnesses whose checks are written in Python, run from the installed vf's `scripts/`, never from a harness. They run against any harness, including one this framework didn't build. For other languages, or from a vf copy committed beside a harness, the skill follows the same steps by hand.
 
 **`break_checks.py`** finds rule-checking functions the unit tests wouldn't notice if they stopped working. It looks for names ending in `_problems` or `_violations` or starting with `check_` (change with `--match`), works out what "nothing is wrong" looks like for each, copies the project to a temporary folder, makes that function always return it, and runs the tests. Each function is `CAUGHT` (a test failed), `SURVIVED` (every test still passed), or `SKIPPED` (couldn't work out the empty answer). The tests must pass in an unchanged copy first, else exit 2; add a missing folder with `--copy`. Exit 1 when any check survived. Defaults: a folder named `harness` (`--harness`), 600 seconds per run, half the processor cores at once.
 
