@@ -177,6 +177,22 @@ An experiment for the redesign proposal ([docs/redesign-proposal.md](../docs/red
 
 What it says: with vf agent-invocable, no run across eight started setup, an audit, or PR verification unasked, and the person-only cases still behaved when the slash command was not the only way in. What it does not say: in both runs of the new case the agent chose vf-verify, never vf, because vf-verify's description matches a verify request better. So the flag is safe to flip, but the risk the proposal's one-skill step carries, a merged description that an agent picks for "verify my change" and whose body must then refuse to run setup, is tested only once the merge exists. The case is in place for that run.
 
+### Fifth run: Start takes the checkout (ADR 0010)
+
+The smoke tier on the Rules version 4 contract ([ADR 0010](../docs/adr/0010-start-takes-the-checkout.md)): `Run scratch code` and `After an edit` gone, `Start` naming `{checkout:<repo>}`, a `Reloads` line, the doctor running for every harness, and `VERIFY_CHECKOUT_<REPO>` handed to every doctor and check (2026-10-27, Opus 5.5, $15.85 in all):
+
+| Case | Score | Cost | Notes |
+| --- | --- | --- | --- |
+| add-checks-ledger | 1.00 | $10.20 | all six hidden breaks caught; the agent ran its planned breaks through `break start` and `break run`, with the one `Start` command restarting the app on the scratch copy |
+| audit-weak-ledger-legacy | 1.00 | $0.51 | |
+| explain-ledger | 1.00 | $0.30 | |
+| setup-ledger | 1.00 | $2.21 | the harness it built validates on the new settings |
+| setup-vault-blocked | 1.00 | $1.26 | |
+| verify-bare-offers-setup | 0.92 | $0.38 | built nothing and asked before setting up, but a paragraph followed the `Needs you:` line; the same ask-placement miss as its first run, now in two of three runs |
+| verify-ledger-change | 1.00 | $0.99 | |
+
+What it says: the skills build trustworthy checks and run calibrated breaks on the new contract without any wording change aimed at it. What it also says: vf-verify's reply in a repo with no harness puts text after the ask in two of three runs, a skill finding about that branch of the verify mode, not about the contract; it is the same miss the first baseline found in other modes and fixed through `messages.md`.
+
 ## Adding a practice repo or a case
 
 A practice repo needs: `repo/` with a README that says how to run it and a `REQUIREMENTS.md` with IDs, one item left open and, where it fits, one the code contradicts; `practice.json` (copy `ledger`'s); `hidden/answers.json` in the developer's voice, never revealing a break; `hidden/breaks/*.patch` made with `git diff` against `repo/`, one behavior each, each a bug a response could hide; `hidden/harness/` as a ready reference harness at zero coverage and `hidden/coverage/` with its checks, both following `rules.md`, so the fixture test proves the breaks are real and the harness is a worked example; and `tests/test_practice_<name>.py` (copy one). Keep it under 200 lines of app code and starting in a second.
