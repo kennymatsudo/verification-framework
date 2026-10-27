@@ -1,4 +1,4 @@
-"""Where relay runs from: the checkout the pointer file names, or this project root."""
+"""Where relay runs from: the checkout VERIFY_CHECKOUT_RELAY names, or this project root."""
 
 import os
 import sys
@@ -6,16 +6,13 @@ from pathlib import Path
 
 HARNESS = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = HARNESS.parents[2]
-POINTER = HARNESS / "evidence" / "launch" / "checkout.txt"
 
 
 def checkout():
-    """The checkout checks run relay from: the pointer file's path when it exists, else the project root."""
-    if POINTER.is_file():
-        text = POINTER.read_text().strip()
-        if text and text != ".":
-            return Path(text)
-    return PROJECT_ROOT
+    """The checkout checks run relay from: VERIFY_CHECKOUT_RELAY when vf.py run set it (the scratch copy during a
+    planned break), else this project root. vf.py hands it to the doctor and every check."""
+    named = os.environ.get("VERIFY_CHECKOUT_RELAY")
+    return Path(named) if named else PROJECT_ROOT
 
 
 def relay_command():

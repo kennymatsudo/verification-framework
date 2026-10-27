@@ -25,21 +25,22 @@ List every repo whose code a check runs, including this repo when it owns runnin
 
 ## Commands
 
-- Start: <start command>
-- Stop: <command that stops what Start started and removes its launch record, or none when only a person starts the app>
+- Start: <start command; or none when each check starts the app itself, or user when only a person can start it>
+- Stop: <command that stops what Start started and removes its launch record, or none>
 - Doctor: <doctor command; vf.py run runs it from the project root before every check>
 - Ready line: <the exact line the doctor prints when ready>
 - Probe: <probe command, or none yet>
-- Run scratch code: <command that points the running app at the checkout {checkout} of repo {repo}; per check, when each check starts the app itself; or none>
-- After an edit: <reloads, or the command that restarts what runs repo {repo} from {checkout}>
+- Reloads: <yes when the app picks up an edit to its checkout without a restart, no when it must be restarted>
 
 The probe reads state without importing app code. Record working directories and startup notes beside these commands: whether the agent may start the app, and any prompt, personal login or credentials, or approval that requires the user.
 
-When the app runs the checkout's files directly, the framework's launcher can fill the first three lines, so no app-specific doctor code is needed: `Start: scripts/framework/vf.py start --until "<ready probe>" -- <app command>`, `Stop: scripts/framework/vf.py stop`, and `Doctor: scripts/framework/vf.py doctor --probe "<ready probe>"`, where the ready probe is a shell command that exits 0 once the app answers, such as a request to its health URL. An app that reloads on edit, runs in a container built from a cache, or compiles first needs its own doctor, which may still call `vf.py doctor` for the process and the code on disk.
+Start may name a repo's checkout as `{checkout:<repo name>}`. On an ordinary run `vf.py` fills it with that repo's checkout; during a planned break it fills the broken repo's placeholder with the scratch copy and every other with its own checkout, so the one Start command both launches the app and points it at scratch code. Every command also runs with `VERIFY_CHECKOUT_<REPO>` set for every repo (the name in capitals, other characters as underscores), naming the checkout the run records, so a doctor or check that runs the code itself runs it from there. A `{checkout:<repo>}` that reaches the app must load the scratch files, not this checkout's: start the copy's entry file by path, or put the checkout first on the module path. `python3 -m <package>` from the project root imports this checkout even with `PYTHONPATH` set, so a break in the copy never reaches the app.
+
+When the app runs the checkout's files directly, the framework's launcher can fill the first three lines, so no app-specific doctor code is needed: `Start: scripts/framework/vf.py start --until "<ready probe>" -- <app command reading {checkout:<repo>}>`, `Stop: scripts/framework/vf.py stop`, and `Doctor: scripts/framework/vf.py doctor --probe "<ready probe>"`, where the ready probe is a shell command that exits 0 once the app answers, such as a request to its health URL. An app that reloads on edit, runs in a container built from a cache, or compiles first needs its own doctor, which may still call `vf.py doctor` for the process and the code on disk. Set `Reloads: yes` for an app that picks up an edit to its checkout without a restart, so a planned break skips the restart; otherwise `no`.
 
 Reaching a real external or shared system requires the user's approval for that run. An existing non-local environment still needs a doctor that identifies its running code and explicit action permissions.
 
-Run scratch code must make the running app load the scratch checkout's files, not this one's: start the scratch copy's entry file by path, or put `{checkout}` first on the module path and start from there. `python3 -m <package>` run from the project root imports this checkout's package even with `PYTHONPATH` set, so a break made in the copy never reaches the app. After switching or reloading code, the doctor must confirm the app loaded the requested version. `scripts/framework/vf.py break` runs the last two commands from the project root for planned breaks: Run scratch code with the scratch copy when a session starts and with the developer's checkout when it ends, and After an edit before each break's check. Use `none` when the app can't run another checkout: one instance per machine, a start only a person can do, or a shared environment. Planned breaks are then blocked.
+For a planned break, `scripts/framework/vf.py break` runs Stop and then Start from the project root to point the app at the scratch copy, and again at the developer's checkout when the session ends; with `Reloads: no` it also restarts between breaks. `Start: none` means each check starts the app itself from `VERIFY_CHECKOUT_<REPO>`, so a break needs no restart. `Start: user` means only a person can start the app, so planned breaks are blocked; record the proof as Not break-tested. Start must name a `{checkout:<repo>}` that reaches the broken repo's code, or the break runs against unchanged code and is not credited.
 
 When code has uncommitted changes, capture `code_state.py`'s `dirty_hash` at launch and compare it along with the commit, rather than relying on the dirty flag alone.
 ```

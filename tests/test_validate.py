@@ -30,7 +30,7 @@ SETTINGS = (
     "## Commands\n\n"
     "- Start: npm run dev\n- Stop: npm run stop\n- Doctor: bin/verify doctor\n- Ready line: verify: ready\n"
     "- Probe: none yet\n"
-    "- Run scratch code: per check\n- After an edit: reloads\n"
+    "- Reloads: no\n"
 )
 
 
@@ -52,6 +52,7 @@ def fill(text, harness):
     """A template with every slot filled the way a ready harness fills it."""
     text = text.replace("<harness directory name>", harness.name).replace("- Status: incomplete", "- Status: ready")
     text = re.sub(r"^(- (?:Blocker|Next action): ).*$", r"\1none", text, flags=re.M)
+    text = re.sub(r"^(- Reloads: ).*$", r"\1no", text, flags=re.M)
     while (filled := re.sub(r"<[^<>]*>", "filled", text)) != text:
         text = filled
     return text

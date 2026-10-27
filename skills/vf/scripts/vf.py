@@ -13,11 +13,12 @@ scripts/framework/, they act on that harness.
 vf.py run -- CHECK COMMAND... runs a check from the project root and writes its evidence file from the
 events the check reports. First it runs settings.md's Doctor command and refuses to run the check unless
 the doctor exits 0, so no evidence is ever recorded against an app that was not ready or was running
-other code; a harness whose Run scratch code is `per check` starts the app inside each check, so the
-doctor is skipped there. The doctor's exit code and output go in the record as `doctor`.
+other code. The doctor's exit code and output go in the record as `doctor`.
 
-It gives the check two environment variables: VERIFY_REPORT, a file the check appends one JSON object
-per line to, and VERIFY_RUN_DIR, the folder for its video, screenshots, and logs. The events are check
+It gives the doctor and the check one VERIFY_CHECKOUT_<REPO> variable per repo in settings.md, naming the
+checkout the run records for that repo (the scratch copy during a planned break), so a check that runs
+the code itself runs it from there. It gives the check two more: VERIFY_REPORT, a file the check appends
+one JSON object per line to, and VERIFY_RUN_DIR, the folder for its video, screenshots, and logs. The events are check
 (name, reads, and optionally sub_features), step (name, passed, at, and optionally sub_features, detail,
 evidence, snapshot), mark (kind, label, at), recording (video, starts_at), created (lists of IDs by
 kind), and stopped (reason). The check event may come anywhere in the report; one written first still
@@ -43,8 +44,9 @@ vf.py break run REPO "IDS: WHAT" -- python3 scripts/framework/vf.py run -- CHECK
 vf.py verify ID [ID ...] [--start] runs the proof of each named sub-feature: it looks up each one's
 check command in the feature map, runs every distinct command once through vf.py run, which runs the
 doctor first, then prints each named sub-feature's line from status.md. --start runs settings.md's Start
-command when the doctor says the app is not ready, then waits for the doctor to report ready; pass it
-only when the harness's settings let an agent start the app. Exits 0 when every named sub-feature is
+command, with each {checkout:<repo>} filled with that repo's checkout, when the doctor says the app is not
+ready, then waits for the doctor to report ready; a Start of `user` means only a person starts the app, so
+it stops and says so. Exits 0 when every named sub-feature is
 Verified, 1 when any is not, and 2 when a check could not run, such as when the doctor reports not ready.
 
 vf.py status computes every mapped behavior's verdict from the feature map, the accepted evidence,
@@ -126,17 +128,23 @@ class Stopped(Exception):
     """A command cannot run; the message says why."""
 
 
-def run_doctor(harness, validate):
-    """The doctor's verdict on the running instance, as the evidence records it: "per check" when each check
-    starts the app itself, else {"exit_code", "output"}. Raises Stopped when settings name no doctor."""
-    if (validate.setting(harness, "Commands", "Run scratch code") or "").lower() == validate.PER_CHECK:
-        return validate.PER_CHECK
+def checkout_env(harness, validate, code_state):
+    """The environment a doctor or check runs in: this process's, plus VERIFY_CHECKOUT_<REPO> for every repo."""
+    try:
+        return {**os.environ, **code_state.checkout_env(code_state.recorded_checkouts(harness, {}))}
+    except code_state.StateError as error:
+        raise Stopped(str(error)) from error
+
+
+def run_doctor(harness, validate, env):
+    """The doctor's verdict on the running instance, as the evidence records it: {"exit_code", "output"}.
+    Raises Stopped when settings name no doctor."""
     command = validate.setting(harness, "Commands", "Doctor")
     if not command:
         raise Stopped("settings.md has no Doctor line under Commands; vf.py run checks the app is ready before every check")
     try:
         result = subprocess.run(command, shell=True, cwd=validate.project_root(harness), stdin=subprocess.DEVNULL,
-                                capture_output=True, text=True, timeout=DOCTOR_TIMEOUT)
+                                capture_output=True, text=True, timeout=DOCTOR_TIMEOUT, env=env)
     except subprocess.TimeoutExpired:
         return {"exit_code": None, "output": f"`{command}` took over {DOCTOR_TIMEOUT}s"}
     output = (result.stdout + result.stderr).strip().splitlines()
@@ -145,7 +153,7 @@ def run_doctor(harness, validate):
 
 def ready(doctor):
     """Whether the doctor's verdict lets a check run."""
-    return doctor == "per check" or doctor.get("exit_code") == 0
+    return doctor.get("exit_code") == 0
 
 
 def not_ready_message(doctor):
@@ -346,7 +354,8 @@ def run_check(command):
         broken_repo = code_state.break_session_repo(harness) if planned else None
     except code_state.StateError as error:
         raise Stopped(str(error)) from error
-    doctor = run_doctor(harness, validate)
+    env = checkout_env(harness, validate, code_state)
+    doctor = run_doctor(harness, validate, env)
     if not ready(doctor):
         raise Stopped(not_ready_message(doctor))
     try:
@@ -363,7 +372,7 @@ def run_check(command):
     report.write_text("")
 
     exit_code = subprocess.run(command, cwd=validate.project_root(harness),
-                               env={**os.environ, REPORT_VAR: str(report), RUN_DIR_VAR: str(pending)}).returncode
+                               env={**env, REPORT_VAR: str(report), RUN_DIR_VAR: str(pending)}).returncode
 
     finished = utc_now()
     events, problems = report_events(report)
@@ -472,18 +481,26 @@ def proof_commands(harness, validate, ids):
     return commands, uncovered
 
 
-def start_app(harness, validate):
-    """Run settings.md's Start command and wait for the doctor to report ready; the lines to print."""
+def start_app(harness, validate, code_state, env):
+    """Run settings.md's Start command with its checkouts filled in and wait for the doctor to report ready; the lines to print."""
     command = validate.setting(harness, "Commands", "Start")
-    if not command or command.lower() == "none":
-        raise Stopped("settings.md names no Start command an agent may run; ask the user to start the app")
+    if not command:
+        raise Stopped("settings.md has no Start line under Commands")
+    if command.lower() == validate.START_USER:
+        raise Stopped("settings.md says only a person starts the app (Start: user); ask the user to start it")
+    if command.lower() == validate.START_NONE:
+        raise Stopped("settings.md says there is nothing to start (Start: none), yet the doctor reports not ready")
+    try:
+        command = validate.fill_checkouts(command, code_state.recorded_checkouts(harness, {}))
+    except (ValueError, code_state.StateError) as error:
+        raise Stopped(f"settings.md: {error}") from error
     lines = [f"Starting the app: {command}"]
-    started = subprocess.run(command, shell=True, cwd=validate.project_root(harness), stdin=subprocess.DEVNULL)
+    started = subprocess.run(command, shell=True, cwd=validate.project_root(harness), stdin=subprocess.DEVNULL, env=env)
     if started.returncode:
         raise Stopped(f"`{command}` exited {started.returncode}")
     deadline = time.monotonic() + START_TIMEOUT
     while True:
-        doctor = run_doctor(harness, validate)
+        doctor = run_doctor(harness, validate, env)
         if ready(doctor):
             return lines + ["The doctor reports the app ready."]
         if time.monotonic() > deadline:
@@ -493,11 +510,13 @@ def start_app(harness, validate):
 
 def verify(harness, ids, start):
     """Run each named sub-feature's check through vf.py run and report its computed result; the lines and exit code."""
-    validate = sibling("validate")
+    validate, code_state = sibling("validate"), sibling("code_state")
     commands, uncovered = proof_commands(harness, validate, ids)
     lines = []
-    if commands and start and not ready(run_doctor(harness, validate)):
-        lines += start_app(harness, validate)
+    if commands and start:
+        env = checkout_env(harness, validate, code_state)
+        if not ready(run_doctor(harness, validate, env)):
+            lines += start_app(harness, validate, code_state, env)
     for command in commands:
         lines.append(f"Running `{command}` for {', '.join(commands[command])}")
         try:

@@ -135,7 +135,7 @@ Ready means setup worked once, not that the app is running now, so every run sta
 | Heading | Required lines |
 | --- | --- |
 | `## Workflow` | Requirements source: where the app's written requirements live, or `none` |
-| `## Commands` | Start; Stop (or `none` when only a person starts the app); Doctor; Ready line (the exact text the doctor prints when ready); Probe (the command that looks up the app's current data); Run scratch code (the command that points the running app at another checkout, `per check` when each check starts the app itself, or `none`); After an edit (`reloads`, or the command that restarts what runs a repo). `break_session.py` fills `{repo}` and `{checkout}` in the last two |
+| `## Commands` | Start (may name a repo's checkout as `{checkout:<repo>}`, which `vf.py` fills with that repo's checkout or a planned break's scratch copy; `none` when each check starts the app itself, `user` when only a person can); Stop (or `none`); Doctor; Ready line (the exact text the doctor prints when ready); Probe (the command that looks up the app's current data); Reloads (`yes` when the app picks up an edit to its checkout without a restart, `no` when a break must restart it) |
 | `## Repos` | At least one line naming a code repository and where to find it |
 
 A value still containing a template blank (`<` followed by a lowercase letter) counts as unfilled. `README.md`, `notes.md`, `status.md`, and `tools.md` must also exist.
@@ -175,7 +175,7 @@ An evidence file is the record of one check run: `evidence/<check>/<time>.json`.
 
 Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id>...`, which runs each named behavior's check that way and prints its result lines. `vf.py run`:
 
-1. Runs the doctor from `settings.md` and stops with exit 2 unless it exits 0. (Skipped when `Run scratch code` is `per check`.)
+1. Runs the doctor from `settings.md` and stops with exit 2 unless it exits 0.
 2. Records each repository's code with `code_state.py` and fingerprints the harness's own code.
 3. Creates the run folder and report file, sets the two variables, and runs the check from the project root.
 4. Builds the record from the events the check reported, adds the times, code, fingerprint, doctor result, `planned_break` from `VERIFY_PLANNED_BREAK`, and the verdict from the exit code (0 passed, 1 a step failed, anything else stopped).
@@ -215,7 +215,7 @@ A refused record is written as `<time>.json.refused`, so nothing can cite it but
 | `reads` | `"state"` when the check reads stored data; otherwise what it reads, such as `"screen"` | Proof that the database is right doesn't prove what the screen showed |
 | `code` | Per repository: which code ran (see [Code version](#code-version)) | A Verified result must name each commit here |
 | `harness_code` | Each harness file's path and SHA-256 with line endings normalized: `settings.md`, everything under `scripts/` apart from `framework/`, `__pycache__`, and other checks' entries under `checks/`, plus files the command names | A pass is proven only while the break's fingerprinted files are unchanged |
-| `doctor` | The doctor's exit code and last lines, or `"per check"` | Verified needs exit 0 |
+| `doctor` | The doctor's exit code and last lines | Verified needs exit 0 |
 | `started_at`, `finished_at` | UTC to the second. Both required | The most recent run by `finished_at` decides each verdict |
 | `steps` | Each step's name, `sub_features`, pass or fail, `at`, `detail`, and IDs read. A failed step in a browser check names a `snapshot` | In a one-behavior check, a step with no `sub_features` judges that one. In a multi-behavior check it judges none |
 | `marks` | The timeline: time, kind (`step` or `action`), label | Lines up the video |
@@ -272,7 +272,7 @@ A passing run is **proven** when all of these hold:
 1. The break is the newest accepted planned break of the same check aimed at this behavior. The newest decides, so a replayed break that didn't fail withdraws the proof.
 2. The break's record failed, didn't stop, and failed a step that judges this behavior.
 3. Every step that judged this behavior and failed during the break is still in the passing run, judging this behavior.
-4. Both records record every repository in settings with a valid commit, a `dirty_hash` for dirty code and none for clean, a `harness_code` fingerprint, a ready doctor or `per check`, and `accepted_by`.
+4. Both records record every repository in settings with a valid commit, a `dirty_hash` for dirty code and none for clean, a `harness_code` fingerprint, a ready doctor, and `accepted_by`.
 5. Every file in the break's `harness_code` is in the passing run's with the same hash. A file added since needs no new break. A changed or removed one does: `<file> changed since its planned break; replay the break with vf.py break replay`.
 6. Every file in the passing run's `harness_code` still on disk has the same hash it had during the run, so an edited check can't keep an earlier pass: `<file> changed since this run; rerun its check`. Hashes ignore line endings, so a clone that rewrites them changes nothing.
 7. The passing run has well-formed steps, one that judges this behavior, no stopped reason, and a valid recording if it names one.
@@ -330,8 +330,8 @@ sequenceDiagram
 
 1. Run the check on the current code through `vf.py run`. It should pass. If it fails, find out whether the app or the check is wrong first.
 2. Tell the user `Planned break: <the change>`: the smallest change that makes one behavior wrong while the app still builds.
-3. `vf.py break start <repository>` makes a throwaway copy with `git worktree add` at the commit under test, copies in the developer's staged, unstaged, and new files, confirms the copy's `dirty_hash` matches, and points the app at it with the `Run scratch code` setting.
-4. Make the change in the copy, then `vf.py break run <repository> "<id>: <the change>" -- python3 scripts/framework/vf.py run -- <check command>`. It confirms the developer's folder hasn't changed and the copy holds an edit, runs `After an edit` unless the app reloads by itself, runs the check with `VERIFY_PLANNED_BREAK` set, saves the edit as `<time>.patch` beside the record, then restores the copy. `vf.py run` records the session's repository in `planned_break.repo`, and stops before the check runs when `VERIFY_PLANNED_BREAK` is set without exactly one of this harness's sessions open. The run must fail on a step that judges the broken behavior.
+3. `vf.py break start <repository>` makes a throwaway copy with `git worktree add` at the commit under test, copies in the developer's staged, unstaged, and new files, confirms the copy's `dirty_hash` matches, and points the app at it by running Stop and then Start with `{checkout:<repository>}` filled with the copy (nothing runs when `Start` is `none`, since each check then reads `VERIFY_CHECKOUT_<REPO>`).
+4. Make the change in the copy, then `vf.py break run <repository> "<id>: <the change>" -- python3 scripts/framework/vf.py run -- <check command>`. It confirms the developer's folder hasn't changed and the copy holds an edit, restarts the app through Stop and Start unless `Reloads` is `yes`, runs the check with `VERIFY_PLANNED_BREAK` set, saves the edit as `<time>.patch` beside the record, then restores the copy. `vf.py run` records the session's repository in `planned_break.repo`, and stops before the check runs when `VERIFY_PLANNED_BREAK` is set without exactly one of this harness's sessions open. The run must fail on a step that judges the broken behavior.
 5. `vf.py break end <repository>` points the app back, removes the copy, and reports any change to the developer's folder since the session started.
 
 `break run` prints `Break recorded for <id>: step '<name>' caught it` for each target whose own step failed and appends a line to `evidence/breaks.jsonl`. Nothing in the feature file changes; `vf.py status` now reports the behavior Verified. A target whose step didn't fail gets `No break recorded`, so the agent plans a break that reaches it. A break run that stopped gets `No break recorded` with its reason, so the agent runs the break again.
@@ -357,7 +357,7 @@ Two kinds of check carry `Not break-tested: <reason>.` on their proof line inste
 | `vf.py doctor [--probe "<command>"]` | Ready (exit 0) only when the record exists, its process runs, every repository's code state equals the one recorded at start, and the probe exits 0. Then prints the Ready line and the code as JSON. Otherwise one `not ready:` reason per line and exit 1; exit 2 when it can't read the repositories |
 | `launch.py status` | Prints the record and whether its process is running |
 
-A harness using it sets `Start: scripts/framework/vf.py start --until "<probe>" -- <app command>`, `Stop: scripts/framework/vf.py stop`, and `Doctor: scripts/framework/vf.py doctor --probe "<probe>"`. During a planned break, `Run scratch code` can stop and start it again with `--checkout <repo>={checkout}`.
+A harness using it sets `Start: scripts/framework/vf.py start --checkout <repo>={checkout:<repo>} --until "<probe>" -- <app command reading {checkout:<repo>}>`, `Stop: scripts/framework/vf.py stop`, and `Doctor: scripts/framework/vf.py doctor --probe "<probe>"`. A planned break restarts it through the same Start with the scratch copy, since `{checkout:<repo>}` then resolves there.
 
 The helper knows only what was on disk when `start` ran. An app that reloads on edit, runs from a build cache, or compiles first may run other code; its doctor adds its own evidence of the loaded version, and may still call `vf.py doctor` for the process and files. Because a changed checkout reads as not ready, a reload that silently failed can't pass as the new code.
 

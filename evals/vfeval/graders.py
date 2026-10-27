@@ -74,11 +74,15 @@ class Context:
         return scaffold.setting(self.harness, label) if self.harness and (self.harness / "settings.md").is_file() else None
 
     def start_app(self):
-        """Run Start; (started, output). An app with no Start command (a command-line tool) counts as started."""
+        """Run Start with its {checkout:<repo>} placeholders filled; (started, output). An app with no Start command
+        or a person-only one (a command-line tool, or Start: user) counts as started."""
         command = self.setting("Start")
-        if not command:
-            return self.practice.get("setup", {}).get("start") == "none", "settings.md has no Start command"
-        code, output = scaffold.shell(command, self.project_root, timeout=120)
+        if not command or command.lower() == "user":
+            return True, "no agent-run Start command"
+        code_state = scaffold._framework_code_state(self.practice, self.workspace)
+        checkouts = code_state.recorded_checkouts(self.harness, {})
+        filled = code_state.validate.fill_checkouts(command, checkouts)
+        code, output = scaffold.shell(filled, self.project_root, env=code_state.checkout_env(checkouts), timeout=120)
         return code == 0, output[-800:]
 
     def stop_app(self):

@@ -37,6 +37,12 @@ Commands break_session.py runs from settings.md set VERIFY_BREAK_SESSION to the
 session's repo name and get the checkout the app is being pointed at. An override
 must name the folder the run would record.
 
+vf.py run, and the Start and Stop commands break_session.py runs, hand every
+repo's recorded checkout to the command as VERIFY_CHECKOUT_<REPO> (the repo name
+in capitals, other characters as underscores), so a check or doctor that runs
+the code itself runs it from there: the developer's checkout on an ordinary run,
+the scratch copy during a planned break.
+
 Exits 0 with the JSON, 2 when settings.md lists no repos, has an invalid repo
 line, a repo cannot be found or has no commit, or a session is open and the run
 is not a planned break, with the reason on a STOPPED: line on stderr.
@@ -47,6 +53,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -243,22 +250,35 @@ def break_session_repo(harness_dir):
     return next(iter(found.values()))
 
 
-def code_state(harness_dir, overrides):
-    """The code entry for every repo settings.md lists, with overrides naming another checkout for a repo."""
+def recorded_checkouts(harness_dir, overrides):
+    """The checkout a run records for every repo settings.md lists, by name, with overrides naming another checkout for a repo."""
     harness_dir = harness_dir.resolve()
     repos = listed_repos(harness_dir)
     unknown = sorted(set(overrides) - set(repos))
     if unknown:
         raise StateError(f"--checkout names {', '.join(unknown)}, which settings.md does not list")
     project = validate.project_root(harness_dir)
+    return {name: recorded_checkout(name, locator, overrides.get(name), project, harness_dir) for name, locator in repos.items()}
 
-    def state(name, locator):
-        return checkout_state(recorded_checkout(name, locator, overrides.get(name), project, harness_dir), harness_dir)
 
+def env_name(repo):
+    """The environment variable that hands a check repo's checkout: VERIFY_CHECKOUT_ and the name in capitals."""
+    return "VERIFY_CHECKOUT_" + re.sub(r"[^A-Za-z0-9]", "_", repo).upper()
+
+
+def checkout_env(checkouts):
+    """One VERIFY_CHECKOUT_<REPO> variable per repo, naming the checkout a check or doctor runs that repo's code from."""
+    return {env_name(name): str(path) for name, path in checkouts.items()}
+
+
+def code_state(harness_dir, overrides):
+    """The code entry for every repo settings.md lists, with overrides naming another checkout for a repo."""
+    harness_dir = harness_dir.resolve()
+    checkouts = recorded_checkouts(harness_dir, overrides)
     # Repos are read side by side, since each takes seconds in a large checkout; results and the first error
     # reported follow the settings order, so a run reads the same however the reads finish.
     with ThreadPoolExecutor() as pool:
-        reads = {name: pool.submit(state, name, locator) for name, locator in repos.items()}
+        reads = {name: pool.submit(checkout_state, checkout, harness_dir) for name, checkout in checkouts.items()}
     return {name: read.result() for name, read in reads.items()}
 
 

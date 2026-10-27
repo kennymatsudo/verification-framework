@@ -92,6 +92,29 @@ def framework_vf(practice, workspace):
     return harness_dir(practice, workspace) / "scripts" / "framework" / "vf.py"
 
 
+def _framework_code_state(practice, workspace):
+    """The harness's own code_state module (which carries validate), loaded by path."""
+    import importlib.util
+    fw = harness_dir(practice, workspace) / "scripts" / "framework"
+    spec = importlib.util.spec_from_file_location("scaffold_code_state", fw / "code_state.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def start_command_and_env(practice, workspace):
+    """The Start command with its {checkout:<repo>} placeholders filled, and the VERIFY_CHECKOUT_<REPO> env it
+    runs with; (None, env) when there is nothing for the scaffold to start (Start none or user)."""
+    harness = harness_dir(practice, workspace)
+    command = setting(harness, "Start")
+    code_state = _framework_code_state(practice, workspace)
+    checkouts = code_state.recorded_checkouts(harness, {})
+    env = code_state.checkout_env(checkouts)
+    if not command or command.lower() == "user":
+        return None, env
+    return code_state.validate.fill_checkouts(command, checkouts), env
+
+
 def setting(harness, label):
     """A labeled command from the harness's settings.md Commands section, or None."""
     for line in (harness / "settings.md").read_text().splitlines():
@@ -141,11 +164,10 @@ def proof_command(harness, sub_id):
 
 
 def start_app(practice, workspace, log):
-    harness = harness_dir(practice, workspace)
-    command = setting(harness, "Start")
+    command, env = start_command_and_env(practice, workspace)
     if not command:
         return
-    code, output = shell(command, project_root(practice, workspace))
+    code, output = shell(command, project_root(practice, workspace), env=env)
     log.append(f"$ {command}\n{output}")
     if code:
         raise ScaffoldError(f"Start failed ({code}):\n{output}")
@@ -225,8 +247,7 @@ def run_reference_checks(practice, workspace, log):
         log.append(f"$ vf.py verify {' '.join(ids)} -> {code}\n{output}")
         if code == 2:
             raise ScaffoldError(f"the reference checks could not run:\n{output}")
-        scratch_command = setting(harness, "Run scratch code")
-        if scratch_command and scratch_command.lower() != "per check":
+        if (setting(harness, "Start") or "").lower() != "user":
             # One break session per repo: break run restores the scratch copy after each run, so the breaks for a
             # repo share a session and the app restarts once per break instead of three times.
             by_repo = {}

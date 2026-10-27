@@ -32,6 +32,7 @@ import json
 import math
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -40,8 +41,12 @@ from pathlib import Path
 FRAMEWORK_LOCK = Path("scripts") / "framework" / "framework.sha256"
 RULES_VERSION_LINE = re.compile(r"^Rules version: (\S+)$", re.MULTILINE)
 ACCEPTED_BY = "vf.py run"
-# A check that starts the app itself has no instance for the doctor to inspect before it runs.
-PER_CHECK = "per check"
+# Start may name a repo's checkout, which vf fills with the developer's checkout or a planned break's scratch copy.
+CHECKOUT_PLACEHOLDER = re.compile(r"\{checkout:([a-z0-9][a-z0-9_-]*)\}")
+# Start's two words: nothing to start, so each check runs the code VERIFY_CHECKOUT_<REPO> names; or only a person starts the app.
+START_NONE = "none"
+START_USER = "user"
+RELOADS = ("yes", "no")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 SUB_FEATURE = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): \S")
 PROOF = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): (.+)$")
@@ -52,7 +57,7 @@ OPTIONAL = ["Request flow", "Verification plan", "Gotchas"]
 SETTING = re.compile(r"^- ([A-Z][A-Za-z ]*): (.*)$")
 SETTINGS = {
     "Workflow": ["Requirements source"],
-    "Commands": ["Start", "Stop", "Doctor", "Ready line", "Probe", "Run scratch code", "After an edit"],
+    "Commands": ["Start", "Stop", "Doctor", "Ready line", "Probe", "Reloads"],
 }
 SETUP_LABELS = ["Target", "Findings", "Looked in", "Blocker", "Next action", "Doctor proof"]
 RESULT = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): (Verified|Failed|Not verified)\b")
@@ -130,6 +135,21 @@ def setting(harness_dir, section, label):
             value = value[1:-1] if len(value) > 1 and value[0] == value[-1] == "`" else value
             return value or None
     return None
+
+
+def checkout_placeholders(command):
+    """The repo names a command's {checkout:<repo>} placeholders stand for, in order, each once."""
+    return list(dict.fromkeys(CHECKOUT_PLACEHOLDER.findall(command or "")))
+
+
+def fill_checkouts(command, checkouts):
+    """The command with each {checkout:<repo>} replaced by that repo's checkout path, shell-quoted; ValueError for a repo not in checkouts."""
+    def fill(match):
+        name = match.group(1)
+        if name not in checkouts:
+            raise ValueError(f"{{checkout:{name}}} names a repo settings.md does not list")
+        return shlex.quote(str(checkouts[name]))
+    return CHECKOUT_PLACEHOLDER.sub(fill, command)
 
 
 CHECKS_FOLDER = "checks"
@@ -339,6 +359,12 @@ def check_settings(path, errors):
     for name, locator in repos.items():
         if Path(locator).is_absolute() or locator.startswith("~"):
             errors.append(f"settings.md: {name} locator must be portable")
+    commands = {match.group(1): match.group(2).strip() for line in body.get("Commands", []) if (match := SETTING.match(line))}
+    if (reloads := commands.get("Reloads")) and reloads.lower() not in RELOADS:
+        errors.append(f"settings.md: Reloads must be yes or no, not {reloads}")
+    for name in checkout_placeholders(commands.get("Start")):
+        if name not in repos:
+            errors.append(f"settings.md: Start names {{checkout:{name}}}, which is not a repo under '## Repos'")
     return repos
 
 
@@ -794,7 +820,7 @@ def accepted_run_problems(record, repos):
     if record.get("accepted_by") != ACCEPTED_BY:
         problems.append("was not accepted by vf.py run; rerun the check through it")
     doctor = record.get("doctor")
-    if doctor != PER_CHECK and not (isinstance(doctor, dict) and doctor.get("exit_code") == 0):
+    if not (isinstance(doctor, dict) and doctor.get("exit_code") == 0):
         problems.append("ran without the doctor reporting the app ready")
     return problems
 

@@ -12,11 +12,14 @@ Usage:
 
 start makes a scratch git worktree of REPO at the commit under test, replays the developer's staged,
 unstaged, and untracked changes into it, and confirms its code_state.py fingerprint matches the
-developer's checkout. It then opens a session and points the app at the copy with settings.md's
-Run scratch code command. Make the break as an uncommitted edit in the copy it prints.
+developer's checkout. It then opens a session and points the app at the copy: when settings.md's
+Start is a command, it runs Stop and then Start with {checkout:REPO} filled with the copy and every
+other repo's placeholder with that repo's checkout. Start must name {checkout:REPO}; when Start is
+`none`, nothing runs and the checks read the copy from VERIFY_CHECKOUT_<REPO>; when Start is `user`,
+only a person starts the app and a break can't run. Make the break as an uncommitted edit in the copy it prints.
 
-run confirms the developer's checkout still matches and the copy holds an edit, restarts what runs
-REPO when settings.md's After an edit names a command, and runs the check from the project root with
+run confirms the developer's checkout still matches and the copy holds an edit, stops and starts the
+app again the same way when settings.md's Reloads is `no`, and runs the check from the project root with
 VERIFY_PLANNED_BREAK set. It saves the edit as <time>.patch beside the <time>.json evidence the check
 wrote, outside the run folder so it can be committed with the record, then restores the copy to its starting state and confirms its fingerprint, whether the check
 passed, failed, or crashed. When vf.py run accepted the break run, it appends one line per targeted
@@ -27,7 +30,7 @@ replay applies the patch saved beside EVIDENCE_FILE to the repo its planned_brea
 run does, aimed at the same sub-features, to re-prove a check after its code changes. The repo's
 session must be open.
 
-end points the app back at the developer's checkout, removes the copy, closes the session, and
+end points the app back at the developer's checkout (Stop, then Start with the developer's checkouts), removes the copy, closes the session, and
 reports whether the developer's checkout still has its starting fingerprint. Ending a repo with no
 session does nothing, so end is safe to repeat after a crash.
 
@@ -35,9 +38,9 @@ A session copies REPO's whole Git checkout, so settings repos in that checkout s
 take the repo start named, and a start for another of them while it is open is refused. While a
 session is open, code_state.py refuses ordinary code recording on every repo in it, including --checkout
 overrides. Only the harness that opened the session may run or end it, or record its scratch code.
-Commands from settings.md run from the project root
-with {repo} and {checkout} replaced by the repo name and the checkout path, and with
-VERIFY_BREAK_SESSION set so their own code_state.py calls are not refused.
+Commands from settings.md run from the project root with each {checkout:<repo>} filled in, with
+VERIFY_CHECKOUT_<REPO> set for every repo, and with VERIFY_BREAK_SESSION set so their own code_state.py
+calls are not refused.
 
 The commands must establish which code the app loaded through its doctor. Restoring files does not
 restart an app or undo data changes. An interrupted session stays open until end succeeds.
@@ -52,7 +55,6 @@ import datetime
 import importlib.util
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -97,13 +99,55 @@ def command_setting(harness, label):
     return value
 
 
-def run_setting(command, repo, checkout, project):
-    """Run a settings.md command with {repo} and {checkout} filled in; StateError when it fails."""
-    text = command.replace("{repo}", shlex.quote(repo)).replace("{checkout}", shlex.quote(str(checkout)))
+def reloads(harness):
+    """Whether the app picks up an edit to its checkout without a restart, from settings.md's Reloads line."""
+    value = command_setting(harness, "Reloads").lower()
+    if value not in validate.RELOADS:
+        raise StateError(f"settings.md's Reloads must be yes or no, not {value}")
+    return value == "yes"
+
+
+def session_checkouts(harness, session, scratch):
+    """Every settings repo's checkout as the app should see it: inside the scratch worktree for the repos in the
+    session's Git checkout when scratch is set, else the developer's."""
+    project = validate.project_root(harness)
+    top, worktree = Path(session["top"]), Path(session["worktree"])
+    checkouts = {}
+    for name, locator in code_state.listed_repos(harness).items():
+        located = validate.resolve_repo(locator, project)
+        if not located:
+            raise StateError(f"{name}: no Git checkout at {locator}")
+        located = located.resolve()
+        if scratch and located.is_relative_to(top):
+            located = worktree / located.relative_to(top)
+        checkouts[name] = located
+    return checkouts
+
+
+def run_command(harness, command, checkouts, repo):
+    """Run a settings.md command from the project root with its {checkout:<repo>} placeholders filled; StateError when it fails."""
+    try:
+        text = validate.fill_checkouts(command, checkouts)
+    except ValueError as error:
+        raise StateError(f"settings.md: {error}") from error
     print(f"Running: {text}", flush=True)
-    result = subprocess.run(text, shell=True, cwd=project, env={**os.environ, "VERIFY_BREAK_SESSION": repo})
+    env = {**os.environ, "VERIFY_BREAK_SESSION": repo, **code_state.checkout_env(checkouts)}
+    result = subprocess.run(text, shell=True, cwd=validate.project_root(harness), env=env)
     if result.returncode:
         raise StateError(f"`{text}` exited {result.returncode}")
+
+
+def point_app(harness, session, repo, scratch):
+    """Make the app load the scratch copy, or the developer's checkouts again: Stop, then Start with the
+    checkouts filled in. Nothing runs when Start is `none`, since the checks then read VERIFY_CHECKOUT_<REPO>."""
+    start = command_setting(harness, "Start")
+    if start.lower() in (validate.START_NONE, validate.START_USER):
+        return
+    checkouts = session_checkouts(harness, session, scratch)
+    stop = command_setting(harness, "Stop")
+    if stop.lower() != "none":
+        run_command(harness, stop, checkouts, repo)
+    run_command(harness, start, checkouts, repo)
 
 
 def locate(harness, repo):
@@ -185,10 +229,10 @@ def start(harness, repo):
         code_state.require_session_owner(session, harness)
         require_session_repo(session, repo)
         raise GuardError(f"a break session is already open for {repo}; see `vf.py break status`, or close it with `vf.py break end {repo}`")
-    point = command_setting(harness, "Run scratch code")
-    command_setting(harness, "After an edit")
-    if point.lower() == "none":
-        raise StateError("settings.md says the app can't run scratch code, so a planned break can't run here; record the proof as Not break-tested")
+    start_command = command_setting(harness, "Start")
+    reloads(harness)
+    if start_command.lower() == validate.START_USER:
+        raise StateError("settings.md says only a person starts the app (Start: user), so a planned break can't run here; record the proof as Not break-tested")
     under_test = code_state.checkout_state(checkout, harness)
 
     folder = code_state.session_folder(checkout)
@@ -220,8 +264,7 @@ def start(harness, repo):
     session["start_tree"] = snapshot_tree(worktree, harness)
     save_session(folder, session)
 
-    if point.lower() != validate.PER_CHECK:
-        run_setting(point, repo, scratch, validate.project_root(harness))
+    point_app(harness, session, repo, scratch=True)
     print(f"Break session open for {repo}. Make the break as an uncommitted edit in {scratch}, then run:")
     print(f'  vf.py break run {repo} "<sub-feature IDs>: <what was broken>" -- <check command>')
     return 0
@@ -273,9 +316,8 @@ def run_break(harness, repo, planned, command, patch=None):
     project = validate.project_root(harness)
     before = evidence_files(harness)
     try:
-        after_edit = command_setting(harness, "After an edit")
-        if after_edit.lower() != "reloads":
-            run_setting(after_edit, repo, session["scratch"], project)
+        if not reloads(harness):
+            point_app(harness, session, repo, scratch=True)
         print(f"Running the check with VERIFY_PLANNED_BREAK={planned}", flush=True)
         exit_code = subprocess.run(command, cwd=project, env={**os.environ, "VERIFY_PLANNED_BREAK": planned}).returncode
         runs = planned_break_runs(evidence_files(harness) - before)
@@ -390,9 +432,7 @@ def end(harness, repo):
     # Marked before pointing back, so the point-back command records the developer's checkout and a crash leaves the session open.
     session["app_checkout"] = session["checkout"]
     save_session(folder, session)
-    point = command_setting(harness, "Run scratch code")
-    if point.lower() not in ("none", validate.PER_CHECK):
-        run_setting(point, repo, checkout, validate.project_root(harness))
+    point_app(harness, session, repo, scratch=False)
     if worktree.exists():
         git_output(top, "worktree", "remove", "--force", str(worktree))
     git_output(top, "worktree", "prune")

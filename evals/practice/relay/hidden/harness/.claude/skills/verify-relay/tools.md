@@ -4,17 +4,17 @@ Use these commands for debugging, investigation, or verification. A read reports
 
 ## Which relay would a check run, and does it run?
 
-Use when: before running a check, or after a break session, to see which checkout the checks point at.
+Use when: before running a check, to confirm relay is runnable and see which checkout the checks will run from.
 
 Run from the project root:
 
 `python3 .claude/skills/verify-relay/scripts/doctor.py`
 
-- Inputs: none; `--point <checkout>` repoints the checks at another checkout (break sessions use it), `--point .` points back here.
-- Environment: Python 3; the pointer file `evidence/launch/checkout.txt` when one exists.
-- Permissions: read-only, except `--point`, which writes the pointer file.
-- Result: prints `relay ready`, the version, and the pointed checkout's code state as JSON, exit 0.
-- Failure: exit 1 when the pointed checkout has no runnable relay, with the reason; exit 2 when it could not tell.
+- Inputs: none; the checkout comes from `VERIFY_CHECKOUT_RELAY`, which vf.py run sets (the scratch copy during a planned break).
+- Environment: Python 3; `VERIFY_CHECKOUT_RELAY` when vf.py run set it, else this checkout.
+- Permissions: read-only.
+- Result: prints `relay ready`, the version, and that checkout's code state as JSON, exit 0.
+- Failure: exit 1 when the checkout has no runnable relay, with the reason; exit 2 when it could not tell.
 - Limits: says the tool runs; proves nothing about what it converts.
 
 Help: `python3 .claude/skills/verify-relay/scripts/doctor.py --help`.

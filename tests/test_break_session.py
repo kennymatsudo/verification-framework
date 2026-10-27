@@ -37,11 +37,11 @@ sys.exit(1 if broken else 0)
 
 
 
-def make_project(directory, point="`echo {checkout} > pointed.txt`", after_edit="reloads"):
+def make_project(directory, start="echo {checkout:app} > pointed.txt", stop="none", reloads="yes"):
     project = Path(directory) / "project"
     project.mkdir()
     git(project, "init", "-q", "-b", "main")
-    (project / ".gitignore").write_text("pointed.txt\n")
+    (project / ".gitignore").write_text("pointed.txt\nrestarted.txt\n")
     (project / "app.txt").write_text("first\n")
     (project / "staged.txt").write_text("first\n")
     git(project, "add", ".")
@@ -50,7 +50,7 @@ def make_project(directory, point="`echo {checkout} > pointed.txt`", after_edit=
     harness.mkdir(parents=True)
     (harness / "settings.md").write_text(
         "# App verification settings\n\n## Repos\n\n- app: .\n\n## Commands\n\n"
-        f"- Start: make dev\n- Run scratch code: {point}\n- After an edit: {after_edit}\n"
+        f"- Start: {start}\n- Stop: {stop}\n- Reloads: {reloads}\n"
     )
     return project, harness
 
@@ -69,7 +69,7 @@ def make_monorepo(directory):
     harness.mkdir(parents=True)
     (harness / "settings.md").write_text(
         "# Orders verification settings\n\n## Repos\n\n- orders: .\n- mailer: ../mailer\n\n## Commands\n\n"
-        "- Start: make dev\n- Run scratch code: `echo {checkout} > pointed.txt`\n- After an edit: reloads\n"
+        "- Start: echo {checkout:orders} > pointed.txt\n- Stop: none\n- Reloads: yes\n"
     )
     return root, harness
 
@@ -216,9 +216,9 @@ class BreakSessionTest(unittest.TestCase):
             self.assertEqual(run(harness, "end", "app")[0], 0)
             self.assertIsNotNone(ordinary_state(other_harness, {})["app"])
 
-    def test_per_check_starts_the_app_from_scratch_and_records_its_loaded_version(self):
+    def test_start_none_lets_each_check_run_the_code_from_its_checkout(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
-            project, harness = make_project(directory, point="per check")
+            project, harness = make_project(directory, start="none")
             app = project / "app.py"
             app.write_text('import json, subprocess, sys\nfrom pathlib import Path\n'
                            'code = json.loads(subprocess.check_output([sys.executable, *sys.argv[1:]], text=True))\n'
@@ -285,17 +285,18 @@ sys.exit(0 if record["passed"] else 1)
 
     def test_run_restores_the_copy_when_the_check_writes_no_evidence(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
-            project, harness = make_project(directory, after_edit="`touch restarted.txt`")
+            project, harness = make_project(directory, start="echo {checkout:app} > pointed.txt && touch restarted.txt", reloads="no")
             run(harness, "start", "app")
             cleanup.callback(run, harness, "end", "app")
             scratch = Path((project / "pointed.txt").read_text().strip())
+            (project / "restarted.txt").unlink()
             (scratch / "app.txt").write_text("broken\n")
 
             result, _, errors = run(harness, "run", "app", "app.pay: skipped", "--", sys.executable, "-c", "raise SystemExit(3)")
 
             self.assertEqual(result, 1)
             self.assertIn("last-break.patch", errors)
-            self.assertTrue((project / "restarted.txt").exists())
+            self.assertTrue((project / "restarted.txt").exists(), "Reloads: no restarts the app before the break check")
             self.assertEqual((scratch / "app.txt").read_text(), "first\n")
 
     def test_end_points_back_removes_the_copy_and_reports_a_changed_checkout(self):
@@ -320,7 +321,7 @@ sys.exit(0 if record["passed"] else 1)
             self.assertIn("app.txt", errors)
             self.assertIsNone(code_state.open_session(project))
 
-    def test_a_session_follows_an_env_locator_the_point_command_rewrites(self):
+    def test_a_break_runs_on_a_repo_found_through_an_env_locator(self):
         with tempfile.TemporaryDirectory() as directory:
             service = Path(directory) / "service"
             service.mkdir()
@@ -328,7 +329,8 @@ sys.exit(0 if record["passed"] else 1)
             (service / "app.txt").write_text("first\n")
             git(service, "add", ".")
             git(service, "commit", "-qm", "first")
-            project, harness = make_project(directory, point="echo SERVICE_DIR={checkout} > local.env")
+            # Start names the service checkout; vf fills it, so the env file never needs rewriting.
+            project, harness = make_project(directory, start="echo {checkout:service} > pointed.txt")
             (project / ".gitignore").write_text("pointed.txt\nlocal.env\n")
             git(project, "commit", "-qam", "ignore local.env")
             (project / "local.env").write_text(f"SERVICE_DIR={service}\n")
@@ -336,8 +338,9 @@ sys.exit(0 if record["passed"] else 1)
             settings.write_text(settings.read_text().replace("- app: .\n", "- app: .\n- service: env:local.env:SERVICE_DIR\n"))
 
             self.assertEqual(run(harness, "start", "service")[0], 0)
-            scratch = Path((project / "local.env").read_text().partition("=")[2].strip())
+            scratch = Path((project / "pointed.txt").read_text().strip())
             self.assertNotEqual(scratch, service.resolve())
+            self.assertTrue(scratch.is_relative_to(Path(code_state.open_session(service)["worktree"])))
             (scratch / "app.txt").write_text("broken\n")
             result, _, errors = run(harness, "run", "service", "service.read: broken", "--", sys.executable, "-c", "pass")
             self.assertEqual(result, 1)
@@ -346,7 +349,8 @@ sys.exit(0 if record["passed"] else 1)
             result, _, errors = run(harness, "end", "service")
 
             self.assertEqual(result, 0, errors)
-            self.assertEqual((project / "local.env").read_text().strip(), f"SERVICE_DIR={service.resolve()}")
+            self.assertEqual((project / "local.env").read_text().strip(), f"SERVICE_DIR={service}")
+            self.assertEqual(Path((project / "pointed.txt").read_text().strip()), service.resolve())
             self.assertFalse(scratch.exists())
 
     def test_one_session_serves_every_repo_in_a_shared_checkout(self):
@@ -391,9 +395,9 @@ sys.exit(0 if record["passed"] else 1)
             self.assertEqual(code_state.break_session_repo(harness), "mailer")
             self.assertEqual(run(harness, "end", "mailer")[0], 0)
 
-    def test_start_stops_when_the_app_cannot_run_scratch_code(self):
+    def test_start_stops_when_only_a_person_can_start_the_app(self):
         with tempfile.TemporaryDirectory() as directory:
-            project, harness = make_project(directory, point="none")
+            project, harness = make_project(directory, start="user")
 
             result, _, errors = run(harness, "start", "app")
 
@@ -404,10 +408,10 @@ sys.exit(0 if record["passed"] else 1)
     def test_a_command_setting_loses_its_backticks_and_must_be_present(self):
         with tempfile.TemporaryDirectory() as directory:
             _, harness = make_project(directory)
-            self.assertEqual(break_session.command_setting(harness, "Run scratch code"), "echo {checkout} > pointed.txt")
-            (harness / "settings.md").write_text("# App verification settings\n\n## Commands\n\n- Start: make dev\n")
-            with self.assertRaisesRegex(code_state.StateError, "has no '- Run scratch code:' line"):
-                break_session.command_setting(harness, "Run scratch code")
+            self.assertEqual(break_session.command_setting(harness, "Start"), "echo {checkout:app} > pointed.txt")
+            (harness / "settings.md").write_text("# App verification settings\n\n## Commands\n\n- Stop: none\n")
+            with self.assertRaisesRegex(code_state.StateError, "has no '- Start:' line"):
+                break_session.command_setting(harness, "Start")
 
 
 if __name__ == "__main__":

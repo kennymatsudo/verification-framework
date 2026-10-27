@@ -18,12 +18,11 @@ The project root is `apps/orders`, this app's folder in the monorepo, so `.` cov
 
 ## Commands
 
-- Start: python3 .claude/skills/verify-orders/scripts/framework/vf.py start --until "curl -sf http://127.0.0.1:8073/health" -- python3 -m orders
+- Start: python3 .claude/skills/verify-orders/scripts/framework/vf.py start --checkout orders={checkout:orders} --until "curl -sf http://127.0.0.1:8073/health" -- env PYTHONPATH={checkout:orders} python3 {checkout:orders}/orders/server.py
 - Stop: python3 .claude/skills/verify-orders/scripts/framework/vf.py stop
 - Doctor: python3 .claude/skills/verify-orders/scripts/framework/vf.py doctor --probe "curl -sf http://127.0.0.1:8073/health"
 - Ready line: ready
 - Probe: python3 .claude/skills/verify-orders/scripts/probe.py
-- Run scratch code: python3 .claude/skills/verify-orders/scripts/framework/vf.py stop && python3 .claude/skills/verify-orders/scripts/framework/vf.py start --checkout {repo}={checkout} --until "curl -sf http://127.0.0.1:8073/health" -- env PYTHONPATH={checkout} python3 {checkout}/orders/server.py
-- After an edit: python3 .claude/skills/verify-orders/scripts/framework/vf.py stop && python3 .claude/skills/verify-orders/scripts/framework/vf.py start --checkout {repo}={checkout} --until "curl -sf http://127.0.0.1:8073/health" -- env PYTHONPATH={checkout} python3 {checkout}/orders/server.py
+- Reloads: no
 
-Every command runs from `apps/orders`. The orders server runs the checkout's files directly and needs a restart after an edit, so the framework launcher starts it and records the code it loaded; scratch code runs the scratch checkout's `server.py` with that checkout first on `PYTHONPATH`, from this folder, so it keeps writing `data/orders.db` and the shared outbox `../../queue/outbox.jsonl` here. The agent may start and stop it. The mailer is not started by the harness: `node ../mailer/worker.js --once` sends real mail through the team relay (`../../mail-sink`), so anything that runs it is an action with a shared side effect and needs the user's approval for that run.
+Every command runs from `apps/orders`. The orders server runs the checkout's files directly and needs a restart after an edit (Reloads: no), so the framework launcher starts it from `{checkout:orders}` and records the code it loaded; it runs that checkout's `server.py` with the checkout first on `PYTHONPATH`, from this folder, so a planned break's scratch copy is the code that loads while `data/orders.db` and the shared outbox `../../queue/outbox.jsonl` stay here. The agent may start and stop it. The mailer is not started by the harness: `node ../mailer/worker.js --once` sends real mail through the team relay (`../../mail-sink`), so anything that runs it is an action with a shared side effect and needs the user's approval for that run.

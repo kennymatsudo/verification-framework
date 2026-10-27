@@ -46,7 +46,7 @@ The cost is a longer window on scratch code, during which the developer can't us
 
 - **A person-only switch.** Where only a person can point the app at another checkout, `start` and `end` could print the step for the person to do and exit, and a second command could record that it was done. Agents have no terminal to wait on, so the script can't simply pause.
 - **Several repos in one session.** Decided: repos in one Git checkout share one session, named for the repo `break start` was given; a break run with sessions open on two separate checkouts still stops, since a break names one repo.
-- **An app that starts per check** still needs a practice run. The eval suite's `relay` practice repo (a command-line tool with no server) avoids `per check` instead: its doctor writes a pointer file naming the checkout the checks run the command from, `Run scratch code` repoints it, and `After an edit` is `reloads`, so planned breaks run through the normal session. Whether that pattern should replace `per check` in the settings template is open.
+- **An app that starts per check.** Settled by [ADR 0010](adr/0010-start-takes-the-checkout.md): `per check` is now `Start: none`, and a check that starts the app reads its checkout from `VERIFY_CHECKOUT_<REPO>`, which `vf.py run` sets to the scratch copy during a planned break. The relay practice repo's pointer file is gone; its checks and doctor read that variable.
 
 ### Require only the repos a run uses
 
@@ -111,6 +111,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0007: The framework ships inside the app's repo](adr/0007-the-framework-ships-inside-the-app-repo.md)
 - [0008: Fingerprint what a check could load, not the whole harness](adr/0008-fingerprint-what-a-check-could-load.md)
 - [0009: A planned break names its repo, and its edit travels with the record](adr/0009-a-break-names-its-repo-and-its-edit-travels-with-the-record.md)
+- [0010: Start takes the checkout, so one command points the app at the code under test](adr/0010-start-takes-the-checkout.md)
 
 ## Parked ideas
 

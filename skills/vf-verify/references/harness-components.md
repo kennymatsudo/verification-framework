@@ -26,7 +26,7 @@ With the first such check, publish the harness's `scripts/framework/vf.py replay
 4. Run `vf.py break end <repo>`, even after a failure, and report anything it says changed in the developer's checkout. Until it ends, `code_state.py` refuses ordinary code recording.
 5. `vf.py break run` prints `Break recorded for <id>: step '<name>' caught it` for each targeted sub-feature whose own step failed and logs it in `evidence/breaks.jsonl`; `vf.py status` now reports the behavior Verified with the break's date. Write nothing about the break in the map, and drop any `Not break-tested` note the proof line carried. For an inverted proof, write `Not break-tested: broken on current code; passes on a planned fix (<the fix>).`
 
-If `start` stops because `Run scratch code` is `none`, report the proof as blocked and write `Not break-tested: <reason>.` A user-operated instance may run scratch code only with their permission.
+If `start` stops because settings.md's `Start` is `user` (only a person can start the app), report the proof as blocked and write `Not break-tested: <reason>.`
 
 ## Scenario
 

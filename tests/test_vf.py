@@ -227,7 +227,11 @@ for name in spec.get("files", []):
 events = spec.get("events")
 if events is None:
     events = [{"event": "check", "name": spec.get("name", "pay"), "sub_features": ["app.pay"], "reads": "state"}]
-    events += spec.get("steps", [{"event": "step", "name": "order is paid", "passed": True, "at": 1.0}])
+    if "needs_checkout" in sys.argv[2:]:
+        events += [{"event": "step", "name": "order is paid", "passed": True, "at": 1.0,
+                    "detail": os.environ.get("VERIFY_CHECKOUT_APP", "")}]
+    else:
+        events += spec.get("steps", [{"event": "step", "name": "order is paid", "passed": True, "at": 1.0}])
     events += spec.get("more", [])
 if not spec.get("no_report"):
     with open(os.environ["VERIFY_REPORT"], "a") as report:
@@ -257,10 +261,10 @@ class HarnessCommands(unittest.TestCase):
         self.write_settings()
         (self.harness / "scripts" / "pay.py").write_text("# the check\n")
 
-    def write_settings(self, doctor="echo verify: ready", scratch="`echo {checkout} > pointed.txt`", start="none"):
+    def write_settings(self, doctor="echo verify: ready", start="echo {checkout:app} > pointed.txt", reloads="no"):
         (self.harness / "settings.md").write_text(
             "# App verification settings\n\n## Repos\n\n- app: .\n\n## Commands\n\n"
-            f"- Start: {start}\n- Doctor: {doctor}\n- Run scratch code: {scratch}\n- After an edit: reloads\n")
+            f"- Start: {start}\n- Stop: none\n- Doctor: {doctor}\n- Reloads: {reloads}\n")
 
     def run_check(self, env=None, named=(), **spec):
         command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--",
@@ -440,11 +444,13 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("settings.md has no Doctor line", result.stderr)
 
-    def test_a_per_check_harness_skips_the_doctor_and_records_why(self):
-        self.write_settings(doctor="exit 1", scratch="per check")
-        result = self.run_check()
+    def test_run_hands_each_repo_checkout_to_the_doctor_and_the_check(self):
+        # The doctor and the check both get VERIFY_CHECKOUT_APP naming the checkout the run records.
+        self.write_settings(doctor='test "$VERIFY_CHECKOUT_APP" = "$PWD" && echo verify: ready')
+        result = self.run_check(named=("needs_checkout",))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.record()["doctor"], "per check")
+        self.assertEqual(self.record()["doctor"]["exit_code"], 0)
+        self.assertEqual(self.record()["steps"][0]["detail"], str(self.project.resolve()))
 
     def test_other_checks_under_scripts_checks_are_not_fingerprinted_with_the_named_one(self):
         checks = self.harness / "scripts" / "checks"
@@ -639,10 +645,10 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn(f"Starting the app: touch {marker}\nThe doctor reports the app ready.\n", result.stdout)
         self.assertIn("Accepted evidence/pay/", result.stdout)
-        self.write_settings(doctor="exit 1", start="none")
+        self.write_settings(doctor="exit 1", start="user")
         result = self.framework("verify", "app.pay", "--start")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("names no Start command an agent may run", result.stderr)
+        self.assertIn("only a person starts the app", result.stderr)
 
     def framework(self, *args):
         return subprocess.run([sys.executable, str(self.harness / "scripts/framework/vf.py"), *args], capture_output=True, text=True)
