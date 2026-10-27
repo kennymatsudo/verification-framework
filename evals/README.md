@@ -209,6 +209,24 @@ The smoke tier on the Rules version 6 contract ([ADR 0013](../docs/adr/0013-one-
 
 What it says: the skills write and read the manifest format correctly with no wording aimed at it; every case that touches a harness passed every grader. What it also says: vf's body sent a weak-checks audit of a homegrown `qa/` folder through setup first, because its rule for a repo with no harness ("the playbook is Set up whatever the request said") doesn't carve out the two modes that work on a harness this framework didn't build. The earlier runs of this case passed because the model chose the audit directly; the one-skill step states the carve-out in the mode table.
 
+### Seventh run: one skill (ADR 0014)
+
+The smoke tier with vf-verify and vf-explain folded into vf as modes ([ADR 0014](../docs/adr/0014-one-skill.md)), the person-only sentence at the top of setup, the audits, and verify-pr, and Rules version 7 (2026-10-27, Opus 5.5, $11.00 in all, plus $1.22 for the rerun below):
+
+| Case | Score | Cost | Notes |
+| --- | --- | --- | --- |
+| add-checks-ledger | 1.00 | $4.98 | all six hidden breaks caught |
+| audit-weak-ledger-legacy | 1.00 | $0.96 | went straight to the audit of `qa/`; the sixth run's detour through setup is gone, as the mode table's carve-out intended |
+| explain-ledger | 1.00 | $0.37 | |
+| setup-ledger | 1.00 | $2.57 | |
+| setup-vault-blocked | 1.00 | $1.26 | |
+| verify-bare-offers-setup | 0.77 | $0.31 | vf was never loaded: the agent verified LR-5 by hand with curl, found a real self-transfer bug in the practice app, and mentioned setup only in its closing line, not as a `Needs you:` ask |
+| verify-ledger-change | 1.00 | $0.55 | |
+
+The guard case for the merge missed, and not in the way the ADR feared: no person-only mode started unasked, because the skill was not invoked at all. The merged description opened with "Prove an app works on the real thing through its verification harness"; vf-verify's had opened with "Verify a change on the real app", which this case's "verify on the running app" request matched in every earlier run. The description now opens with vf-verify's old sentence and names "prove it on the running app" as a trigger. The same case rerun three times on that description: 1.00, 1.00, 1.00 ($1.22); vf was loaded each time, each run ended on a `Needs you:` asking whether to set up, and nothing was built.
+
+What it says: with one agent-invocable skill, no run across the ten started setup, an audit, or PR verification unasked, and the two modes that work on a foreign harness no longer route through setup. What it also says: the description is the one thing the merge put at risk, and this suite checks it with one case; a description change needs that case rerun more than once.
+
 ## Adding a practice repo or a case
 
 A practice repo needs: `repo/` with a README that says how to run it and a `REQUIREMENTS.md` with IDs, one item left open and, where it fits, one the code contradicts; `practice.json` (copy `ledger`'s); `hidden/answers.json` in the developer's voice, never revealing a break; `hidden/breaks/*.patch` made with `git diff` against `repo/`, one behavior each, each a bug a response could hide; `hidden/harness/` as a ready reference harness at zero coverage and `hidden/coverage/` with its checks, both following `rules.md`, so the fixture test proves the breaks are real and the harness is a worked example; and `tests/test_practice_<name>.py` (copy one). Keep it under 200 lines of app code and starting in a second.
