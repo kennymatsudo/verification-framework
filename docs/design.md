@@ -50,7 +50,7 @@ The cost is a longer window on scratch code, during which the developer can't us
 
 ### Let an `env:` repository location fall back to the project's default
 
-An `env:` repository location in `settings.md` reads a checkout path from a project settings file and finds nothing when the key is absent, even though the startup script defaults it. Setup then stops until someone writes the default into their settings file.
+An `env:` repository location in `harness.json` reads a checkout path from a project settings file and finds nothing when the key is absent, even though the startup script defaults it. Setup then stops until someone writes the default into their settings file.
 
 **Options:** a location form with a fallback path (which can drift from the script's default); setup asks the developer to set the key; or the doctor reports the checkout each process loaded and code state reads it from there (most faithful, but every doctor must report it).
 
@@ -78,11 +78,11 @@ The verify-pr mode builds checks in a worktree of the harness's repo, so the dev
 
 Linking the ignored folders into the worktree made the first converted app's doctor report ready. But Git listed the links as untracked, because its ignore patterns (`pids/`) match only real folders, so every run would record the harness repo as having uncommitted code.
 
-**Proposal:** setup proves this once, alongside readiness. It runs the doctor from a throwaway worktree. If that fails, it finds the ignored state the doctor needs, proposes links, confirms Git doesn't see them as changes (naming any ignore-file fix for the developer to make, since skills don't edit ignore files), and records the result in `settings.md`: the paths a worktree links, or that the harness runs only in place. Verify-pr then uses a worktree when settings says it works, and otherwise tells the developer up front which checkout the run uses and to leave it alone until the run ends.
+**Proposal:** setup proves this once, alongside readiness. It runs the doctor from a throwaway worktree. If that fails, it finds the ignored state the doctor needs, proposes links, confirms Git doesn't see them as changes (naming any ignore-file fix for the developer to make, since skills don't edit ignore files), and records the result in `harness.json`: the paths a worktree links, or that the harness runs only in place. Verify-pr then uses a worktree when the manifest says it works, and otherwise tells the developer up front which checkout the run uses and to leave it alone until the run ends.
 
-**Costs:** a new settings blank and setup step, so the template, `validate.py`, USAGE.md, and `docs/internals.md` change together and the Rules version rises. One more thing setup asks the developer to approve.
+**Costs:** a new manifest field and setup step, so the template, `validate.py`, USAGE.md, and `docs/internals.md` change together and the Rules version rises. One more thing setup asks the developer to approve.
 
-**Still open:** whether commands that restart the app (`Run scratch code`) work from a linked worktree, which is untested; whether links or copies suit each kind of state (links share state the app writes, copies freeze a snapshot); whether planned-break scratch copies need the same list.
+**Still open:** whether commands that restart the app (`start`) work from a linked worktree, which is untested; whether links or copies suit each kind of state (links share state the app writes, copies freeze a snapshot); whether planned-break scratch copies need the same list.
 
 **What settles it:** the first converted app running one verify-pr from a linked worktree, with clean code state in its evidence and a restart through `Run scratch code`, plus a second app whose stack runs outside its repo, where a worktree needs no links.
 
@@ -108,6 +108,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0010: Start takes the checkout, so one command points the app at the code under test](adr/0010-start-takes-the-checkout.md)
 - [0011: A behavior names the repos its check runs](adr/0011-a-behavior-names-the-repos-its-check-runs.md)
 - [0012: Vendor only what bears trust](adr/0012-vendor-only-what-bears-trust.md)
+- [0013: One manifest for everything a script reads; prose stays prose](adr/0013-one-manifest-for-what-scripts-read.md)
 
 ## Parked ideas
 

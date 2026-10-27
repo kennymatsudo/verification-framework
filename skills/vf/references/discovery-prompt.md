@@ -7,7 +7,7 @@ Spawn one read-only subagent on a mid-tier model with this prompt. Fill in the r
 Read the repo at `<repo path>` and answer each question below from its code, scripts, and docs. Do not run the app, its tests, or a build. Do not edit files.
 
 Target: `<app or system>`.
-Saved findings: `<matching Setup record, or none>`.
+Saved findings: `<the harness's setup block, or none>`.
 
 Scope discovery to this target. Follow workspace and startup configuration into accessible referenced repos or setup folders. Recheck saved findings against their sources. Report competing setup candidates separately; do not choose an unrelated app's startup command.
 

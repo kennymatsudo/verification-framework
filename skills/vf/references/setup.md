@@ -23,18 +23,18 @@ Keep framework artifacts inside the new harness. Existing project documents can 
 
 ## Save and resume
 
-Stable facts go in `settings.md`: commands and their working directories, repo locators, prerequisites, and readiness signals. Store locators from project configuration, not machine-specific paths or credentials. The doctor's code validates readiness and running versions.
+Stable facts go in `harness.json`: the commands, the repo locators, and the ready line. Prerequisites, what needs a person, and where the app's data lives go under Setup notes in `notes.md`. Store locators from project configuration, not machine-specific paths or credentials. The doctor's code validates readiness and running versions.
 
-Save findings and blockers under `## Setup: <harness directory name>` in the harness's `notes.md`, for example `## Setup: verify-storefront`. Read the record before repeating discovery.
+Save findings and blockers in the `setup` block of the harness's `harness.json`: `target`, `findings`, `looked_in`, `blocker`, and `next`. Read the block before repeating discovery.
 
-Use the Setup record in `references/notes.md`, replacing every placeholder with a fact or an explicit unknown.
+Use the `setup` block in `references/harness.md`, replacing every placeholder with a fact or an explicit unknown.
 
-Keep longer findings or doctor output in paragraphs or linked files under the same section. Update the record after an answer or attempted startup, and before returning with a blocker. The record holds what is true now, not how setup got there: replace a finding that changed, and drop resolved blockers and one-time events, since Git keeps the history. A workaround for one machine goes to the user in the reply, not into the harness. Preserve unrelated results. A new setup session does not trust saved readiness or replay approvals from another session.
+Keep `findings` to a sentence or two with its sources; longer findings or doctor output go under Setup notes in `notes.md` or in linked files. Update the block after an answer or attempted startup, and before returning with a blocker. The block holds what is true now, not how setup got there: replace a finding that changed, and drop resolved blockers and one-time events, since Git keeps the history. A workaround for one machine goes to the user in the reply, not into the harness. Preserve unrelated results. A new setup session does not trust saved readiness or replay approvals from another session.
 
 ## Mark completion
 
-Settings have `## Setup` with `- Status: incomplete` or `- Status: ready`. Keep it incomplete while required instructions are unknown, startup is blocked, or doctor proof is missing. Never fill a required command with `none yet` to make setup look complete.
+The manifest's `setup.status` is `incomplete` or `ready`. Keep it incomplete while required instructions are unknown, startup is blocked, or doctor proof is missing. Never fill a required command with `none yet` to make setup look complete.
 
-If startup fails, inspect the failure and update the Setup record; ask only for the missing information or human action. If a human must start it, ask them to do so. If they cannot, save the blocker and resume action and report the doctor as unproven.
+If startup fails, inspect the failure and update the `setup` block; ask only for the missing information or human action. If a human must start it, ask them to do so. If they cannot, save the blocker and resume action and report the doctor as unproven.
 
-After the real doctor's output and tested code are recorded in Doctor proof and required settings are filled, clear Blocker and Next action to `none` and set Status to `ready` to run `vf.py validate`, the map check. Fix structural errors; keep ready only when that check passes. If it cannot pass, restore incomplete and record the blocker and resume action.
+After the real doctor's output and tested code are recorded in `doctor_proof` and every required field is filled, set `blocker` and `next` to `null` and `status` to `ready`, then run `vf.py validate`, the map check. Fix structural errors; keep ready only when that check passes. If it cannot pass, restore incomplete and record the blocker and resume action.

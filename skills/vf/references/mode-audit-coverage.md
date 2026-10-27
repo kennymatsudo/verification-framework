@@ -16,11 +16,11 @@ End with exactly one:
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up.
 
-Done when you have the harness path and have read its `SKILL.md`, `rules.md`, `settings.md`, `features/README.md`, `status.md`, and `notes.md`.
+Done when you have the harness path and have read its `SKILL.md`, `rules.md`, `harness.json`, every file in `features/`, `status.md`, and `notes.md`.
 
 ## 2. Run the mechanical check
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Fix every error in the map itself: missing or extra index entries, malformed lines, proof commands whose files moved. Keep each warning about stale or missing evidence for step 5.
+Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Fix every error in the map itself: malformed entries, check commands whose files moved. Keep each warning about stale or missing evidence for step 5.
 
 Done when `vf.py validate` exits 0 and you have a list of stale sub-features, or setup stopped with its saved blocker.
 
@@ -38,12 +38,12 @@ Done when every cited drift is confirmed or dismissed, with the reason.
 
 ## 5. Drive every feature live
 
-Follow the harness's own `SKILL.md` to check the instance and drive. Run every checked sub-feature through `scripts/framework/vf.py verify <ids>`, which runs the readiness check before each check and stops when the app is not ready, plus the live recipe for any sub-feature marked "No check yet" or "Unreachable". Throughout:
+Follow the harness's own `SKILL.md` to check the instance and drive. Run every checked sub-feature through `scripts/framework/vf.py verify <ids>`, which runs the readiness check before each check and stops when the app is not ready, plus the live recipe for any behavior with no `check` or with an `unreachable` block. Throughout:
 
 - Rerun the doctor after any failed drive, and reset or relaunch when the app is wedged in a state the doctor cannot see.
 - Confirm evidence files, and the run folders they name, still exist after every cleanup.
 - Clean up whatever a failed drive left behind before the next one.
-- An "Unreachable" sub-feature stays unreachable only with its blocker and the route tried. If the blocker is gone, it is drift.
+- A behavior with an `unreachable` block stays unreachable only with its blocker and the route tried. If the blocker is gone, it is drift.
 
 For each behavior `status.md` reports as `Pass not proven: <file> changed since this run`, rerun its check. For each one it reports as `Pass not proven: <file> changed since its planned break`, load vf-verify by name in add-checks mode to replay its planned break.
 

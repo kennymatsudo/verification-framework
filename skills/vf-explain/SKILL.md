@@ -45,8 +45,8 @@ Done when the scope names its behaviors by ID.
 
 For each check in scope, answer each question yes, no, or not recorded, with its source:
 
-1. **Does it do what a user does?** Open the check's command and quote the `file:line` where it acts. Yes when it goes through an entry point listed in the feature's "How a user reaches it"; no when it calls app functions directly, uses a test-only route, or writes state itself.
-2. **Does it look at the result itself?** Quote the `file:line` of the read that decides the pass. Yes when it reads the stored row, sent message, written file, or rendered screen directly; no when the verdict rests on the app's own reply or reads through the app's code. Say whether it reads what the user sees or only stored state, from the proof line's `reads`.
+1. **Does it do what a user does?** Open the check's command and quote the `file:line` where it acts. Yes when it goes through an entry point listed in the feature's `reach`; no when it calls app functions directly, uses a test-only route, or writes state itself.
+2. **Does it look at the result itself?** Quote the `file:line` of the read that decides the pass. Yes when it reads the stored row, sent message, written file, or rendered screen directly; no when the verdict rests on the app's own reply or reads through the app's code. Say whether it reads what the user sees or only stored state, from the entry's `reads`.
 3. **Have we seen it catch a problem?** Yes only when `break.on_hand` and `break.failed_steps` is not empty: say what was broken and which step failed. A break `aimed_at` other behaviors is no for this one, even if its steps failed. A break whose record isn't in this checkout is "recorded, but the proof isn't here". No break is no.
 4. **Did it run on the code you care about?** From `result.code`: the commit, how far behind HEAD, and uncommitted changes. Add `vf.py validate`'s warnings for that behavior.
 5. **Can you see the proof?** The saved run for the pass and for the break, and the check's command to rerun it.

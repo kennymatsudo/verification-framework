@@ -1026,7 +1026,7 @@ def recordings_page(harness_dir):
         intro = '<p class="meta">Check runs</p>'
     left_out = (
         f'<p class="footnote">{counted(breaks, "run")} that broke the code on purpose {"is" if breaks == 1 else "are"} left out; '
-        f'<a href="features/README.md">the feature map</a> links each from the behavior it proves.</p>'
+        f'<a href="status.md">status.md</a> names each one behind the Verified line it proves.</p>'
         if breaks else ""
     )
     filters = "".join(

@@ -145,7 +145,7 @@ vf's setup mode builds the bench's frame: it creates a harness, or resumes one w
 2. It creates the harness folder right away with setup marked unfinished, so a later session can pick up where this one stopped.
 3. A separate agent reads the startup scripts, required tools, and where requirements are written. It changes nothing. You're asked only what the project couldn't answer.
 4. When a step needs a person or has an effect outside your machine, it shows a setup note (how it will start the app, what needs you, what it won't run) and waits for your yes.
-5. It fills in the harness's settings and creates the app's verify skill, an empty feature list, the doctor, and a guide to the harness's commands. It doesn't edit your Git ignore files.
+5. It fills in the harness's manifest and creates the app's verify skill, an empty feature map, the doctor, and a guide to the harness's commands. It doesn't edit your Git ignore files.
 6. It starts the app, or asks you to when only a person can, and proves the doctor works. Setup is marked ready only after the doctor's output is saved and `vf.py validate` passes.
 
 At the end, it asks permission to add one line to your project's agent instructions pointing to the harness's command guide. If you decline, the guide still exists, but other agents won't find it on their own.
@@ -189,11 +189,11 @@ Everything on the bench lives in one folder:
 | --- | --- |
 | `README.md` | Where a person starts |
 | `recordings.html` | Each check's latest run, its history, and any videos |
-| `settings.md` | This app's repositories and the commands that start, stop, check, and inspect it |
+| `harness.json` | The manifest: this app's repositories, the commands that start, stop, check, and inspect it, and an entry for each instrument |
 | `status.md` | The latest result for each behavior, written by the framework |
 | `notes.md` | Setup notes, known failures, where a pass can mislead, untested cases |
 | `features/` | One file per feature, listing its behaviors and how each is proven |
-| `tools.md` | A guide to every instrument |
+| `tools.md` | A guide to every instrument, written by the framework from the manifest |
 | `scripts/` | The instruments: the doctor, the checks, the probes, and the actions |
 | `scripts/framework/` | The framework scripts, copied unchanged |
 | `evidence/` | One folder per check holding the record of each run |
@@ -361,11 +361,11 @@ A probe's answer describes the app's current data. It isn't a Verified result on
 
 - **Skill**: a set of written instructions an AI agent loads to do one kind of job.
 - **Mode**: one job inside a skill. vf's modes are setup, audit, and verify-pr; vf-verify's are verify, add-checks, and add-tools.
-- **Verification harness**: the app's test bench, a `verify-<app>/` folder in your repository holding the app's settings, feature list, checks, results, tools, and records.
+- **Verification harness**: the app's test bench, a `verify-<app>/` folder in your repository holding the app's manifest, feature map, checks, results, tools, and records.
 - **App verify skill**: the skill setup creates for one app, such as `verify-storefront`. The everyday way to verify a change; it points vf-verify at the harness.
 - **Repository**: one Git project folder. An app may run code from several.
 - **Commit**: one saved snapshot of the code in Git, named by a short code such as `a1b2c3d`.
-- **Settings**: the harness's `settings.md`, with everything specific to one app: repositories, where requirements live, and the commands that start, stop, check, and inspect it.
+- **Manifest**: the harness's `harness.json`, with everything specific to one app: repositories, where requirements live, the commands that start, stop, check, and inspect it, and an entry for each instrument.
 - **Feature map**: the files in `features/` listing each feature, the behaviors in it, and how each is proven.
 - **Sub-feature**: one behavior a user would notice, such as paying with a saved card, with a short ID such as `checkout.saved-card`.
 - **Instrument**: any tool on the bench: a check, probe, action, or the doctor.
@@ -376,4 +376,4 @@ A probe's answer describes the app's current data. It isn't a Verified result on
 - **Probe**: a command that answers a question about the app's current data without changing anything.
 - **Action**: a command that does something a user or operator would do, through the same entry point they use.
 - **Results file**: `status.md`, with the latest result for each behavior, written by the framework.
-- **Notes file**: `notes.md`, with the setup record, known failures, passes that can mislead, and untested cases.
+- **Notes file**: `notes.md`, with setup notes, known failures, passes that can mislead, and untested cases.

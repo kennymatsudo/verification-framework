@@ -1,10 +1,10 @@
 # State transitions
 
-Where a harness, a check's proof line (the line in its feature file that says how a behavior is proven), a run record, and a behavior's result can be, and what moves each one. The words match `rules.md` and the output of `vf.py status`.
+Where a harness, a behavior's entry (the part of its feature file that says how it is proven), a run record, and a behavior's result can be, and what moves each one. The words match `rules.md` and the output of `vf.py status`.
 
 ## A behavior's result
 
-`vf.py status` computes one line per behavior from its proof line, the accepted evidence, and any Not verified records. `vf.py validate` rejects any Verified line that `status` wouldn't write now, so one written by hand doesn't survive.
+`vf.py status` computes one line per behavior from its entry, the accepted evidence, and any Not verified records. `vf.py validate` rejects any Verified line that `status` wouldn't write now, so one written by hand doesn't survive.
 
 ```mermaid
 stateDiagram-v2
@@ -24,7 +24,7 @@ stateDiagram-v2
 
     [*] --> none: behavior added to the map
     none --> norun: check built
-    none --> unreachable: proof line says Unreachable
+    none --> unreachable: entry says unreachable
     unreachable --> norun: route found, check built
 
     norun --> failed: run failed
@@ -49,25 +49,25 @@ What does **not** move a result:
 - A planned-break run. It proves the check and never counts as a run of the code under test.
 - A hand edit to `status.md`. `vf.py run`, `vf.py status`, and `vf.py not-verified` all rewrite it.
 
-## A check's proof line
+## A behavior's entry
 
-Each behavior has one line under "How to prove it" in its feature file. The line decides whether a pass can ever become Verified. Whether the check was break-tested lives in the evidence, not the line.
+Each behavior is one entry under `behaviors` in its feature file. The entry decides whether a pass can ever become Verified. Whether the check was break-tested lives in the evidence, not the entry.
 
 ```mermaid
 stateDiagram-v2
     direction LR
-    state "No check yet." as none
-    state "Unreachable: blocker. Tried route." as unreachable
-    state "command, what it reads, optional Not break-tested: reason." as command
+    state "words only" as none
+    state "unreachable: blocker, tried" as unreachable
+    state "check, reads, optional not_break_tested" as command
 
     [*] --> none
     none --> unreachable: add-checks mode finds no route
     none --> command: check built
     unreachable --> command: route found
-    command --> command: agent drops the Not break-tested note once a break caught it
+    command --> command: agent removes not_break_tested once a break caught it
 ```
 
-The agent writes every form. `validate.py` fails a line that says `Break-tested`, because `vf.py status` computes that from the evidence and nothing else may claim it.
+The agent writes every form. Nothing in the entry says Break-tested: `vf.py status` computes that from the evidence and nothing else may claim it.
 
 ## A run record
 
@@ -91,7 +91,7 @@ Before any of this, `vf.py run` runs the doctor and stops with exit code 2 when 
 
 ## A harness's setup
 
-`settings.md` carries a Setup Status and `notes.md` the Setup record. `vf.py validate` exits 2 while the status is `incomplete`, with the resume action, and nothing may drive the app until it's `ready`.
+The `setup` block of `harness.json` carries the status and the record setup resumes from. `vf.py validate` exits 2 while the status is `incomplete`, with the resume action, and nothing may drive the app until it's `ready`.
 
 ```mermaid
 stateDiagram-v2

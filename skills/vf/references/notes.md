@@ -1,6 +1,6 @@
 # Verification notes
 
-Copy this into the harness as `notes.md`. It is free prose for what people and agents write beside the results; no script parses it beyond reading its headings. The Setup record lives in `harness.json`'s `setup` block, `status.md` is written by `vf.py status`, and `tools.md` by `vf.py tools`. Delete an empty section only when the harness has no use for it.
+Copy this into the harness as `notes.md`. It is free prose for what people and agents write beside the results; no script parses it beyond reading its headings. The setup status and the facts setup resumes from live in `harness.json`'s `setup` block, `status.md` is written by `vf.py status`, and `tools.md` by `vf.py tools`. Delete an empty section only when the harness has no use for it.
 
 ```markdown
 # Verification notes

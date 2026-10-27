@@ -4,7 +4,7 @@ Follow this when vf runs in verify-pr mode. The Guardrails in vf's `SKILL.md` ap
 
 You own two answers for one change, made by one teammate's pull request or by several across repos (a frontend and a backend PR, say): which of its claims the harness should guard, and whether the PRs deliver them together on the real stack. With several PRs, treat them as one change throughout: one claim list, one set of runs, one result. The harness is the expensive layer, so a claim earns a check only when nothing smaller can see it.
 
-The harness is the repo's end-to-end verification layer: one vf built (`verify-*/rules.md` in a skills directory), or else the harness the repo's agent instructions name. If neither exists, stop and say so. Read its rules, its settings, and its run instructions (the stack check, which actions need the developer's OK, evidence, cleanup) before the first run.
+The harness is the repo's end-to-end verification layer: one vf built (`verify-*/rules.md` in a skills directory), or else the harness the repo's agent instructions name. If neither exists, stop and say so. Read its rules, its manifest, and its run instructions (the stack check, which actions need the developer's OK, evidence, cleanup) before the first run.
 
 For a framework harness: Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
 

@@ -1,6 +1,6 @@
 # Verification plan
 
-Follow this before building a proof or running checks on an agreed scope. The feature file's `## Verification plan` section, whose format the harness's `rules.md` gives under Feature map, records what this settles.
+Follow this before building a proof or running checks on an agreed scope. The feature file's `sources` list and each behavior's `plan`, whose format the harness's `rules.md` gives under Feature map, record what this settles.
 
 Show a preview in the shape `references/messages.md` gives. Derive available observations from the real read code, never from the behavior's wording; name an unavailable one as a gap. Keep commands and implementation details secondary.
 
@@ -8,7 +8,7 @@ For a change, include the behaviors it could affect and explain any related beha
 
 Proceed when the request and its sources settle the acceptance conditions. When a meaningful one is inferred, conflicting, or unresolved, ask one concise question and wait before building or running the dependent proof, recommending an answer only when a source settles it, as `references/messages.md` says. Code explains implementation, not product intent. Action permission is separate from agreement on expected behavior.
 
-Record the agreed plan and its source links in the feature file's Verification plan section. Name each source so it can be reopened, with the revision it was read at when it has one: a commit for a file in a repo, a version or last-edited date for a document, the last-updated time for a ticket, the date for a user's answer. Project acceptance recipes can be a source; the harness owns its proof plan. Compare each check's actions and observations with that plan before trusting it.
+Record the agreed plan in each behavior's `plan` and its sources in the feature file's `sources`. Name each source so it can be reopened, with the revision it was read at when it has one: a commit for a file in a repo, a version or last-edited date for a document, the last-updated time for a ticket, the date for a user's answer. Project acceptance recipes can be a source; the harness owns its proof plan. Compare each check's actions and observations with that plan before trusting it.
 
 Before running checks on a plan agreed earlier, reopen each recorded source with a tool of its kind the session has. When it changed since the recorded revision, show the change and ask whether the expected behavior changed, as a question in the preview, before running the dependent checks; code merged since never answers it. A source no tool here can open goes in the preview's Sources line as unread, never treated as unchanged.
 

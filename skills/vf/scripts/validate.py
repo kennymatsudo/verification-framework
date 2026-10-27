@@ -981,7 +981,7 @@ def verdict(kind, text, problems, cite=None, absent_video=(), standing=None):
 
 def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
     # `proof` is the behavior's entry from its features/<slug>.json.
-    """A behavior's verdict from its proof line, the accepted evidence, and the Not verified records.
+    """A behavior's verdict from its entry, the accepted evidence, and the Not verified records.
 
     Verified needs the latest accepted run of a check covering the behavior to have passed against a
     ready app, the newest accepted planned break of that check aimed at it to have failed a step judging
@@ -1089,7 +1089,7 @@ def latest_break(breaks, record):
 
 
 def compute_verdicts(harness_dir, seen_ids, proofs, repos):
-    """Every mapped behavior's verdict, in map order, as {sub_id: verdict}. A behavior whose proof line is malformed is left out."""
+    """Every mapped behavior's verdict, in map order, as {sub_id: verdict}. A behavior whose entry is malformed is left out."""
     records = accepted_records(harness_dir / "evidence")
     entries = not_verified_entries(harness_dir)
     return {sub_id: compute_verdict(harness_dir, sub_id, proofs[sub_id], records, entries, repos)

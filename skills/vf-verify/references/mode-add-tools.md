@@ -8,7 +8,7 @@ You own the harness's probes and actions: each built, proven on the real app, an
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up.
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Then read its `settings.md`, the Tool discovery, Probes, and Actions sections of `rules.md`, and `tools.md`.
+Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Then read its `harness.json`, the Tool discovery, Probes, and Actions sections of `rules.md`, and `tools.md`.
 
 Done when the harness, setup gate, and existing tools are known, or a named blocker stops the work.
 
@@ -30,9 +30,9 @@ Done when each tool has a question or task, a source, and agreed permissions.
 
 Put new code where the harness already keeps that kind of code. With no layout yet beyond the doctor, keep connections in one module, one named read function per fact in another, one wrapper per system an action touches, and thin command files that parse arguments, enforce the approval flag, and call those. Name a probe after the thing it reads (`probe order <id>`), never the table or route.
 
-Keep the call the source found: its endpoint, query, and parameters. Rewrite the rest to the Probes or Actions rules in the project's language. Read credentials from the project's connection settings, never from a captured request. One the project doesn't hold yet, such as a third-party API token or a browser session cookie, comes from an environment variable, which the tool may also load from the project's existing untracked settings file, such as `.env`. Name the variable in the guide's Environment line with how to get it and when it expires. A missing one exits 2 with a `STOPPED:` line naming it. Ask the user to set it themselves rather than paste it into the conversation.
+Keep the call the source found: its endpoint, query, and parameters. Rewrite the rest to the Probes or Actions rules in the project's language. Read credentials from the project's connection settings, never from a captured request. One the project doesn't hold yet, such as a third-party API token or a browser session cookie, comes from an environment variable, which the tool may also load from the project's existing untracked settings file, such as `.env`. Name the variable in the entry's `environment` field with how to get it and when it expires. A missing one exits 2 with a `STOPPED:` line naming it. Ask the user to set it themselves rather than paste it into the conversation.
 
-Publish each command in `tools.md` in the shape of its existing entries. In the Limits line, say where an outside call came from, and for an undocumented one, that it may change without notice. Update settings when the tool fills a `none yet` line.
+Add each command under `tools` in `harness.json`, with the fields the Tool discovery section names, in the shape of its existing entries, then run `scripts/framework/vf.py tools` to write `tools.md`. In `limits`, say where an outside call came from, and for an undocumented one, that it may change without notice. Set the manifest's `probe` command when the tool fills it.
 
 Link the guide from the project instructions the agent actually loads, scoped to the app in a monorepo, when no pointer is there yet. Ask before editing an existing instruction file unless the user authorized that exact edit. Without permission, keep the guide, show the proposed pointer, and report discovery as not wired; never claim unrelated agents can find it.
 
@@ -40,13 +40,13 @@ Done when every agreed tool exists and `<harness>/scripts/framework/vf.py valida
 
 ## 4. Review each tool
 
-Spawn a read-only subagent on a mid-tier model for a blind review. Give it the harness's `rules.md` Tool discovery, Probes, and Actions sections, each tool's files, guide entry, and source, not your reasoning. It reports every rule in those sections the tool breaks, and confirms the two things only this session can know: the call matches its source, and the guide entry matches the code. Fix every finding before running the tool, and ask the user when one changes what the tool may do.
+Spawn a read-only subagent on a mid-tier model for a blind review. Give it the harness's `rules.md` Tool discovery, Probes, and Actions sections, each tool's files, manifest entry, and source, not your reasoning. It reports every rule in those sections the tool breaks, and confirms the two things only this session can know: the call matches its source, and the manifest entry matches the code. Fix every finding before running the tool, and ask the user when one changes what the tool may do.
 
 Done when the review has no open findings.
 
 ## 5. Prove each tool
 
-Run each command's `--help`, then its documented success and failure paths against the real app, and show the output. Each must match its guide entry.
+Run each command's `--help`, then its documented success and failure paths against the real app, and show the output. Each must match its manifest entry.
 
 - **Probe:** a real ID exits 0 with its JSON; a made-up ID exits 1 with a hint. Confirm it only reads.
 - **Action:** with the user's OK for this run, run it once and read the result back with a probe, building that probe first if none exists. Run it without the approval flag and show the refusal. For an action on named records, run it on an unnamed one and show the refusal.

@@ -4,11 +4,11 @@ Spawn one read-only subagent on a mid-tier model with this prompt. Fill in the r
 
 ---
 
-The repo at `<repo path>` has a verification harness at `<harness path>`: its `rules.md`, `settings.md`, feature map in `features/`, and tools. Find the gaps that would most help an agent prove its changes. Do not run anything except `git log`, and do not edit files.
+The repo at `<repo path>` has a verification harness at `<harness path>`: its `rules.md`, `harness.json`, feature map in `features/`, and tools. Find the gaps that would most help an agent prove its changes. Do not run anything except `git log`, and do not edit files.
 
 Collect candidates from each source, and cite where each came from:
 
-1. **Unchecked sub-features.** Every "No check yet" line in the feature map.
+1. **Unchecked behaviors.** Every behavior in the feature map with no `check` and no `unreachable` block.
 2. **Unmapped features.** User-facing routes, commands, or screens in the code with no feature file. Cite the source path that defines each.
 3. **Churn without proof.** Run `git log --since=60.days --name-only --format=` and find source files that changed often. Name the features they belong to that have no check.
 4. **Hand-written reads.** Raw SQL, curl commands, or ad-hoc scripts in docs, runbooks, scripts, or agent instruction files that read app state. Each one is a probe waiting to be written.

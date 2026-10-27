@@ -145,8 +145,8 @@ def checkout_env(harness, validate, code_state, only=None, missing="error"):
 
 
 def needed_repos(harness, validate, command):
-    """The repos the behaviors this exact command proves run, from their proof lines' Repos clauses, or None when
-    the map does not prove any behavior with this command (every repo is recorded then) or a proof line names none."""
+    """The repos the behaviors this exact command proves run, from their entries' repos, or None when
+    the map does not prove any behavior with this command (every repo is recorded then) or an entry names none."""
     try:
         _, proofs, _ = feature_map(harness, validate)
     except Stopped:
@@ -164,7 +164,7 @@ def needed_repos(harness, validate, command):
 
 
 def uncovered_repo_problems(harness, validate, record):
-    """A problem for each repo a claimed behavior's proof line names that the record did not record."""
+    """A problem for each repo a claimed behavior's entry names that the record did not record."""
     try:
         _, proofs, _ = feature_map(harness, validate)
     except Stopped:

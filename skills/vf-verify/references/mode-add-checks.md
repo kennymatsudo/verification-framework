@@ -8,7 +8,7 @@ You own checks that prove the agreed behavior on the real app and catch a delibe
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up.
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Then read its `settings.md` and `rules.md`, the feature map in `features/`, the results in `status.md`, the caveats in `notes.md`, and the tool guide in `tools.md`.
+Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Then read its `harness.json` and `rules.md`, the feature map in `features/`, the results in `status.md`, the caveats in `notes.md`, and the tool guide in `tools.md`.
 
 Done when the target, harness, setup gate, existing coverage, and tools are known, or a named blocker stops the work.
 
@@ -23,15 +23,15 @@ Done when the preview and component list are shown, acceptance decisions are res
 
 ## 3. Build the components
 
-Follow `references/mode-add-tools.md` for each probe or action the plan needs, before building the checks that use it. Pass the harness, what each check needs the tool to read or do, and the permissions the plan agreed. A tool whose proof is blocked blocks the checks that use it; report them Not verified with that blocker. Follow `references/harness-components.md` for each other selected kind. Before building, find what the project already has for the feature's entry point: ways to drive it (end-to-end specs, API clients, CLI commands, fixture scripts), places to read results back, and the modules that own database and external API connections. Reuse them through the harness's recipes where they already suffice. Update settings when a component fills a `none yet` line.
+Follow `references/mode-add-tools.md` for each probe or action the plan needs, before building the checks that use it. Pass the harness, what each check needs the tool to read or do, and the permissions the plan agreed. A tool whose proof is blocked blocks the checks that use it; report them Not verified with that blocker. Follow `references/harness-components.md` for each other selected kind. Before building, find what the project already has for the feature's entry point: ways to drive it (end-to-end specs, API clients, CLI commands, fixture scripts), places to read results back, and the modules that own database and external API connections. Reuse them through the harness's recipes where they already suffice. Set the manifest's `probe` command when a component fills it.
 
-Add or update every served sub-feature's behavior, entry point, and proof line. Keep requirements in their original source, linked from the feature file's Verification plan. Publish each new command in `tools.md`.
+Add or update every served behavior's entry: its `words`, the feature's `reach`, and its `check` with `reads`, or its `unreachable` block. Keep requirements in their original source, named in the feature file's `sources`. Add each new command under `tools` in `harness.json` and run `scripts/framework/vf.py tools`.
 
-Done when every selected component exists, each served ID names its proof or explicit gap, and every available command has a guide entry and --help without service access.
+Done when every selected component exists, each served ID names its proof or explicit gap, and every available command has a manifest entry and --help without service access.
 
 ## 4. Prove the components
 
-`vf.py run` runs the doctor before each check and stops when the app is not ready; start the app only as settings permit, and stop on a wrong or unknown running version. Before a new or materially changed check's first proof run, get the blind review `references/verification-plan.md` requires.
+`vf.py run` runs the doctor before each check and stops when the app is not ready; start the app only as the manifest's `start` permits, and stop on a wrong or unknown running version. Before a new or materially changed check's first proof run, get the blind review `references/verification-plan.md` requires.
 
 Run each component's proof from `references/harness-components.md` against the real app and show the output. Run each check through `scripts/framework/vf.py run --` and the exact command its feature file records, from the directory its tool guide names, so the recorded recipe is the one proven. A pass on a scratch fix proves only that fix, not the user's checkout.
 

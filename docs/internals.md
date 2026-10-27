@@ -4,7 +4,7 @@ A verification harness is a folder in an app's repository that lets an AI agent 
 
 For day-to-day use, see [USAGE](../USAGE.md). For where a change to the framework belongs, see [Architecture](architecture.md). `rules.md`, a copy of [vf's rules](../skills/vf/references/rules.md), is the authority for every format here. If the two disagree, `rules.md` wins.
 
-**Contents:** [How a behavior earns Verified](#how-a-behavior-earns-verified) · [Harness layout](#harness-layout) · [The setup gate](#the-setup-gate) · [Settings](#settings) · [Feature map](#feature-map) · [Evidence files](#evidence-files) · [Result lines](#how-the-result-lines-are-written) · [Planned breaks](#prove-a-check-with-a-planned-break) · [Launch helper](#launch-helper) · [Tool contracts](#tool-contracts) · [Replay pages and clips](#replay-pages-and-clips) · [Other scripts](#other-scripts)
+**Contents:** [How a behavior earns Verified](#how-a-behavior-earns-verified) · [Harness layout](#harness-layout) · [The setup gate](#the-setup-gate) · [Manifest](#manifest) · [Feature map](#feature-map) · [Evidence files](#evidence-files) · [Result lines](#how-the-result-lines-are-written) · [Planned breaks](#prove-a-check-with-a-planned-break) · [Launch helper](#launch-helper) · [Tool contracts](#tool-contracts) · [Replay pages and clips](#replay-pages-and-clips) · [Other scripts](#other-scripts)
 
 ## The problem a harness solves
 
@@ -59,13 +59,12 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 ├── recordings.html             each check's latest run and history
 ├── SKILL.md                    tells an agent to verify through this harness
 ├── rules.md                    the shared rules, copied unchanged
-├── settings.md                 this app's code locations and commands
+├── harness.json                the manifest: setup status, repos, commands, tool entries
 ├── status.md                   the latest results, written by vf.py status
-├── notes.md                    setup record and caveats, written by people and agents
-├── tools.md                    guide to every command in scripts/
+├── notes.md                    setup notes and caveats, written by people and agents
+├── tools.md                    guide to every command, written by vf.py tools
 ├── features/
-│   ├── README.md               list of the app's features
-│   └── <feature>.md            one per feature users see
+│   └── <feature>.json          one per feature users see
 ├── scripts/
 │   ├── framework/              framework copies, never edited
 │   │   ├── vf.py  validate.py  code_state.py  break_session.py
@@ -84,7 +83,7 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
     └── not-verified.jsonl      reasons agents recorded for not trusting a result
 ```
 
-Times in file names are UTC, with dashes so they sort in order. These locations are fixed in every harness; `settings.md` can't move them.
+Times in file names are UTC, with dashes so they sort in order. These locations are fixed in every harness; the manifest can't move them.
 
 Beside the harness, the same skills directory holds `vf/`, `vf-verify/`, and `vf-explain/`: copies of the framework skills without their `scripts/`, so a clone of the repo needs no install. `sync` writes them, records their hashes in `framework.sha256` under paths such as `../vf/SKILL.md`, and writes the same copies into every other known skills directory at the project root.
 
@@ -95,11 +94,12 @@ The nine framework scripts are Python and identical in every harness, so a clone
 | File | Written by | Read by |
 | --- | --- | --- |
 | `rules.md`, `scripts/framework/`, the skill copies beside the harness | vf's setup mode, as copies | Every skill |
-| `settings.md` | Setup, then vf-verify when a tool needs a setting | `validate.py`, `code_state.py`, every skill |
+| `harness.json` | Setup, then vf-verify when it adds a tool or fills the probe command | `validate.py`, `code_state.py`, `break_session.py`, `launch.py`, every skill |
 | `status.md` | `vf.py status`, which creates it on its first run and rewrites it through every accepted run | `validate.py`, every skill |
-| `notes.md` | Setup for the Setup record; skills for known failures, misleading passes, untested cases | `validate.py`, vf-explain's `trust_facts.py`, every skill |
+| `notes.md` | Setup for the setup notes; skills for known failures, misleading passes, untested cases | vf-explain's `trust_facts.py`, every skill |
 | `features/` | add-checks mode; verify mode when a change alters a behavior; audit mode when a description drifts | `validate.py`, vf-verify, audit mode |
-| `tools.md`, `scripts/` | Setup for the doctor, vf-verify for every later tool | Skills, and agents debugging without a skill |
+| `tools.md` | `vf.py tools`, from the manifest's tool entries, after setup adds the doctor and vf-verify each later tool | Skills, and agents debugging without a skill |
+| `scripts/` | Setup for the doctor, vf-verify for every later tool | `vf.py run`, the skills |
 | `evidence/<check>/<time>.json` | `vf.py run`, from the events the check reports | `validate.py`, `replay.py`, `clip.py`, agents diagnosing a failure |
 | `evidence/<check>/<time>.patch` | `vf.py break run`, on a planned break | `vf.py break replay` |
 | `evidence/breaks.jsonl` | `vf.py break run` | vf-explain's `trust_facts.py`, when the break's record isn't on this machine |
@@ -118,53 +118,56 @@ Then it runs the harness's `vf.py validate`, which checks two things before anyt
 
 **The rules copy.** The SHA-256 of `rules.md`, with line endings normalized, must match the entry in `framework.sha256`. A mismatch means the copy was edited or came from another version, and a missing entry means the harness predates `sync`. Either is exit 1, even when setup is unfinished, because a harness whose rules changed can't be trusted to mean what the rules say. The `Rules version` line at the top of `rules.md` is for people and for `sync`, which refuses a downgrade; `validate.py` doesn't read it.
 
-**Setup status.** `settings.md` must hold `- Status: incomplete` or `- Status: ready` under `## Setup`, and `notes.md` exactly one `## Setup: <harness folder name>` section with six filled lines: Target, Findings, Looked in, Blocker, Next action, and Doctor proof. A line still holding a template blank such as `<app name>` counts as unfilled.
+**Setup status.** The manifest's `setup` block must hold a `status` of `incomplete` or `ready` and the record setup resumes from: `target`, `findings`, and `looked_in` as filled text, `blocker` and `next` as text or `null`, and `doctor_proof` (where the doctor's saved output is, with its date and the code it ran on) as text or `null`. A string still holding a template blank such as `<app name>` counts as unfilled.
 
 | Status | Requirement | `validate.py` does |
 | --- | --- | --- |
-| `incomplete` | Blocker and Next action say something other than `none` | Prints `STOPPED: setup incomplete for <target>`, the blocker, and the next action; exits 2 and checks nothing else |
-| `ready` | Doctor proof points to real output; Blocker and Next action are `none` | Goes on to check settings, the feature map, and results |
+| `incomplete` | `blocker` and `next` say what stops setup and what resumes it | Prints `STOPPED: setup incomplete for <target>`, the blocker, and the next action; exits 2 and checks nothing else |
+| `ready` | `doctor_proof` points to real output; `blocker` and `next` are `null` | Goes on to check the rest of the manifest, the feature map, and results |
 
 Ready means setup worked once, not that the app is running now, so every run starts by running the doctor again.
 
-## Settings
+## Manifest
 
-`settings.md` holds everything specific to one app. `validate.py` reads lines in the form `- <Label>: <value>` under `##` headings and requires:
+`harness.json` holds everything a script reads about one app. `validate.py` parses it as JSON and requires:
 
-| Heading | Required lines |
+| Key | Holds |
 | --- | --- |
-| `## Workflow` | Requirements source: where the app's written requirements live, or `none` |
-| `## Commands` | Start (may name a repo's checkout as `{checkout:<repo>}`, which `vf.py` fills with that repo's checkout or a planned break's scratch copy; `none` when each check starts the app itself, `user` when only a person can); Stop (or `none`); Doctor; Ready line (the exact text the doctor prints when ready); Probe (the command that looks up the app's current data); Reloads (`yes` when the app picks up an edit to its checkout without a restart, `no` when a break must restart it) |
-| `## Repos` | At least one line naming a code repository and where to find it |
+| `app` | The app's name |
+| `setup` | The setup block described under [the setup gate](#the-setup-gate) |
+| `requirements` | Where the app's written requirements live, or `null` |
+| `repos` | An object naming each code repository and where to find it, at least one |
+| `commands` | `start` (may name a repo's checkout as `{checkout:<repo>}`, which `vf.py` fills with that repo's checkout or a planned break's scratch copy; `none` when each check starts the app itself, `user` when only a person can); `stop` (or `none`); `doctor`; `ready_line` (the exact text the doctor prints when ready); `probe` (the command that looks up the app's current data, or `null`); `reloads` (`true` when the app picks up an edit to its checkout without a restart, `false` when a break must restart it) |
+| `tools` | One entry per harness command, keyed by a short name; see [tool entry checks](#tool-entry-checks) |
 
-A value still containing a template blank (`<` followed by a lowercase letter) counts as unfilled. `README.md`, `notes.md`, `status.md`, and `tools.md` must also exist.
+A string still containing a template blank (`<` followed by a lowercase letter) counts as unfilled, except in a tool entry's prose, where `<id>` is an example input. Any other top-level key is an error. `README.md`, `notes.md`, `status.md`, and `tools.md` must also exist, and `tools.md` must be what `vf.py tools` would write now.
 
 ### Repository locations
 
-Each repo line is `- <name>: <location>`, listed even when there's only one. The location takes one of two forms:
+Each entry under `repos` is `"<name>": "<location>"`, listed even when there's only one. The location takes one of two forms:
 
-- **A path relative to the project root**, such as `- app: .`. The project root is the folder holding the skills directory the harness sits in. In a monorepo that's the app's own folder, and a location inside a repository covers only that folder: the uncommitted-changes values (`dirty` and `dirty_hash`, defined under [Code version](#code-version)) ignore edits elsewhere in the repository, while `commit`, `branch`, and `on_main` describe the whole checkout.
+- **A path relative to the project root**, such as `"app": "."`. The project root is the folder holding the skills directory the harness sits in. In a monorepo that's the app's own folder, and a location inside a repository covers only that folder: the uncommitted-changes values (`dirty` and `dirty_hash`, defined under [Code version](#code-version)) ignore edits elsewhere in the repository, while `commit`, `branch`, and `on_main` describe the whole checkout.
 - **`env:<file>:<KEY>`**, which reads the path from a settings file the project already has, so each developer's file can point to where that repository sits on their machine. The script uses the last line starting with `KEY=`, strips quotes, and expands `~` and environment variables.
 
 `validate.py` rejects a full path such as `/Users/sam/code/app`, because it works on only one machine. The repository name appears in every evidence file's code list and in every Verified line (`app a1b2c3d`).
 
 ## Feature map
 
-The `features/` folder describes each feature a user can see, splits it into **sub-features** (one behavior a user would notice), and says how each is proven. `features/README.md` lists every feature file under `## Features`; `validate.py` reports an unlisted file or a link to a missing one.
+The `features/` folder has one `<slug>.json` per feature a user can see. Each splits the feature into **behaviors** (one thing a user would notice; the skills also call them sub-features) and says how each is proven. `validate.py` parses every `.json` file there; a `.md` beside one is prose it ignores.
 
-Each feature file has exactly these `##` headings, in order: `Sub-features`, `How a user reaches it`, `How to prove it`. Three more are optional: `Request flow`, `Verification plan`, `Gotchas`. Any other heading is an error.
+A feature file has `name`, `summary`, and `behaviors`, and optionally `reach` (how a user gets there), `sources` (where its requirements were read, with the revision), and `gotchas`, each a list of strings. Any other key is an error.
 
-**IDs.** Each sub-feature line is `- <id>: <behavior>`, such as `- checkout.saved-card: a returning shopper can pay with a saved card.` An ID uses lowercase letters, digits, dots, dashes, and underscores, starts with a letter or digit, and is unique across the map. The same ID appears on the proof line, in every evidence file that tests it, and in its `status.md` line.
+**IDs.** Each key under `behaviors` is a behavior's ID, such as `checkout.saved-card`. An ID uses lowercase letters, digits, dots, dashes, and underscores, starts with a letter or digit, and is unique across the map. The same ID appears in every evidence file that tests it and in its `status.md` line. Its `words` say what a user would notice: `"a returning shopper can pay with a saved card"`.
 
-**Proof lines.** Each sub-feature has exactly one line under `How to prove it`:
+**How it is proven.** A behavior's entry says one of three things:
 
-| Proof line | Meaning | Can support Verified |
+| Entry | Meaning | Can support Verified |
 | --- | --- | --- |
-| `No check yet.` | Nobody has written a check | No |
-| `Unreachable: <blocker>. Tried <route>.` | Something outside the harness stopped a check from being written, such as a missing test account | No |
-| `` `<command>`. <what it reads, in plain words> `` | A check exists. May name the repos the check runs as `Repos: api, web.` (every settings repo when absent), and may end with `Not break-tested: <reason>.` while nobody has shown it can fail | Yes, once the evidence holds a break it failed on |
+| `words` only | Nobody has written a check | No |
+| `unreachable`: `{"blocker": "...", "tried": "..."}` | Something outside the harness stopped a check from being written, such as a missing test account | No |
+| `check`: the command, with `reads` (`state`, or what the user sees, such as `screen`) | A check exists. May name the `repos` the check runs as a list (every manifest repo when absent), and may carry `not_break_tested`, the reason, while nobody has shown it can fail | Yes, once the evidence holds a break it failed on |
 
-Whether a check was break-tested is never written in the map. `vf.py status` finds the break in the evidence, and `validate.py` fails a proof line that says `Break-tested`.
+`plan` is optional: the agreed proof in a sentence. Whether a check was break-tested is never written in the map; `vf.py status` finds the break in the evidence.
 
 If the command's first word contains a `/`, `validate.py` checks that file exists, from the project root. A command with no `/`, such as `` `make verify` ``, isn't checked. If `validate.py` says a file doesn't exist and it does, the path is probably written from the harness folder; write it from the project root.
 
@@ -174,8 +177,8 @@ An evidence file is the record of one check run: `evidence/<check>/<time>.json`.
 
 Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id>...`, which runs each named behavior's check that way and prints its result lines. `vf.py run`:
 
-1. Runs the doctor from `settings.md` and stops with exit 2 unless it exits 0.
-2. Records the code of each repository the run needs with `code_state.py` (those the proof lines of the behaviors this command proves name, else every repository; one of those missing from the machine stops the run) and fingerprints the harness's own code.
+1. Runs the doctor from `harness.json` and stops with exit 2 unless it exits 0.
+2. Records the code of each repository the run needs with `code_state.py` (those the entries of the behaviors this command proves name in `repos`, else every repository; one of those missing from the machine stops the run) and fingerprints the harness's own code.
 3. Creates the run folder and report file, sets the two variables, and runs the check from the project root.
 4. Builds the record from the events the check reported, adds the times, code, fingerprint, doctor result, `planned_break` from `VERIFY_PLANNED_BREAK`, and the verdict from the exit code (0 passed, 1 a step failed, anything else stopped).
 5. Accepts or refuses the record.
@@ -194,10 +197,10 @@ Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id
 **It refuses the run when:**
 
 - there's no `check` event, a second one, or a check name that isn't a plain folder name;
-- the run names no behaviors, its steps don't either, and no proof line is its exact command;
+- the run names no behaviors, its steps don't either, and no behavior's `check` is its exact command;
 - a line isn't JSON or names no known event, or a required field is missing;
 - the exit code and the steps disagree: exit 0 after a failed step, exit 1 with no failed step, or `stopped` with exit 0;
-- a step's `sub_features` or the break's targets aren't among the run's, or a repository a claimed behavior's proof line names was not recorded;
+- a step's `sub_features` or the break's targets aren't among the run's, or a repository a claimed behavior's entry names was not recorded;
 - a recording or snapshot names a file not in the run folder;
 - the code, or the harness's own code, changed while the check ran.
 
@@ -208,12 +211,12 @@ A refused record is written as `<time>.json.refused`, so nothing can cite it but
 | Field | Holds | Who depends on it |
 | --- | --- | --- |
 | `check` | The check's name, also its folder under `evidence/` | Replay page title |
-| `sub_features` | The behavior IDs this run claims to prove. Filled from the `check` event, else from the steps, plus the proof lines whose command matches when the steps name none or the run stopped | A Verified result and its break must both list the ID |
-| `planned_break` | On a break run, `{"what": ..., "sub_features": [...], "repo": ...}`: what and which IDs from `VERIFY_PLANNED_BREAK`, and the repository of the break session open for this harness. `null` otherwise | A Verified result can't cite a run that has one; a break that names no settings repository proves nothing; `break replay` applies the patch to that repository |
+| `sub_features` | The behavior IDs this run claims to prove. Filled from the `check` event, else from the steps, plus the behaviors whose `check` matches when the steps name none or the run stopped | A Verified result and its break must both list the ID |
+| `planned_break` | On a break run, `{"what": ..., "sub_features": [...], "repo": ...}`: what and which IDs from `VERIFY_PLANNED_BREAK`, and the repository of the break session open for this harness. `null` otherwise | A Verified result can't cite a run that has one; a break that names no manifest repository proves nothing; `break replay` applies the patch to that repository |
 | `passed` | `true`, `false`, or `null` when the run stopped early | Verified needs `true`; its break needs `false` |
 | `reads` | `"state"` when the check reads stored data; otherwise what it reads, such as `"screen"` | Proof that the database is right doesn't prove what the screen showed |
 | `code` | Per repository: which code ran (see [Code version](#code-version)) | A Verified result must name each commit here |
-| `harness_code` | Each harness file's path and SHA-256 with line endings normalized: `settings.md`, everything under `scripts/` apart from `framework/`, `__pycache__`, and other checks' entries under `checks/`, plus files the command names | A pass is proven only while the break's fingerprinted files are unchanged |
+| `harness_code` | Each harness file's path and SHA-256 with line endings normalized: `harness.json`, everything under `scripts/` apart from `framework/`, `__pycache__`, and other checks' entries under `checks/`, plus files the command names | A pass is proven only while the break's fingerprinted files are unchanged |
 | `doctor` | The doctor's exit code and last lines | Verified needs exit 0 |
 | `started_at`, `finished_at` | UTC to the second. Both required | The most recent run by `finished_at` decides each verdict |
 | `steps` | Each step's name, `sub_features`, pass or fail, `at`, `detail`, and IDs read. A failed step in a browser check names a `snapshot` | In a one-behavior check, a step with no `sub_features` judges that one. In a multi-behavior check it judges none |
@@ -241,7 +244,7 @@ The `code` field has one entry per repository:
 
 Every tool gets these from `vf.py code-state` rather than asking Git itself, so every record means the same thing. It prints one JSON object keyed by repository name. `--checkout app=<folder>` reports one repository from another folder. While a break session is open on a repository, ordinary code recording refuses for every repository in that Git checkout, even with `--checkout`; only the owning harness, with `VERIFY_PLANNED_BREAK` set, may report the scratch copy, where each of those repositories is read from its own folder.
 
-It exits 2 with a `STOPPED:` line when `settings.md` lists no repositories or an invalid one, `--checkout` names an unlisted repository, a folder can't be found, a repository has no commits, or a session guard refuses.
+It exits 2 with a `STOPPED:` line when `harness.json` lists no repositories or an invalid one, `--checkout` names an unlisted repository, a folder can't be found, a repository has no commits, or a session guard refuses.
 
 `code_state.py` reports what's in the folder. That can differ from what the running app loaded, because an app keeps running the code it started with until it restarts. The doctor is responsible for knowing which code is running: for example, by saving `code-state`'s output at start and comparing the commit and `dirty_hash` later. A health page that asks Git for the current commit doesn't establish this.
 
@@ -253,16 +256,16 @@ Files beyond the record go in a folder beside it with the same name minus `.json
 
 `vf.py status` writes `status.md`. Every accepted run rewrites it. For each behavior in map order, it writes one line:
 
-| Latest accepted run of a covering check | Proof line | Line |
+| Latest accepted run of a covering check | Entry | Line |
 | --- | --- | --- |
-| None | `No check yet.` | `Not verified. No check yet.` |
-| None | `Unreachable: ...` | `Not verified. Unreachable: <blocker>. Tried <route>.` |
-| None on this machine | a check | `Not verified. No accepted run on this machine.` plus any `Not break-tested` reason |
-| Failed | a check | `Failed. Step '<name>': <detail>. <code>. Evidence: <file>` plus `Replay: <page>` when one exists |
-| Stopped | a check | `Not verified. Run stopped: <reason>. <code>. Evidence: <file>` |
-| Passed, no break of this check aimed at it has failed | a check | `Not verified. Passed but not break-tested: <reason>. <code>. Evidence: <file>` |
-| Passed, but the record or break doesn't back it | a check | `Not verified. Pass not proven: <why>. <code>. Evidence: <file>` |
-| Passed, backed by the break | a check | `Verified. <check>, reads <state or screen>, <code>. Break-tested <date>: <what>. Evidence: <file>` |
+| None | `words` only | `Not verified. No check yet.` |
+| None | `unreachable` | `Not verified. Unreachable: <blocker>. Tried <route>.` |
+| None on this machine | a `check` | `Not verified. No accepted run on this machine.` plus any `not_break_tested` reason |
+| Failed | a `check` | `Failed. Step '<name>': <detail>. <code>. Evidence: <file>` plus `Replay: <page>` when one exists |
+| Stopped | a `check` | `Not verified. Run stopped: <reason>. <code>. Evidence: <file>` |
+| Passed, no break of this check aimed at it has failed | a `check` | `Not verified. Passed but not break-tested: <reason>. <code>. Evidence: <file>` |
+| Passed, but the record or break doesn't back it | a `check` | `Not verified. Pass not proven: <why>. <code>. Evidence: <file>` |
+| Passed, backed by the break | a `check` | `Verified. <check>, reads <state or screen>, <code>. Break-tested <date>: <what>. Evidence: <file>` |
 
 `<code>` names each repository's commit, as `app a1b2c3d`, with `(uncommitted <fingerprint>)` when the run used uncommitted code. A break run never counts as the latest run. A refused record doesn't count either. After the lines, `vf.py status` prints the same out-of-date warnings `validate.py` prints, described under [What validate.py checks](#what-validatepy-checks-in-the-rendered-lines).
 
@@ -271,7 +274,7 @@ A passing run is **proven** when all of these hold:
 1. The break is the newest accepted planned break of the same check aimed at this behavior. The newest decides, so a replayed break that didn't fail withdraws the proof.
 2. The break's record failed, didn't stop, and failed a step that judges this behavior.
 3. Every step that judged this behavior and failed during the break is still in the passing run, judging this behavior.
-4. Both records record every repository the behavior's proof line names (every one in settings when it names none) with a valid commit, a `dirty_hash` for dirty code and none for clean, a `harness_code` fingerprint, a ready doctor, and `accepted_by`; the break's `planned_break.repo` is one of them.
+4. Both records record every repository the behavior's entry names (every one in the manifest when it names none) with a valid commit, a `dirty_hash` for dirty code and none for clean, a `harness_code` fingerprint, a ready doctor, and `accepted_by`; the break's `planned_break.repo` is one of them.
 5. Every file in the break's `harness_code` is in the passing run's with the same hash. A file added since needs no new break. A changed or removed one does: `<file> changed since its planned break; replay the break with vf.py break replay`.
 6. Every file in the passing run's `harness_code` still on disk has the same hash it had during the run, so an edited check can't keep an earlier pass: `<file> changed since this run; rerun its check`. Hashes ignore line endings, so a clone that rewrites them changes nothing.
 7. The passing run has well-formed steps, one that judges this behavior, no stopped reason, and a valid recording if it names one.
@@ -335,7 +338,7 @@ sequenceDiagram
 
 `break run` prints `Break recorded for <id>: step '<name>' caught it` for each target whose own step failed and appends a line to `evidence/breaks.jsonl`. Nothing in the feature file changes; `vf.py status` now reports the behavior Verified. A target whose step didn't fail gets `No break recorded`, so the agent plans a break that reaches it. A break run that stopped gets `No break recorded` with its reason, so the agent runs the break again.
 
-**The session** lives in `verify-break-session/` inside the repository's shared Git folder, visible to every worktree and never committed. It names the owning harness, the copy, the starting commit and fingerprint, and the intended checkout. One session covers the whole repository, so another harness in it can't start, run, end, or record code until this one ends. Settings repositories that share a Git checkout, such as two folders of a monorepo, share its session too: it names the repository `break start` was given, `run` and `end` take that name, `planned_break.repo` records it, and a `start` for another of them is refused while it is open. Commands the script runs from `settings.md` get `VERIFY_BREAK_SESSION` set, so their own `code-state` calls report the folder the app is being pointed at. Restoring files doesn't reload running processes or undo data changes, so the doctor must still confirm the loaded version.
+**The session** lives in `verify-break-session/` inside the repository's shared Git folder, visible to every worktree and never committed. It names the owning harness, the copy, the starting commit and fingerprint, and the intended checkout. One session covers the whole repository, so another harness in it can't start, run, end, or record code until this one ends. Manifest repositories that share a Git checkout, such as two folders of a monorepo, share its session too: it names the repository `break start` was given, `run` and `end` take that name, `planned_break.repo` records it, and a `start` for another of them is refused while it is open. Commands the script runs from `harness.json` get `VERIFY_BREAK_SESSION` set, so their own `code-state` calls report the folder the app is being pointed at. Restoring files doesn't reload running processes or undo data changes, so the doctor must still confirm the loaded version.
 
 `end` marks the session as ending before it points the app back, so a crash leaves a session that blocks ordinary runs, and running `end` again finishes it. `vf.py break status` shows each repository's session, adding `for <repository>` on one that shares another's. `vf.py break replay <record> -- <check command>` applies the record's saved patch to the repository its `planned_break` names, whose session must be open, and runs it again, for re-proving a check after its code changes.
 
@@ -343,7 +346,7 @@ Exit codes: 0 when the step finished, whatever the check's result; 1 when a guar
 
 Keep the failing run's record in `evidence/`: every later Verified result for that behavior is checked against it. `breaks.jsonl` only tells a checkout without the record that a break happened.
 
-Two kinds of check carry `Not break-tested: <reason>.` on their proof line instead: a check for behavior the team wants but hasn't built, which fails today and names the ticket; and a check for an existing bug, shown to pass on a planned fix. Neither supports Verified until it passes on the real code and fails on a planned break.
+Two kinds of check carry a `not_break_tested` reason in their entry instead: a check for behavior the team wants but hasn't built, which fails today and names the ticket; and a check for an existing bug, shown to pass on a planned fix. Neither supports Verified until it passes on the real code and fails on a planned break.
 
 ## Launch helper
 
@@ -366,18 +369,18 @@ The app's tools are ordinary command-line programs in the app's language. The fr
 
 | Tool | Does | Exit codes |
 | --- | --- | --- |
-| Doctor | Reports whether the app is ready to test. Changes nothing. When ready, prints the exact Ready line from `settings.md` | 0 ready, 1 not ready with one reason per line, 2 can't tell |
+| Doctor | Reports whether the app is ready to test. Changes nothing. When ready, prints the exact `ready_line` from `harness.json` | 0 ready, 1 not ready with one reason per line, 2 can't tell |
 | Probe | Answers one question about the app's current data, as one JSON object (or raw data with `--full`). Changes nothing. May include `next`, follow-up probes worth running | 0 answered, 1 not found (`{"not_found": ..., "hint": ...}`), 2 couldn't answer (`STOPPED: <reason>`) |
 | Action | Does something a user or operator would do, through the same entry point they use. Refuses anything outside this machine or shared without `--user-approved`, and anything the harness didn't create unless the user named it for this run. Prints one JSON object naming what it did and created | 0 success, 2 refused or failed |
 | Check | Uses the app the way a user would, reads back every result by its exact ID, and reports its steps | 0 passed, 1 a step failed, 2 stopped or couldn't run |
 
 Checks and probes never judge a result by asking the app's own code. They read the database row, the raw response, or the screen. A check and a probe that need the same fact use the same code to read it, so a probe can always re-check what a check concluded. A probe that reads the app's own API says so in its Limits line, and a check about what that endpoint does reads the database instead.
 
-### Tool guide checks
+### Tool entry checks
 
-`validate.py` reads every `##` entry in `tools.md` and fails one lacking `Use when:`, `- Permissions:`, `- Limits:`, `Run from <folder>:` (naming `the project root`, `.`, or a folder that exists), or ``Help: `<command> --help` ``. When the Help command names a file, it must exist. With `--run-help` it also runs each Help command, which must exit 0 within 10 seconds; the add-tools and add-checks modes pass it after publishing a tool.
+`validate.py` reads every entry under `tools` in `harness.json` and fails one lacking `command`, `use_when`, `permissions`, or `limits`, one with a key it doesn't know, one whose `run_from` names a folder that doesn't exist, or one whose command names a program by path that doesn't exist. It renders the entries the way `vf.py tools` does and fails a `tools.md` that differs, so the guide is never edited by hand. With `--run-help` it also runs each `<command> --help`, which must exit 0 within 10 seconds; the add-tools and add-checks modes pass it after publishing a tool.
 
-It also fails any line in `tools.md` or `scripts/` (outside `scripts/framework/`) that looks like a credential: a bearer token, a quoted cookie, a quoted value of 16 or more characters with a digit assigned to a key, token, secret, or password name, or a known AWS, GitHub, Slack, or private-key format. It names the file and line, never the value. A value containing `$`, `<`, or `{` is treated as a lookup or template blank.
+It also fails any line in `harness.json` or `scripts/` (outside `scripts/framework/`) that looks like a credential: a bearer token, a quoted cookie, a quoted value of 16 or more characters with a digit assigned to a key, token, secret, or password name, or a known AWS, GitHub, Slack, or private-key format. It names the file and line, never the value. A value containing `$`, `<`, or `{` is treated as a lookup or template blank.
 
 ## Replay pages and clips
 
@@ -397,7 +400,7 @@ Pages are written through a temporary file and an atomic replace, so overlapping
 
 `recordings.html`, at the harness's top level, is how a person sees how the checks are doing without knowing a run's file name. Setup creates it with `vf.py replay --recordings`, every check run rebuilds it, and `clip.py` rebuilds it after cutting a clip. Each rebuild also builds any run's missing replay page and refreshes pages built in an older page format. Only a folder holding `rules.md` counts as a harness; given evidence elsewhere, `replay.py` writes the replay page alone.
 
-The page shows one line per check for its latest run: failing first, then unfinished, then passing. A check is titled with the feature whose proof lines name it most often, and the first sentence of that feature file says what it tests. The line gives the result (Failed, Didn't finish, Passed), the first failed step or stop reason, when it ran, each repo's branch and short commit, and a button that opens the replay page just before the failure.
+The page shows one line per check for its latest run: failing first, then unfinished, then passing. A check is titled with the feature whose behaviors name it as their `check` most often, and the first sentence of that feature file says what it tests. The line gives the result (Failed, Didn't finish, Passed), the first failed step or stop reason, when it ran, each repo's branch and short commit, and a button that opens the replay page just before the failure.
 
 Details list every step with its detail, the time in the video its verdict was decided, and a Watch link to that moment; then every behavior the run covers, failed first, each naming the steps that judged it with the same times and links; then one line per repo with its branch and commit (marked "local edits" or "not on main"), the ten earlier runs, and any clips. Planned breaks are left out; a footnote counts them. Filter buttons cover each result, a search box matches every typed word, `/` jumps to it, and Escape clears. Both pages follow the system's light or dark setting and need no internet connection.
 
@@ -426,7 +429,7 @@ Clips need ffmpeg and ffprobe. Replay pages, screenshots, and logs need neither.
 
 Gathers what the harness records about each behavior, so the agent answers from fields rather than rereading every file. It loads the harness's own `validate.py` and uses its parser, and judges nothing.
 
-It prints one JSON object with one entry per behavior: the behavior line, its verification plan line, its proof line split into command, what it reads, and the break or the reason there is none, and its latest result line with each repo's commit, fingerprint, uncommitted files, and how far behind HEAD. A break counts as having caught a problem only when its evidence file is in the checkout, failed, was aimed at that behavior, and failed a step that judges it. Lines under `notes.md`'s "Where a pass can mislead" that start with a behavior's ID attach to it as caveats. A `tally` counts behaviors in each state. `--html <path>` writes the same facts as one page. Exits 2 when the harness has no `validate.py` or no feature index.
+It prints one JSON object with one entry per behavior: its words, its plan, its check command, what it reads, and the break or the reason there is none, and its latest result line with each repo's commit, fingerprint, uncommitted files, and how far behind HEAD. A break counts as having caught a problem only when its evidence file is in the checkout, failed, was aimed at that behavior, and failed a step that judges it. Lines under `notes.md`'s "Where a pass can mislead" that start with a behavior's ID attach to it as caveats. A `tally` counts behaviors in each state. `--html <path>` writes the same facts as one page. Exits 2 when the harness has no `validate.py` or no `features/` folder.
 
 ### locate.py (run by vf)
 
