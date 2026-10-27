@@ -1,6 +1,6 @@
-# Proposal: a second redesign with fewer parts and the same trust
+# A second redesign with fewer parts and the same trust
 
-Status: proposal, 2026-10-27, reviewed once by an independent agent the same day (see "Review"). Not decided. Each numbered decision below would become its own ADR if accepted.
+Status: carried out, 2026-10-27. Written as a proposal that morning, reviewed once by an independent agent (see "Review"), then done in four steps the same day, each as its own ADR with its own smoke run: [ADR 0010](adr/0010-start-takes-the-checkout.md) and [0011](adr/0011-a-behavior-names-the-repos-its-check-runs.md) for decision 1, [0012](adr/0012-vendor-only-what-bears-trust.md), [0013](adr/0013-one-manifest-for-what-scripts-read.md), and [0014](adr/0014-one-skill.md). Decision 5 was not taken. The text below is the proposal as reviewed, kept as the record of why; where a step came out differently, its ADR says so, and "Cost and sequence" at the end lists what each step became.
 
 ## The point
 
