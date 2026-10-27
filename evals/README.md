@@ -193,6 +193,22 @@ The smoke tier on the Rules version 4 contract ([ADR 0010](../docs/adr/0010-star
 
 What it says: the skills build trustworthy checks and run calibrated breaks on the new contract without any wording change aimed at it. What it also says: vf-verify's reply in a repo with no harness puts text after the ask in two of three runs, a skill finding about that branch of the verify mode, not about the contract; it is the same miss the first baseline found in other modes and fixed through `messages.md`.
 
+### Sixth run: the manifest (ADR 0013)
+
+The smoke tier on the Rules version 6 contract ([ADR 0013](../docs/adr/0013-one-manifest-for-what-scripts-read.md)): `harness.json` and `features/<slug>.json` in place of `settings.md`, `features/README.md`, and the Markdown feature files, free-prose `notes.md`, and `tools.md` rendered from the manifest (2026-10-27, Opus 5.5, $14.57 in all):
+
+| Case | Score | Cost | Notes |
+| --- | --- | --- | --- |
+| add-checks-ledger | 1.00 | $5.35 | all six hidden breaks caught; the agent wrote the JSON entries and ran `vf.py tools` without being told how |
+| audit-weak-ledger-legacy | 0.86 | $3.96 | the audit itself was right (all four planted weak checks named, the sound one left alone), but the agent first set up a harness because the repo had none, and that setup left an `AGENTS.md` the developer had approved; `product_code_clean` failed on that file |
+| explain-ledger | 1.00 | $0.28 | |
+| setup-ledger | 1.00 | $2.37 | the harness it built validates on the manifest format |
+| setup-vault-blocked | 1.00 | $1.12 | |
+| verify-bare-offers-setup | 1.00 | $0.40 | the ask was the last line this time |
+| verify-ledger-change | 1.00 | $1.09 | |
+
+What it says: the skills write and read the manifest format correctly with no wording aimed at it; every case that touches a harness passed every grader. What it also says: vf's body sent a weak-checks audit of a homegrown `qa/` folder through setup first, because its rule for a repo with no harness ("the playbook is Set up whatever the request said") doesn't carve out the two modes that work on a harness this framework didn't build. The earlier runs of this case passed because the model chose the audit directly; the one-skill step states the carve-out in the mode table.
+
 ## Adding a practice repo or a case
 
 A practice repo needs: `repo/` with a README that says how to run it and a `REQUIREMENTS.md` with IDs, one item left open and, where it fits, one the code contradicts; `practice.json` (copy `ledger`'s); `hidden/answers.json` in the developer's voice, never revealing a break; `hidden/breaks/*.patch` made with `git diff` against `repo/`, one behavior each, each a bug a response could hide; `hidden/harness/` as a ready reference harness at zero coverage and `hidden/coverage/` with its checks, both following `rules.md`, so the fixture test proves the breaks are real and the harness is a worked example; and `tests/test_practice_<name>.py` (copy one). Keep it under 200 lines of app code and starting in a second.
