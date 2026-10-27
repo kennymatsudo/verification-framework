@@ -346,16 +346,14 @@ def behavior_repos(entry, repos):
 def read_map(harness_dir, project, repos=None):
     """Read and check the feature map: every features/<slug>.json, in name order.
 
-    Returns (feature file names, behavior IDs in map order with their file, each behavior's entry, errors),
-    or None when the harness has no features/ folder.
+    Returns (feature file names, behavior IDs in map order with their file, each behavior's entry, errors). A harness
+    with no features/ folder has an empty map: Git keeps no empty folder, so a harness with no feature yet has none.
     """
     features_dir = harness_dir / "features"
-    if not features_dir.is_dir():
-        return None
     if repos is None:
         repos = (manifest(harness_dir) or {}).get("repos") or {}
     errors = []
-    files = {p.name for p in features_dir.glob("*.json")}
+    files = {p.name for p in features_dir.glob("*.json")} if features_dir.is_dir() else set()
     seen_ids, behaviors = {}, {}
     for name in sorted(files):
         behaviors.update(check_feature(features_dir / name, project, repos, seen_ids, errors))
@@ -1264,9 +1262,6 @@ def main():
     check_tools(args.harness_dir, project, args.run_help, errors)
     errors.extend(credential_errors(args.harness_dir))
     mapped = read_map(args.harness_dir, project, repos)
-    if mapped is None:
-        print(f"STOPPED: no features folder at {args.harness_dir / 'features'}", file=sys.stderr)
-        return 2
     files, seen_ids, proofs, map_errors = mapped
     errors.extend(map_errors)
     check_proofs = command_proofs(proofs)

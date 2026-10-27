@@ -65,10 +65,10 @@ a later accepted run of a check covering ID; with --until-break, until a later p
 at ID as well, for a check whose steps changed.
 
 vf.py sync HARNESS_DIR [--restore] creates or updates a harness's framework copies: rules.md,
-every script in FRAMEWORK_SCRIPTS under scripts/framework/, and the vf, vf-verify, and
-vf-explain skills beside the harness, without their scripts/, so a clone of the repo holds
-everything the skills need and each script is pinned once. When the project root has more
-than one skills directory, each one gets the skill copies. Run it from the installed vf
+every script in FRAMEWORK_SCRIPTS under scripts/framework/, and the vf skill beside the
+harness, without its scripts/, so a clone of the repo holds everything the skill needs and
+each script is pinned once. When the project root has more than one skills directory, each
+one gets the skill copy. Run it from the installed vf
 skill's scripts/ folder, never from a harness's copy, since the skill's copies are the
 source. It replaces each copy that differs apart from line endings, removes a copy it
 recorded earlier and no longer ships, and prints one line per file it created, replaced,
@@ -100,14 +100,16 @@ from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 SOURCE_RULES = SCRIPTS_DIR.parent / "references" / "rules.md"
-# The skills a clone of the app's repo holds beside its harness, and what their copies leave out.
-COMMITTED_SKILLS = ["vf", "vf-verify", "vf-explain"]
+# The skill a clone of the app's repo holds beside its harness, what its copy leaves out, and the skills directories a
+# project may keep it in.
+COMMITTED_SKILLS = ["vf"]
+SKILLS_DIRS = (".claude/skills", ".agents/skills", ".pi/skills", ".cursor/skills")
 LEFT_OUT_OF_SKILL_COPIES = {"scripts", "__pycache__"}
 INSTALL_COMMAND = "npx skills add kennymatsudo/verification-framework"
-# What every harness carries: the scripts that record runs, run breaks, compute verdicts, launch the app, find the
-# harness, gather trust facts, and show recordings. The audit scripts stay in the installed skill (ADR 0012).
+# What every harness carries: the scripts that record runs, run breaks, compute verdicts, launch the app, gather
+# trust facts, and show recordings. The audit scripts stay in the installed skill (ADR 0012).
 FRAMEWORK_SCRIPTS = ["validate.py", "code_state.py", "break_session.py", "launch.py", "replay.py", "clip.py",
-                     "locate.py", "trust_facts.py", "vf.py"]
+                     "trust_facts.py", "vf.py"]
 SCRIPT_COMMANDS = {
     "validate": ("validate.py", "check the harness's rules copy, settings, feature map, and Verified results"),
     "code-state": ("code_state.py", "print every repo's Git state for an evidence file's code field"),
@@ -465,10 +467,8 @@ def run_check(command):
 
 
 def feature_map(harness, validate):
-    """The feature map's behavior IDs, their entries, and its errors; raises Stopped when the harness has no features folder."""
+    """The feature map's behavior IDs, their entries, and its errors; empty when the harness has no features folder yet."""
     mapped = validate.read_map(harness, validate.project_root(harness), settings_repos(harness, validate))
-    if mapped is None:
-        raise Stopped(f"{harness} has no features folder")
     _, seen_ids, proofs, errors = mapped
     return seen_ids, proofs, errors
 
@@ -729,9 +729,9 @@ def skill_files(skill_dir):
 
 def skills_directories(harness_dir):
     """The skills directory holding the harness first, then every other known one at the project root, so each
-    agent the team uses finds the committed skills."""
+    agent the team uses finds the committed skill."""
     own = harness_dir.parent
-    known = sibling("locate").SKILLS_DIRS
+    known = SKILLS_DIRS
     project_root = own.parent.parent
     if own not in (project_root / d for d in known):
         return [own]
@@ -739,7 +739,7 @@ def skills_directories(harness_dir):
 
 
 def committed_skill_copies(harness_dir):
-    """(source, target, harness-relative name) for every file of every committed skill, in every skills directory."""
+    """(source, target, harness-relative name) for every file of the committed skill, in every skills directory."""
     copies = []
     for name in COMMITTED_SKILLS:
         source_dir = source_skill_dir(name)

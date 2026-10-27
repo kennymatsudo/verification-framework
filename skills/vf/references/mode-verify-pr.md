@@ -1,12 +1,12 @@
 # Verify a pull request with the harness
 
-Follow this when vf runs in verify-pr mode. The Guardrails in vf's `SKILL.md` apply throughout.
+Follow this when vf runs in verify-pr mode. Run it only when the person asked for this job by name in this session; otherwise offer it in one line and stop. The Guardrails in vf's `SKILL.md` apply throughout.
 
 You own two answers for one change, made by one teammate's pull request or by several across repos (a frontend and a backend PR, say): which of its claims the harness should guard, and whether the PRs deliver them together on the real stack. With several PRs, treat them as one change throughout: one claim list, one set of runs, one result. The harness is the expensive layer, so a claim earns a check only when nothing smaller can see it.
 
 The harness is the repo's end-to-end verification layer: one vf built (`verify-*/rules.md` in a skills directory), or else the harness the repo's agent instructions name. If neither exists, stop and say so. Read its rules, its manifest, and its run instructions (the stack check, which actions need the developer's OK, evidence, cleanup) before the first run.
 
-For a framework harness: Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
+For a framework harness: Run `<harness>/scripts/framework/vf.py validate --written-for 7` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
 
 ## 1. List the claims
 
@@ -36,15 +36,15 @@ Done when every claim has a verdict and a reason, and the developer has approved
 
 ## 3. Check out the change
 
-Make one git worktree per PR at its head commit, beside that repo's checkout, so the developer's own checkouts stay untouched. The repo holding the harness also gets one, on a new branch `vf-verify-pr/<PR number>-checks`: off its PR's head when one of the PRs is in that repo, otherwise off the branch the harness was found on, since the harness may not be on the default branch yet. Checks are built there and the harness runs from there. Point the stack at the worktrees as the harness's docs say (in a framework harness, its `Start` command names each repo's checkout as `{checkout:<repo>}`, so starting it against the worktrees loads their code). A repo the harness runs that no PR touches stays at its default branch; note it for the report. Record every worktree you make, for the hand-off.
+Make one git worktree per PR at its head commit, beside that repo's checkout, so the developer's own checkouts stay untouched. The repo holding the harness also gets one, on a new branch `vf-pr/<PR number>-checks`: off its PR's head when one of the PRs is in that repo, otherwise off the branch the harness was found on, since the harness may not be on the default branch yet. Checks are built there and the harness runs from there. Point the stack at the worktrees as the harness's docs say (in a framework harness, its `Start` command names each repo's checkout as `{checkout:<repo>}`, so starting it against the worktrees loads their code). A repo the harness runs that no PR touches stays at its default branch; note it for the report. Record every worktree you make, for the hand-off.
 
 Done when each PR has a worktree at its head commit, the checks branch exists, and the developer's own checkouts are unchanged.
 
 ## 4. Build the approved checks
 
-For a framework harness, load vf-verify by name in add-checks mode with the approved claims, acceptance sources, and action permissions to build and prove only those checks. For a non-framework harness, build only what was approved in its existing scenarios and drivers, with unit tests beside them, following its own conventions. A check of what a page or a polled service shows waits up to one refresh cycle for the expected state rather than sampling once. Update every doc that describes the changed scenarios.
+For a framework harness, follow `references/mode-add-checks.md` with the approved claims, acceptance sources, and action permissions to build and prove only those checks. For a non-framework harness, build only what was approved in its existing scenarios and drivers, with unit tests beside them, following its own conventions. A check of what a page or a polled service shows waits up to one refresh cycle for the expected state rather than sampling once. Update every doc that describes the changed scenarios.
 
-Done when the unit suite passes and each new check fails with its behavior reverted, using the cheapest proof the harness allows (vf-verify's planned break for a framework harness).
+Done when the unit suite passes and each new check fails with its behavior reverted, using the cheapest proof the harness allows (the add-checks mode's planned break for a framework harness).
 
 ## 5. Run on the PRs' code
 

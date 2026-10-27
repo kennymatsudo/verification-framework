@@ -1,6 +1,6 @@
 # Add tools
 
-Follow this when vf-verify runs in add-tools mode. The Guardrails in vf-verify's `SKILL.md` apply throughout.
+Follow this when vf runs in add-tools mode. The Guardrails in vf's `SKILL.md` apply throughout.
 
 You own the harness's probes and actions: each built, proven on the real app, and published in its tool guide, so any later check or agent can use it. A tool judges nothing, so it needs no feature plan or planned break. Feature files, checks, and scenarios belong to the add-checks mode.
 
@@ -8,7 +8,7 @@ You own the harness's probes and actions: each built, proven on the real app, an
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up.
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Then read its `harness.json`, the Tool discovery, Probes, and Actions sections of `rules.md`, and `tools.md`.
+Run `<harness>/scripts/framework/vf.py validate --written-for 7` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Then read its `harness.json`, the Tool discovery, Probes, and Actions sections of `rules.md`, and `tools.md`.
 
 Done when the harness, setup gate, and existing tools are known, or a named blocker stops the work.
 

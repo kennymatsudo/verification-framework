@@ -89,10 +89,8 @@ def read_json(path):
 
 
 def feature_files(features_dir):
-    """The feature files in feature-map order: every features/<slug>.json by name."""
-    if not features_dir.is_dir():
-        raise Stopped(f"no features folder at {features_dir}")
-    return sorted(features_dir.glob("*.json"))
+    """The feature files in feature-map order: every features/<slug>.json by name; none when the folder doesn't exist yet."""
+    return sorted(features_dir.glob("*.json")) if features_dir.is_dir() else []
 
 
 def parse_proof(validate, harness_dir, sub_id, entry, records):

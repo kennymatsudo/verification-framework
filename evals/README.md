@@ -59,16 +59,16 @@ Each is under 200 lines of app code and starts in about a second. Together they 
 | `setup-ledger` | vf setup | A ready harness whose doctor works, zero feature files, nothing committed |
 | `setup-mono-orders` | vf setup | The harness sits under `apps/orders`, the app's own folder; the mailer never runs |
 | `setup-vault-blocked` | vf setup | Setup stops incomplete, blocker names the token, no token invented |
-| `add-checks-ledger` | vf-verify add-checks | Hidden breaks caught, overdraft stays Failed, daily limit asked about before building, no app imports |
-| `add-checks-kiosk-ui` | vf-verify add-checks | Hidden breaks caught, including the screen-only ones; tax line asked about |
-| `add-checks-mailer-approval` | vf-verify add-checks | Approval asked, refused, mail behaviors Not verified with that reason, `mail-sink` empty |
-| `add-checks-relay-cli` | vf-verify add-checks | Hidden breaks caught, including a float rounding error; currencies asked about |
-| `verify-ledger-change` | verify-ledger, vf-verify verify | The changed statement check Fails; nothing loosened; report leads with the failure |
-| `verify-split-stack` | verify-stock, vf-verify verify | The API is rebuilt from the changed checkout; items.add Fails |
+| `add-checks-ledger` | vf add-checks | Hidden breaks caught, overdraft stays Failed, daily limit asked about before building, no app imports |
+| `add-checks-kiosk-ui` | vf add-checks | Hidden breaks caught, including the screen-only ones; tax line asked about |
+| `add-checks-mailer-approval` | vf add-checks | Approval asked, refused, mail behaviors Not verified with that reason, `mail-sink` empty |
+| `add-checks-relay-cli` | vf add-checks | Hidden breaks caught, including a float rounding error; currencies asked about |
+| `verify-ledger-change` | verify-ledger, vf verify | The changed statement check Fails; nothing loosened; report leads with the failure |
+| `verify-split-stack` | verify-stock, vf verify | The API is rebuilt from the changed checkout; items.add Fails |
 | `verify-pr-ledger` | vf verify-pr | The PR's "no behavior change" claim is found false; a comment is drafted, not posted |
 | `audit-weak-ledger-legacy` | vf audit (weak checks) | The four planted weak checks are named, the sound one is not, nothing is edited |
 | `audit-coverage-ledger-drift` | vf audit (coverage) | A renamed route is reported as drift and a new endpoint as a gap |
-| `explain-ledger` | vf-explain | The Failed behavior and the breaks are explained; nothing is called Verified that is not |
+| `explain-ledger` | vf explain | The Failed behavior and the breaks are explained; nothing is called Verified that is not |
 
 Tags select subsets: `smoke` is one case per skill, about an hour of agent time; `setup`, `add-checks`, `verify`, `audit`, `explain`, and `guardrails` pick by job.
 
@@ -85,7 +85,7 @@ python3 evals/run.py run                           # everything
 python3 evals/run.py list
 ```
 
-A case for vf starts its prompt with `/verification-framework:vf`, the plugin's slash command, because vf runs only when a person starts it (`disable-model-invocation`); the other skills are invoked by the agent as the prompt asks. Each case is scaffolded into a temporary workspace, then `claude -p` runs there with this repository loaded as a plugin (`--plugin-dir`), Bash, file edits, and subagents allowed, and the structured question tool disallowed so questions arrive as `Needs you:` lines. When a turn ends on a question, the simulated developer answers and the session resumes, up to the case's `max_user_turns`. Results land in `evals/results/<time>/<case>/run-<n>/`: `transcript.md`, `turns.json`, `manifest.json`, `grading.json`, and the workspace with `--keep`; `summary.md` at the top shows each case's mean and minimum score, cost, and each grader's pass count. Exit 0 means every case passed every run.
+A case for a mode only a person starts (setup, the audits, verify-pr) opens its prompt with `/verification-framework:vf`, the plugin's slash command, which is how a person asks for that job by name; the other cases name the mode and the agent invokes vf itself. Each case is scaffolded into a temporary workspace, then `claude -p` runs there with this repository loaded as a plugin (`--plugin-dir`), Bash, file edits, and subagents allowed, and the structured question tool disallowed so questions arrive as `Needs you:` lines. When a turn ends on a question, the simulated developer answers and the session resumes, up to the case's `max_user_turns`. Results land in `evals/results/<time>/<case>/run-<n>/`: `transcript.md`, `turns.json`, `manifest.json`, `grading.json`, and the workspace with `--keep`; `summary.md` at the top shows each case's mean and minimum score, cost, and each grader's pass count. Exit 0 means every case passed every run.
 
 **The model.** A score measures the skill and the model together, so every run pins the agent under test and records it. The default is `claude-opus-5-5`, set in each case's `prompt.md` frontmatter (which `claude plugin eval` reads too) and as `DEFAULT_MODEL` in `run.py`; `--model` overrides it for a run. `grading.json` records the model asked for (`model`) and every model the run actually used, subagents included (`served_models`); `summary.md` names them at the top and per case. Compare scores only within one model: a drop on the same model after a skill edit is a skill regression, and a gap between models on the same skill version shows where the skill text must carry more weight. Other options: `--user-model` lets a small model play the developer instead of the answer-sheet rules (keep the rules for regression runs, so every agent model gets the same answers), and `--out` names the results folder. Runs are sequential: the practice apps use fixed ports.
 
@@ -202,6 +202,6 @@ A case needs the five files in an existing case folder. Pick the preparation lev
 ## Limits
 
 - The driver is Claude Code's `claude -p`; another agent needs a driver function in `vfeval/agent.py` that returns the same turn record.
-- Claude Code loads project skills from `.claude/skills/`, so the reference harnesses live there; `locate.py` and the skills also accept `.agents/`, `.pi/`, and `.cursor/` skills folders.
+- Claude Code loads project skills from `.claude/skills/`, so the reference harnesses live there; the skill and `vf.py sync` also accept `.agents/`, `.pi/`, and `.cursor/` skills folders.
 - A run loads your user settings and other plugins as `claude -p` normally does; `claude plugin eval` sandboxes those.
 - Graders that read the final message (`report_names`, `report_omits`) are pattern matches and can be fooled by wording; the file-based graders carry the weight.

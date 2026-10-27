@@ -8,4 +8,4 @@ This folder proves changes to the orders service work by driving its running API
 - **See what's covered:** the feature files in `features/`, one per feature; [status.md](status.md) lists every behavior.
 - **Debug by hand:** [tools.md](tools.md) lists every command. Check the service is up with `python3 .claude/skills/verify-orders/scripts/framework/vf.py doctor --probe "curl -sf http://127.0.0.1:8073/health"`.
 
-Files in `scripts/framework/` and `rules.md`, and the `vf`, `vf-verify`, and `vf-explain` folders beside this one, are copied from verification-framework and are never edited here; vf's update mode replaces them all. Nothing to install: your agent finds the skills in this repo.
+Files in `scripts/framework/` and `rules.md`, and the `vf` folder beside this one, are copied from verification-framework and are never edited here; vf's update mode replaces them all. Nothing to install: your agent finds the skill in this repo.

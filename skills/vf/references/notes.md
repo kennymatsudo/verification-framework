@@ -22,4 +22,4 @@ None yet.
 None yet.
 ```
 
-A line under "Where a pass can mislead" that starts with a behavior's ID and a colon (`checkout.pay: ...`) is attached to that behavior by vf-explain.
+A line under "Where a pass can mislead" that starts with a behavior's ID and a colon (`checkout.pay: ...`) is attached to that behavior by vf's explain mode.

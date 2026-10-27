@@ -1,6 +1,6 @@
 # Weak-checks mode
 
-Follow this when vf runs in audit mode for weak checks. The Guardrails in vf's `SKILL.md` apply throughout.
+Follow this when vf runs in audit mode for weak checks. Run it only when the person asked for this job by name in this session; otherwise offer it in one line and stop. The Guardrails in vf's `SKILL.md` apply throughout.
 
 You own one answer: would each check in this harness go red if the behavior it guards broke? A vacuous check that cannot fail, and a unit test that passes one, are the worst outcomes here: every run then reports a pass nobody earned.
 
@@ -10,7 +10,7 @@ The harness is the repo's end-to-end verification layer: one vf built (`verify-*
 
 From the harness's docs and agent instructions, find where its check code and unit tests live, the unit suite command, how checks are named, the rules it promises (the harness's `rules.md`, or its trust or verification doc), any coverage map or status file, and the docs and skills that tell agents what counts as proof. Use those names in every command below.
 
-For a harness vf built: Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. If it reports an edited `rules.md` or one from another framework version, stop: the rules the audit would hold checks to are not the framework's. Any other error is a lead for the finders.
+For a harness vf built: Run `<harness>/scripts/framework/vf.py validate --written-for 7` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. If it reports an edited `rules.md` or one from another framework version, stop: the rules the audit would hold checks to are not the framework's. Any other error is a lead for the finders.
 
 Then run, in parallel where possible, keeping each output:
 

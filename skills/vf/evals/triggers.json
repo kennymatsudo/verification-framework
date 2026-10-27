@@ -1,0 +1,72 @@
+[
+  {
+    "query": "I'm new on this team and the status file says checkout.pay is Verified. I didn't build any of the verify-storefront stuff, so how much should I actually trust that?",
+    "should_trigger": true
+  },
+  {
+    "query": "what does our verify-shop setup actually check? give me the short version",
+    "should_trigger": true
+  },
+  {
+    "query": "A teammate's PR comment says all four payment behaviors were verified end to end. Before I approve, explain why I should believe those checks mean anything.",
+    "should_trigger": true
+  },
+  {
+    "query": "how is the receipt email checked in our verification harness, and could it pass even if the email never sends?",
+    "should_trigger": true,
+    "holdout": true
+  },
+  {
+    "query": "Can I trust these checks?",
+    "should_trigger": true
+  },
+  {
+    "query": "Verify my discount-code change with verify-shop before I open the PR.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a check for the refund flow to our verification harness.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add our order-lookup script as a tool agents can use.",
+    "should_trigger": true,
+    "holdout": true
+  },
+  {
+    "query": "Which of our harness checks just take the app's word for it instead of looking at the database?",
+    "should_trigger": true
+  },
+  {
+    "query": "Set up verification for this app.",
+    "should_trigger": true,
+    "holdout": true
+  },
+  {
+    "query": "Audit the verify-shop checks and fix any that can't fail.",
+    "should_trigger": true
+  },
+  {
+    "query": "Verify PR #42 on the real app with our harness and draft a comment.",
+    "should_trigger": true,
+    "holdout": true
+  },
+  {
+    "query": "Explain how the order payment code in shop/orders.py works, from the API handler down to the database write.",
+    "should_trigger": false,
+    "holdout": true
+  },
+  {
+    "query": "Our pytest suite has 90% coverage. Is that good enough or are the unit tests hollow?",
+    "should_trigger": false
+  },
+  {
+    "query": "Write unit tests for the CSV parser in lib/parse.py.",
+    "should_trigger": false
+  },
+  {
+    "query": "Set up GitHub Actions to run our linter on every push.",
+    "should_trigger": false,
+    "holdout": true
+  }
+]

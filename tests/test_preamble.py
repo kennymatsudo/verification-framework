@@ -1,8 +1,9 @@
-"""Every skill that reads a harness finds it and gates on validate.py with the same two sentences.
+"""Every mode that reads a harness finds it and gates on validate.py with the same two sentences, and every
+mode only a person may start opens with the same sentence saying so.
 
-One wording, checked here, keeps the seven procedures from drifting apart on how a harness is found and
-what to do when its setup is incomplete or its framework copies are old. Change a sentence here and in
-every skill together.
+One wording, checked here, keeps the procedures from drifting apart on how a harness is found, what to do
+when its setup is incomplete or its framework copies are old, and which jobs wait to be asked for by name.
+Change a sentence here and in every mode together.
 """
 
 import pathlib
@@ -21,19 +22,23 @@ GATE = (f"Run `<harness>/scripts/framework/vf.py validate --written-for {RULES_V
         "harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, "
         "relay which side it says to update, and stop.")
 
-# Skills that only work on a framework harness find it and gate on it.
+# Modes that only work on a framework harness find it and gate on it.
 FINDS_AND_GATES = [
-    "vf-verify/references/mode-verify.md",
-    "vf-verify/references/mode-add-checks.md",
-    "vf-verify/references/mode-add-tools.md",
+    "vf/references/mode-verify.md",
+    "vf/references/mode-add-checks.md",
+    "vf/references/mode-add-tools.md",
     "vf/references/mode-audit-coverage.md",
-    "vf-explain/SKILL.md",
+    "vf/references/mode-explain.md",
 ]
-# Skills that also work on a harness this framework did not build only gate on it.
+# Modes that also work on a harness this framework did not build only gate on it.
 GATES = [
     "vf/references/mode-audit-weak-checks.md",
     "vf/references/mode-verify-pr.md",
 ]
+# Modes a person starts by name open with this sentence; the others never carry it.
+PERSON_ONLY = "Run it only when the person asked for this job by name in this session; otherwise offer it in one line and stop."
+PERSON_ONLY_MODES = ["mode-setup", "mode-audit-coverage", "mode-audit-weak-checks", "mode-verify-pr"]
+AGENT_MODES = ["mode-verify", "mode-add-checks", "mode-add-tools", "mode-explain"]
 
 
 class SharedPreamble(unittest.TestCase):
@@ -50,9 +55,21 @@ class SharedPreamble(unittest.TestCase):
             with self.subTest(skill=skill_file):
                 self.assertIn(GATE, (SKILLS / skill_file).read_text(), "the validate sentence is missing or reworded")
 
-    def test_vf_and_vf_verify_carry_the_same_messages_file(self):
-        self.assertEqual((SKILLS / "vf/references/messages.md").read_text(), (SKILLS / "vf-verify/references/messages.md").read_text(),
-                         "edit both copies of messages.md together")
+    def test_person_only_modes_say_so_in_the_same_words(self):
+        for mode in PERSON_ONLY_MODES:
+            with self.subTest(mode=mode):
+                text = (SKILLS / "vf/references" / f"{mode}.md").read_text()
+                self.assertIn(PERSON_ONLY, text.split("\n\n")[1], "the person-only sentence is missing from the opening paragraph or reworded")
+        for mode in AGENT_MODES:
+            with self.subTest(mode=mode):
+                self.assertNotIn(PERSON_ONLY, (SKILLS / "vf/references" / f"{mode}.md").read_text(), "an agent may start this mode")
+
+    def test_every_mode_in_the_skill_table_has_its_file(self):
+        body = (SKILLS / "vf/SKILL.md").read_text()
+        for mode in PERSON_ONLY_MODES + AGENT_MODES:
+            with self.subTest(mode=mode):
+                self.assertIn(f"`references/{mode}.md`", body)
+                self.assertTrue((SKILLS / "vf/references" / f"{mode}.md").is_file())
 
 
 if __name__ == "__main__":

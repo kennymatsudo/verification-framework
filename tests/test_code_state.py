@@ -255,12 +255,12 @@ class MonorepoTest(unittest.TestCase):
             harness = make_harness(project)
             git(project, "add", ".agents")
             git(project, "commit", "-qm", "harness settings")
-            for name in ("vf", "vf-verify"):
+            for name in ("vf",):
                 (project / ".agents/skills" / name).mkdir()
                 (project / ".agents/skills" / name / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
             lock = harness / code_state.validate.FRAMEWORK_LOCK
             lock.parent.mkdir(parents=True)
-            lock.write_text("0" * 64 + "  ../vf/SKILL.md\n" + "0" * 64 + "  ../vf-verify/SKILL.md\n")
+            lock.write_text("0" * 64 + "  ../vf/SKILL.md\n" + "0" * 64 + "  ../vf/references/rules.md\n")
             self.assertFalse(code_state.checkout_state(project, harness)["dirty"])
             (project / ".agents/skills/other").mkdir()
             (project / ".agents/skills/other/SKILL.md").write_text("the team's own skill\n")

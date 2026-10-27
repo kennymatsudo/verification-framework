@@ -6,21 +6,11 @@ A reference project can reveal a missing shared rule or an integration gap, but 
 
 ## Open questions
 
-### Pay down the scaffolding before publishing
-
-[A second redesign with fewer parts and the same trust](redesign-proposal.md) proposes keeping the trust core as it is and replacing what grew around it: one skill instead of three, one structured manifest instead of five Markdown files with grammars, one vendored `vf.py` instead of twelve scripts, and a `Start` command that takes the checkout instead of the two scratch-code settings. It claims to settle five of the questions below. Each of its numbered decisions would be an ADR.
-
-An independent review agreed with the content and reversed the order: contract changes first (Start takes the checkout), the skill merge last, and the merge's one risk tested beforehand by making vf agent-invocable on a branch and running the eval case `verify-bare-offers-setup`.
-
-That case and the smoke tier passed with vf agent-invocable (evals/README.md, "Fourth run"), with one limit: the agent picked vf-verify both times, so the merged skill's description is tested only by the merge itself.
-
-**What settles it:** a decision to take the first contract step, Start taking the checkout, as its own ADR.
-
 ### Add independent judges where an agent grades its own work
 
 The check reviewer and the weak-checks verifiers are independent judges: each gets the artifact and the sources, never the author's reasoning. One moment still lets the author judge itself: **the author picks its own planned break**, so it can pick one the check is sure to catch. A fresh agent that hasn't seen the check could pick the break from the behavior and the code. Checks that catch their own breaks but miss hidden ones would show the author's breaks were too easy. It adds a subagent to every check built, so measure it on practice repos first.
 
-A change to a check after its review, including an expectation changed after a failed run, now goes back for review as a diff before the next run, to the same reviewer when the session can resume it (vf-verify's `references/verification-plan.md`).
+A change to a check after its review, including an expectation changed after a failed run, now goes back for review as a diff before the next run, to the same reviewer when the session can resume it (vf's `references/verification-plan.md`).
 
 ### Batch planned breaks when runs are expensive
 
@@ -109,6 +99,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0011: A behavior names the repos its check runs](adr/0011-a-behavior-names-the-repos-its-check-runs.md)
 - [0012: Vendor only what bears trust](adr/0012-vendor-only-what-bears-trust.md)
 - [0013: One manifest for everything a script reads; prose stays prose](adr/0013-one-manifest-for-what-scripts-read.md)
+- [0014: One skill, with a mode for each job](adr/0014-one-skill.md)
 
 ## Parked ideas
 
@@ -129,5 +120,4 @@ A redesign review on 2026-10-21 set these aside:
 Three smaller ideas, not yet weighed:
 
 - **A test-first playbook.** Run the add-checks mode from the requirements before the feature exists, record the checks as wanted but not built, and rerun them after the build. The run before the feature exists works like a planned break, but a claim about values still needs one after the build.
-- **Hide vf-verify from the slash menu**, so the app's verify skill is the one way a person starts verification. Claude Code supports this in frontmatter; other agents are unchecked.
 - **Refresh the generated verify skill on sync.** `vf.py sync` replaces the rules and scripts but nothing refreshes `verify-<app>/SKILL.md` when its template changes.

@@ -99,7 +99,7 @@ Sequence, each step its own ADR and its own smoke run, so a regression is caught
 1. Decision 1 (Start takes the checkout, `Reloads`, `VERIFY_CHECKOUT_<REPO>`): done as ADR 0010 and ADR 0011.
 2. Decision 2 (vendor only what bears trust): done as ADR 0012 for the audit scripts, with the viewer kept vendored; `locate.py` leaves with decision 4 and `trust_facts.py` with decision 3.
 3. Decision 3 (the manifest, per feature): done as ADR 0013, with the behaviors' `repos` lists from ADR 0011 carried into the JSON entries. `validate.py` did not shrink as predicted, `rules.md` keeps a JSON example rather than pointing at a schema command, and `trust_facts.py` was ported rather than folded into `vf.py status`; the ADR says why.
-4. Decision 4 (one skill), then 5 if wanted.
+4. Decision 4 (one skill): done as ADR 0014. Decision 5 (the harness beside the code) is not taken; it stays a parked idea in design.md.
 
 ## Review
 
