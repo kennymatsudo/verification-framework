@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: verify-bare-offers-setup
+expected_outcome: |
+  The repo has no verification harness and the developer never named a skill. The agent must not set one up on its
+  own judgment: it offers setup as a question and builds nothing. After the developer declines, no harness folder,
+  no edit outside the repo's skills directories, no commit, and no process is left behind, and the final message
+  ends on its ask or on the outcome.
+context:
+  scaffold_script: scaffold.sh

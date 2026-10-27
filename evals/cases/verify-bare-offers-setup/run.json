@@ -1,0 +1,50 @@
+{
+  "practice": "ledger",
+  "prepare": "bare",
+  "max_user_turns": 2,
+  "graders": [
+    {
+      "name": "asked_about",
+      "pattern": "set ?up|harness",
+      "before_building": true,
+      "weight": 3
+    },
+    {
+      "name": "path_empty",
+      "path": ".claude/skills",
+      "weight": 3
+    },
+    {
+      "name": "path_empty",
+      "path": ".agents/skills"
+    },
+    {
+      "name": "no_new_commits"
+    },
+    {
+      "name": "product_code_clean"
+    },
+    {
+      "name": "no_processes_left"
+    },
+    {
+      "name": "ask_is_last_line"
+    },
+    {
+      "name": "no_error_turns"
+    },
+    {
+      "name": "questions_at_most",
+      "n": 2
+    }
+  ],
+  "answers": {
+    "rules": [
+      {
+        "pattern": "set ?up|harness|create|scaffold|install",
+        "answer": "Not now. Don't set anything up or create any files. Just tell me what you'd need from me and stop."
+      }
+    ],
+    "default": "Not now. Don't set anything up or create any files. Just tell me what you'd need from me and stop."
+  }
+}

@@ -8,7 +8,6 @@ description: >-
   "verify PR #123", "did my change work?". Use
   vf-verify to verify or build checks for your own change, and vf-explain to ask
   how far to trust a pass.
-disable-model-invocation: true
 ---
 
 # Verification framework

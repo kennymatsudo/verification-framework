@@ -10,7 +10,9 @@ A reference project can reveal a missing shared rule or an integration gap, but 
 
 [A second redesign with fewer parts and the same trust](redesign-proposal.md) proposes keeping the trust core as it is and replacing what grew around it: one skill instead of three, one structured manifest instead of five Markdown files with grammars, one vendored `vf.py` instead of twelve scripts, and a `Start` command that takes the checkout instead of the two scratch-code settings. It claims to settle five of the questions below. Each of its numbered decisions would be an ADR.
 
-**What settles it:** a decision to take step 1 (one skill) and a smoke run showing the one-skill agent never starts setup or an audit unasked.
+An independent review agreed with the content and reversed the order: contract changes first (Start takes the checkout), the skill merge last, and the merge's one risk tested beforehand by making vf agent-invocable on a branch and running the eval case `verify-bare-offers-setup`.
+
+**What settles it:** that case and the smoke tier passing with vf agent-invocable, then a decision to take the first contract step.
 
 ### Add independent judges where an agent grades its own work
 
