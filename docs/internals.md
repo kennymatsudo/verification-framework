@@ -68,7 +68,7 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 ├── scripts/
 │   ├── framework/              framework copies, never edited
 │   │   ├── vf.py  validate.py  code_state.py  break_session.py
-│   │   ├── launch.py  replay.py  clip.py  locate.py  trust_facts.py
+│   │   ├── launch.py  replay.py  clip.py  trust_facts.py
 │   │   └── framework.sha256    hash of each framework file as copied
 │   ├── doctor.py               app's own tool, in the app's language
 │   └── check_pay_order.py      app's own check
@@ -85,24 +85,24 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 
 Times in file names are UTC, with dashes so they sort in order. These locations are fixed in every harness; the manifest can't move them.
 
-Beside the harness, the same skills directory holds `vf/`, `vf-verify/`, and `vf-explain/`: copies of the framework skills without their `scripts/`, so a clone of the repo needs no install. `sync` writes them, records their hashes in `framework.sha256` under paths such as `../vf/SKILL.md`, and writes the same copies into every other known skills directory at the project root.
+Beside the harness, the same skills directory holds `vf/`: a copy of the framework skill without its `scripts/`, so a clone of the repo needs no install. `sync` writes it, records its hashes in `framework.sha256` under paths such as `../vf/SKILL.md`, and writes the same copy into every other known skills directory at the project root.
 
-The nine framework scripts are Python and identical in every harness, so a clone of the repo holds everything a run, a verdict, or a replay needs. Call the run and record scripts through `vf.py`: `validate`, `code-state`, `break`, `replay`, and `clip` run the script of that name; `start`, `stop`, and `doctor` run `launch.py`; `run`, `verify`, `status`, `not-verified`, and `sync` are its own. The skills run `locate.py` and `trust_facts.py` directly, by path. The three audit scripts of the weak-checks audit are not copied into a harness; they run from the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)). The app's tools are written in the app's language, so they can reuse its database drivers and settings.
+The eight framework scripts are Python and identical in every harness, so a clone of the repo holds everything a run, a verdict, or a replay needs. Call the run and record scripts through `vf.py`: `validate`, `code-state`, `break`, `replay`, and `clip` run the script of that name; `start`, `stop`, and `doctor` run `launch.py`; `run`, `verify`, `status`, `not-verified`, and `sync` are its own. The explain mode runs `trust_facts.py` directly, by path. The three audit scripts of the weak-checks audit are not copied into a harness; they run from the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)). The app's tools are written in the app's language, so they can reuse its database drivers and settings.
 
 **Who writes and reads each file:**
 
 | File | Written by | Read by |
 | --- | --- | --- |
 | `rules.md`, `scripts/framework/`, the skill copies beside the harness | vf's setup mode, as copies | Every skill |
-| `harness.json` | Setup, then vf-verify when it adds a tool or fills the probe command | `validate.py`, `code_state.py`, `break_session.py`, `launch.py`, every skill |
+| `harness.json` | Setup, then add-tools and add-checks when they add a tool or fill the probe command | `validate.py`, `code_state.py`, `break_session.py`, `launch.py`, every skill |
 | `status.md` | `vf.py status`, which creates it on its first run and rewrites it through every accepted run | `validate.py`, every skill |
-| `notes.md` | Setup for the setup notes; skills for known failures, misleading passes, untested cases | vf-explain's `trust_facts.py`, every skill |
-| `features/` | add-checks mode; verify mode when a change alters a behavior; audit mode when a description drifts | `validate.py`, vf-verify, audit mode |
-| `tools.md` | `vf.py tools`, from the manifest's tool entries, after setup adds the doctor and vf-verify each later tool | Skills, and agents debugging without a skill |
-| `scripts/` | Setup for the doctor, vf-verify for every later tool | `vf.py run`, the skills |
+| `notes.md` | Setup for the setup notes; skills for known failures, misleading passes, untested cases | the explain mode's `trust_facts.py`, every mode |
+| `features/` | add-checks mode; verify mode when a change alters a behavior; audit mode when a description drifts | `validate.py`, every mode |
+| `tools.md` | `vf.py tools`, from the manifest's tool entries, after setup adds the doctor and add-tools or add-checks each later tool | Skills, and agents debugging without a skill |
+| `scripts/` | Setup for the doctor, add-tools and add-checks for every later tool | `vf.py run`, the skills |
 | `evidence/<check>/<time>.json` | `vf.py run`, from the events the check reports | `validate.py`, `replay.py`, `clip.py`, agents diagnosing a failure |
 | `evidence/<check>/<time>.patch` | `vf.py break run`, on a planned break | `vf.py break replay` |
-| `evidence/breaks.jsonl` | `vf.py break run` | vf-explain's `trust_facts.py`, when the break's record isn't on this machine |
+| `evidence/breaks.jsonl` | `vf.py break run` | the explain mode's `trust_facts.py`, when the break's record isn't on this machine |
 | `evidence/not-verified.jsonl` | `vf.py not-verified` | `vf.py status`, `validate.py` |
 | `README.md`, `recordings.html` | Setup; `replay.py` after every run | People |
 
@@ -153,7 +153,7 @@ Each entry under `repos` is `"<name>": "<location>"`, listed even when there's o
 
 ## Feature map
 
-The `features/` folder has one `<slug>.json` per feature a user can see. Each splits the feature into **behaviors** (one thing a user would notice; the skills also call them sub-features) and says how each is proven. `validate.py` parses every `.json` file there; a `.md` beside one is prose it ignores.
+The `features/` folder has one `<slug>.json` per feature a user can see; a harness with no feature yet has no folder, since Git keeps none empty. Each splits the feature into **behaviors** (one thing a user would notice; the skills also call them sub-features) and says how each is proven. `validate.py` parses every `.json` file there; a `.md` beside one is prose it ignores.
 
 A feature file has `name`, `summary`, and `behaviors`, and optionally `reach` (how a user gets there), `sources` (where its requirements were read, with the revision), and `gotchas`, each a list of strings. Other top-level keys are ignored, so a team can keep its own; a behavior entry or a tool entry with a key the format doesn't name is an error.
 
@@ -423,17 +423,13 @@ Clips need ffmpeg and ffprobe. Replay pages, screenshots, and logs need neither.
 
 ## Other scripts
 
-`sync` copies `trust_facts.py` and `locate.py` into every harness's `scripts/framework/` with the rest, and the skills run them from there, given the harness's folder. The audit scripts live only in the installed vf's `scripts/`: they judge a harness's own test code, not a run, and the weak-checks audit also runs them against a harness this framework didn't build.
+`sync` copies `trust_facts.py` into every harness's `scripts/framework/` with the rest, and the explain mode runs it from there, given the harness's folder. The audit scripts live only in the installed vf's `scripts/`: they judge a harness's own test code, not a run, and the weak-checks audit also runs them against a harness this framework didn't build.
 
-### trust_facts.py (run by vf-explain)
+### trust_facts.py (run by the explain mode)
 
 Gathers what the harness records about each behavior, so the agent answers from fields rather than rereading every file. It loads the harness's own `validate.py` and uses its parser, and judges nothing.
 
-It prints one JSON object with one entry per behavior: its words, its plan, its check command, what it reads, and the break or the reason there is none, and its latest result line with each repo's commit, fingerprint, uncommitted files, and how far behind HEAD. A break counts as having caught a problem only when its evidence file is in the checkout, failed, was aimed at that behavior, and failed a step that judges it. Lines under `notes.md`'s "Where a pass can mislead" that start with a behavior's ID attach to it as caveats. A `tally` counts behaviors in each state. `--html <path>` writes the same facts as one page. Exits 2 when the harness has no `validate.py` or no `features/` folder.
-
-### locate.py (run by vf)
-
-Runs before vf picks a playbook, the ordered list of modes it will run for a request. Prints `skills` (each framework skill's `SKILL.md` path or null), `missing`, and `harnesses` (each `verify-*/rules.md` in the skills directories of the current folder and every folder above it, nearest first). It looks for each skill beside the skill folder holding it (the installed vf, or the harness when run from `scripts/framework/`), then in the project's skills directories, then under the home directory. Exits 0 when every skill is found, 1 when any is missing, 2 when `--repo` isn't a directory. Its tests fail when a skill folder is added or renamed without updating its list and the playbooks.
+It prints one JSON object with one entry per behavior: its words, its plan, its check command, what it reads, and the break or the reason there is none, and its latest result line with each repo's commit, fingerprint, uncommitted files, and how far behind HEAD. A break counts as having caught a problem only when its evidence file is in the checkout, failed, was aimed at that behavior, and failed a step that judges it. Lines under `notes.md`'s "Where a pass can mislead" that start with a behavior's ID attach to it as caveats. A `tally` counts behaviors in each state. `--html <path>` writes the same facts as one page. Exits 2 when the harness has no `validate.py`.
 
 ### Audit scripts (vf, weak-checks mode)
 
@@ -448,6 +444,6 @@ Three scripts for harnesses whose checks are written in Python, run from the ins
 ## Script conventions
 
 - Exit 0 means OK, 1 means it found a problem, 2 means it couldn't run, explained on a `STOPPED:` line.
-- `validate.py` prints one line per problem starting with `ERROR` or `WARN`, then a summary. `code_state.py` and `locate.py` print JSON. The audit scripts print one item per line.
+- `validate.py` prints one line per problem starting with `ERROR` or `WARN`, then a summary. `code_state.py` prints JSON. The audit scripts print one item per line.
 - They use only what comes with Python 3. ffmpeg is optional, and only `clip.py` uses it.
 - Each script's unit tests live in `tests/test_<script>.py`, outside the skill folders. Run them with `python3 -m unittest discover -s tests`.

@@ -1,6 +1,6 @@
 # Coverage mode
 
-Follow this when vf runs in audit mode for coverage. The Guardrails in vf's `SKILL.md` apply throughout, and in this mode edit only files inside the harness and the tools it owns; propose changes to sources owned by someone else.
+Follow this when vf runs in audit mode for coverage. Run it only when the person asked for this job by name in this session; otherwise offer it in one line and stop. The Guardrails in vf's `SKILL.md` apply throughout, and in this mode edit only files inside the harness and the tools it owns; propose changes to sources owned by someone else.
 
 You own an honest answer to "does this harness cover the app as it is today?", and the harness fixes that make the answer yes. Cover every feature from source and drive every feature live. Fix the harness; report the product.
 
@@ -20,7 +20,7 @@ Done when you have the harness path and have read its `SKILL.md`, `rules.md`, `h
 
 ## 2. Run the mechanical check
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Fix every error in the map itself: malformed entries, check commands whose files moved. Keep each warning about stale or missing evidence for step 5.
+Run `<harness>/scripts/framework/vf.py validate --written-for 7` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. Fix every error in the map itself: malformed entries, check commands whose files moved. Keep each warning about stale or missing evidence for step 5.
 
 Done when `vf.py validate` exits 0 and you have a list of stale sub-features, or setup stopped with its saved blocker.
 
@@ -45,7 +45,7 @@ Follow the harness's own `SKILL.md` to check the instance and drive. Run every c
 - Clean up whatever a failed drive left behind before the next one.
 - A behavior with an `unreachable` block stays unreachable only with its blocker and the route tried. If the blocker is gone, it is drift.
 
-For each behavior `status.md` reports as `Pass not proven: <file> changed since this run`, rerun its check. For each one it reports as `Pass not proven: <file> changed since its planned break`, load vf-verify by name in add-checks mode to replay its planned break.
+For each behavior `status.md` reports as `Pass not proven: <file> changed since this run`, rerun its check. For each one it reports as `Pass not proven: <file> changed since its planned break`, follow `references/mode-add-checks.md` to replay its planned break.
 
 Done when every sub-feature has a live result: passed, failed, or not run with a reason.
 

@@ -1,17 +1,7 @@
----
-name: vf-explain
-description: >-
-  Explain to a teammate who didn't build an app's verification harness what it
-  checks and how far to trust each pass: one real check walked through five
-  plain questions, a tally of where trust is weakest, and suggested follow-ups,
-  one level of detail at a time. Read-only; never runs the app. Use for "can I
-  trust these checks?", "why should I believe this Verified?", "what does
-  verify-shop actually check?", "how is checkout checked?", "show me what we
-  have". Use vf to audit the harness for checks that can't fail or
-  behaviors with no check, and vf-verify to run checks.
----
 
-# Explain the harness
+# Explain mode
+
+Follow this when vf runs in explain mode. The Guardrails in vf's `SKILL.md` apply throughout.
 
 You own an honest, short answer to "how far can I trust this?" for someone who didn't build the harness and didn't watch it run. You explain what the harness records. Answer only what was asked, and offer the next level instead of giving it.
 
@@ -19,7 +9,7 @@ You own an honest, short answer to "how far can I trust this?" for someone who d
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up. Say also that with no harness there is nothing to explain yet, and, with several, ask which with the session's structured question tool if it has one, else a `Needs you:` line.
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 6` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. An incomplete setup means no pass can be trusted yet, so say so. Keep its errors and warnings: a format error or "last pass is N commits behind HEAD" is a trust fact.
+Run `<harness>/scripts/framework/vf.py validate --written-for 7` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop. An incomplete setup means no pass can be trusted yet, so say so. Keep its errors and warnings: a format error or "last pass is N commits behind HEAD" is a trust fact.
 
 Done when one harness is chosen and its `vf.py validate` output is in hand, or you stopped with the reason.
 
@@ -75,7 +65,7 @@ How we know <behavior in plain words> works (<ID>):
 Doesn't show: <the caveats>.
 
 <Tally in two lines at most, weakest first: never seen failing, ran on older code, no check.>
-<Only when one exists: weak checks go to vf's audit mode, missing checks to vf-verify's add-checks mode.>
+<Only when one exists: weak checks go to vf's weak-checks audit, missing checks to its add-checks mode.>
 
 Ask about: <follow-up> · <follow-up> · <follow-up>
 ```
@@ -86,13 +76,9 @@ Ask about: <follow-up> · <follow-up> · <follow-up>
 
 Done when the reply follows the shape, answers only the asked scope, every claim traces to a field or a quoted line, and nothing follows the follow-ups.
 
-## Guardrails
+## Guardrails for this mode
 
-- Change product code only in a scratch git worktree for a planned break or fix, and remove the worktree afterward.
-- Drive only app instances this run started or the user named. Stop only processes this run started, by their recorded PIDs.
-- Ask before committing, pushing, posting, filing, or running anything with a real or shared side effect.
-- Never forge an event the real system would produce, and never loosen a check to turn a run green.
-- Read only. Don't start the app, run a check, or edit the harness; send a fix to the skill that owns it.
+- Read only. Don't start the app, run a check, or edit the harness; send a fix to the mode that owns it.
 - Never call a check trustworthy past what its fields and code show. "Not recorded" is an answer.
 
 Reply: the answer for the asked scope in the shape from step 5, ending on two or three follow-ups.

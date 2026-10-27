@@ -58,18 +58,16 @@ As a Claude Code plugin (no Node.js needed):
 
 The plugin prefixes each skill with `verification-framework:`, so the starting skill is `/verification-framework:vf`. In a repo with a harness, `/vf` runs the repo's committed copy and `/verification-framework:vf` the installed one, which is the one that updates it.
 
-Install all three skills. Setup commits a copy of each beside the harness and stops when one is missing.
+Setup commits a copy of the skill beside the harness, so teammates who clone the repo need no install.
 
 To check the install, run `/vf` and ask "what can this framework do?".
 
-To update, run `npx skills update`, or `claude plugin marketplace update verification-framework` followed by `claude plugin update verification-framework@verification-framework`. Then run vf in each repo with a harness and ask it to update the harness: it replaces the harness's copies of the rules, the scripts, and the three skills in one change, which you commit for your teammates. Every skill passes the Rules version it was written for to the harness's `vf.py validate`, so a personal install on another version than the repo's copies fails with the side to update.
+To update, run `npx skills update`, or `claude plugin marketplace update verification-framework` followed by `claude plugin update verification-framework@verification-framework`. Then run vf in each repo with a harness and ask it to update the harness: it replaces the harness's copies of the rules, the scripts, and the skill in one change, which you commit for your teammates. The skill passes the Rules version it was written for to the harness's `vf.py validate`, so a personal install on another version than the repo's copies fails with the side to update.
 
 The committed copies are vendored files. Mark them `linguist-vendored` in `.gitattributes` and exclude them from your linters, so language statistics and lint runs skip them; with the skills under `.agents/skills/`:
 
 ```gitattributes
 .agents/skills/vf/** linguist-vendored
-.agents/skills/vf-verify/** linguist-vendored
-.agents/skills/vf-explain/** linguist-vendored
 ```
 
 ## Try it
@@ -85,8 +83,8 @@ vf reads how your app starts, asks only what it couldn't find, and proves the ap
 Then build checks and tools, and verify a change:
 
 ```text
-/vf-verify Add checks for paying with a saved card.
-/vf-verify Add a way to look up an order.
+/vf Add checks for paying with a saved card.
+/vf Add a way to look up an order.
 Use verify-storefront to verify my saved-card change.
 ```
 
@@ -94,15 +92,20 @@ Each one previews what it will build and asks before touching anything shared.
 
 ## Skills
 
-Start with vf if you're not sure which you need.
+One skill, [vf](skills/vf/SKILL.md), with a mode for each job. Type `/vf` and say what you want; it picks the mode.
 
-| Skill | What it does | Who starts it |
+| Mode | What it does | Who starts it |
 | --- | --- | --- |
-| [vf](skills/vf/SKILL.md) | Sets up or updates a harness, audits it for gaps and weak checks, and tests a teammate's pull request | You, by name |
-| [vf-verify](skills/vf-verify/SKILL.md) | Verifies a change, and builds the checks and tools the harness lacks, each proven on the real app | You or your agent |
-| [vf-explain](skills/vf-explain/SKILL.md) | Tells a teammate what the harness checks and how far to trust each pass. Writes nothing in the repo | You or your agent |
+| setup | Sets up a harness, or updates one after a framework update | You, by name |
+| verify | Verifies a change on the real app, through the app's own `verify-<app>` skill | You or your agent |
+| add-checks | Builds the checks for a feature, each proven to fail on a planned break | You or your agent |
+| add-tools | Builds a probe or action on its own, proven on the real app | You or your agent |
+| explain | Tells a teammate what the harness checks and how far to trust each pass. Writes nothing | You or your agent |
+| audit-coverage | Finds what the harness doesn't check or checks against stale code | You, by name |
+| audit-weak-checks | Finds checks that would pass even if the behavior broke | You, by name |
+| verify-pr | Tests a teammate's pull request on the real app | You, by name |
 
-[Choose a skill](USAGE.md#choose-a-skill) has an example request for each job.
+[Choose a job](USAGE.md#choose-a-job) has an example request for each.
 
 ## Evaluating the skills
 

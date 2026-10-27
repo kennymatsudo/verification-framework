@@ -10,4 +10,4 @@ This folder proves changes to the kiosk work by driving the real page in a brows
 
 Keep a passing run's video by running a check with `VERIFY_KEEP_RECORDING=1`. A failed run keeps its video on its own.
 
-Files in `scripts/framework/` and `rules.md`, and the `vf`, `vf-verify`, and `vf-explain` folders beside this one, are copied from verification-framework and are never edited here; vf's update mode replaces them all. Nothing to install: your agent finds the skills in this repo.
+Files in `scripts/framework/` and `rules.md`, and the `vf` folder beside this one, are copied from verification-framework and are never edited here; vf's update mode replaces them all. Nothing to install: your agent finds the skill in this repo.

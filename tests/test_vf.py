@@ -164,7 +164,7 @@ class Sync(unittest.TestCase):
         self.assertIn(vf.INSTALL_COMMAND, result.stderr)
         self.assertFalse(other.exists())
 
-    def test_commits_the_three_skills_beside_the_harness_without_their_scripts(self):
+    def test_commits_the_skill_beside_the_harness_without_its_scripts(self):
         result = run_sync(self.harness)
         self.assertEqual(result.returncode, 0, result.stderr)
         installed = vf.SCRIPTS_DIR.parent.parent
@@ -173,17 +173,18 @@ class Sync(unittest.TestCase):
             self.assertEqual((copy / "SKILL.md").read_bytes(), (installed / name / "SKILL.md").read_bytes())
             self.assertFalse((copy / "scripts").exists(), f"{name}/scripts stays with the installed skill")
             self.assertEqual(list(copy.rglob("__pycache__")), [])
-        self.assertIn("created ../vf-verify/SKILL.md", result.stdout)
+        self.assertIn("created ../vf/SKILL.md", result.stdout)
+        self.assertFalse((self.harness.parent / "vf-verify").exists(), "the framework ships one skill")
         recorded = vf.read_lock(self.harness / validate.FRAMEWORK_LOCK)
         self.assertEqual(recorded["../vf/SKILL.md"], vf.file_hash((installed / "vf" / "SKILL.md").read_bytes()))
 
-    def test_copies_the_skills_into_every_skills_directory_at_the_project_root(self):
+    def test_copies_the_skill_into_every_skills_directory_at_the_project_root(self):
         other = self.tmp / ".claude" / "skills"
         other.mkdir(parents=True)
         result = run_sync(self.harness)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((other / "vf-explain" / "SKILL.md").is_file())
-        self.assertIn("created ../../../.claude/skills/vf-explain/SKILL.md", result.stdout)
+        self.assertTrue((other / "vf" / "SKILL.md").is_file())
+        self.assertIn("created ../../../.claude/skills/vf/SKILL.md", result.stdout)
         self.assertFalse((self.tmp / ".cursor").exists(), "a skills directory the team doesn't use is not created")
 
     def test_an_audit_script_an_earlier_framework_vendored_is_removed_and_not_recopied(self):
@@ -327,7 +328,8 @@ class HarnessCommands(unittest.TestCase):
         result = self.run_check(named=["e2e/pay.sh"])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertRegex(result.stdout, r"Accepted evidence/pay/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\.json")
-        self.assertIn("status.md not refreshed: ", result.stdout, "no feature map yet, and the run still counts")
+        self.assertNotIn("not refreshed", result.stdout, "no feature map yet is an empty map, so status.md is refreshed")
+        self.assertTrue((self.harness / "status.md").is_file())
         record = self.record()
         self.assertEqual(record["accepted_by"], "vf.py run")
         self.assertEqual((record["check"], record["sub_features"], record["reads"], record["passed"]), ("pay", ["app.pay"], "state", True))
@@ -692,12 +694,15 @@ class HarnessCommands(unittest.TestCase):
         self.assertNotIn("Untested", status)
         self.assertEqual((self.harness / "notes.md").read_text(), "# Verification notes\n\n## Untested cases\n\n- Two payments at once.\n")
 
-    def test_status_and_verify_stop_when_the_harness_has_no_feature_map(self):
-        for args in (("status",), ("verify", "app.pay")):
-            with self.subTest(command=args[0]):
-                result = self.framework(*args)
-                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-                self.assertIn("has no features folder", result.stdout + result.stderr)
+    def test_a_harness_with_no_features_folder_has_an_empty_map(self):
+        # Git keeps no empty folder, so a fresh clone of a harness with no feature yet has no features/ at all.
+        result = self.framework("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.harness / "status.md").read_text().startswith("# Verification status\n"))
+        self.assertNotIn("Not verified", (self.harness / "status.md").read_text())
+        result = self.framework("verify", "app.pay")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("app.pay", result.stdout + result.stderr)
 
     def test_status_writes_latest_results_and_prints_them(self):
         self.write_map()

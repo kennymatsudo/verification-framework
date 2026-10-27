@@ -1,6 +1,6 @@
 # Verification rules
 
-Rules version: 6
+Rules version: 7
 
 Copy this file into the harness as `rules.md`, unchanged; app specifics live in `harness.json`. `scripts/framework/vf.py validate` fails a copy that differs from the one vf last synced, whose hash this harness's `framework.sha256` records with every other framework file's. A section applies once the harness has that kind of piece. A piece that cannot follow a rule names the exception in its own help text and in the feature file that uses it.
 
@@ -22,7 +22,7 @@ Keep framework artifacts at fixed paths relative to this harness; nothing in the
 - `evidence/not-verified.jsonl`: the Not verified records `vf.py not-verified` writes.
 - `evidence/breaks.jsonl`: one line per planned break that caught a behavior, written by `vf.py break run`.
 
-Beside the harness, the same skills directory holds `vf/`, `vf-verify/`, and `vf-explain/`: copies of the framework skills without their `scripts/`, written by `vf.py sync` and recorded in `framework.sha256` with every other framework copy, so a clone of the repo needs no install. Each other skills directory at the project root holds the same copies. Their scripts run from the framework scripts in this harness.
+Beside the harness, the same skills directory holds `vf/`: a copy of the framework skill without its `scripts/`, written by `vf.py sync` and recorded in `framework.sha256` with every other framework copy, so a clone of the repo needs no install. Each other skills directory at the project root holds the same copy. Its scripts run from the framework scripts in this harness.
 
 The project root is the folder holding the skills directory this harness sits in: `app/` for `app/.agents/skills/verify-app/`. In a single-repo app it is the repository's top folder; in a monorepo it is the app's own folder. Commands run from it, and the manifest's paths resolve from it.
 
@@ -63,7 +63,7 @@ Rules the script enforces:
 - Each behavior's key is its ID: lowercase letters, digits, dots, dashes, and underscores, unique across the map. `words` says what a user would notice.
 - A behavior has a `check` (a command, run from the project root; a program named by a path must exist) with `reads` (`state`, or what the user sees), or an `unreachable` block with `blocker` and `tried`, or neither, which means no check yet.
 - A behavior with a check may name the `repos` its check runs (each a repo in the manifest; absent means every repo) and may carry `not_break_tested`, the reason no planned break has failed it yet. Nothing in the map says Break-tested: `vf.py status` computes that from the evidence.
-- `plan` is optional: the agreed proof in a sentence, which vf-verify settles before building. The rest is prose for the reader.
+- `plan` is optional: the agreed proof in a sentence, which the add-checks mode settles before building. The rest is prose for the reader.
 
 Keep a feature file about intended behavior and stable ways to prove it. A current failure, a version-specific pass, or a temporary harness limitation belongs in `status.md`. A journey that crosses several features gets its own file whose behaviors name the per-feature IDs in their words rather than repeating them.
 

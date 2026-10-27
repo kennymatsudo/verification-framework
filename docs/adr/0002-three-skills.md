@@ -1,6 +1,6 @@
 # ADR 0002: Three skills: one for people, one for agents, one that explains
 
-Status: Accepted. 2026-10-21.
+Status: Accepted. 2026-10-21. The three-skill split is reversed by [ADR 0014](0014-one-skill.md); the other decisions here stand.
 
 ## Problem
 

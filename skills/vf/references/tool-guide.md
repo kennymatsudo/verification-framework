@@ -1,6 +1,6 @@
 # Tool entries
 
-Record each available command as an entry under `tools` in `harness.json`, then run `scripts/framework/vf.py tools` to write `tools.md`, the guide people and agents read. Never edit `tools.md` by hand: `validate.py` fails one that differs from what `vf.py tools` writes. Include the doctor during setup; vf-verify adds every later tool. Do not list planned tools as available.
+Record each available command as an entry under `tools` in `harness.json`, then run `scripts/framework/vf.py tools` to write `tools.md`, the guide people and agents read. Never edit `tools.md` by hand: `validate.py` fails one that differs from what `vf.py tools` writes. Include the doctor during setup; the add-tools mode adds every later tool. Do not list planned tools as available.
 
 ```json
 "tools": {

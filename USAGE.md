@@ -51,7 +51,7 @@ Setup ends with a short message that the harness is ready and two suggested next
 Ask:
 
 ```text
-/vf-verify Add checks for paying with a saved card.
+/vf Add checks for paying with a saved card.
 ```
 
 Before building anything, the agent previews what it will prove:
@@ -99,43 +99,45 @@ Within the scope you agreed to, the agent can build a missing check in the same 
 
 A check that drives a screen records its run. A failed run keeps the video, and the report links its replay page. When this computer can make clips, a verify run keeps the video of a screen check that passed too, and the agent offers to cut a short clip of the changed behavior for your pull request. Otherwise, keep a passing run's video by running the check with `VERIFY_KEEP_RECORDING=1`. Every kept recording is listed on the harness's `recordings.html`, and the report's `Details:` line names it.
 
-## Choose a skill
+## Choose a job
 
-Not sure? Type `/vf` followed by what you want, in your own words. It looks at what the repo has, picks a plan, and runs the matching skills in order. When it must first do something you didn't ask for, such as setting up before it can verify, it shows the steps and waits for your yes.
+There is one skill, vf, with a mode for each job. Type `/vf` followed by what you want, in your own words; it picks the mode. When it must first do something you didn't ask for, such as setting up before it can verify, it shows the steps and waits for your yes.
 
-| What you want | Skill | Example request |
+| What you want | Mode | Example request |
 | --- | --- | --- |
-| Not sure which you need | vf | "Did my change work?", "what can this do?" |
-| Create a harness, resume a stopped setup, or update one after updating the framework | vf, setup mode | "Set up verification for this repo", "update the harness" |
-| Add checks for a behavior | vf-verify, add-checks mode | "Add checks for checkout", "what should we add next?" |
-| Add a probe (reads the app's data) or an action (does what a user would) on its own | vf-verify, add-tools mode | "Add this script as a tool", "add a way to look up an order" |
-| Verify a change or a feature | verify-\<app\>, made by setup | "Use verify-storefront to verify my change" |
-| Find what the harness doesn't check | vf, audit mode (coverage) | "Audit coverage", "what aren't we checking?" |
-| Find checks that would still pass if the behavior broke | vf, audit mode (weak checks) | "Audit weak checks", "are our tests fake?" |
-| Understand how far to trust a pass | vf-explain | "Can I trust these checks?", "how is checkout checked?" |
-| Test a teammate's pull request on the real app | vf, verify-pr mode | "Verify PR #123" |
+| Not sure which you need | vf picks | "Did my change work?", "what can this do?" |
+| Create a harness, resume a stopped setup, or update one after updating the framework | setup | "Set up verification for this repo", "update the harness" |
+| Add checks for a behavior | add-checks | "Add checks for checkout", "what should we add next?" |
+| Add a probe (reads the app's data) or an action (does what a user would) on its own | add-tools | "Add this script as a tool", "add a way to look up an order" |
+| Verify a change or a feature | verify, through verify-\<app\>, made by setup | "Use verify-storefront to verify my change" |
+| Find what the harness doesn't check | audit-coverage | "Audit coverage", "what aren't we checking?" |
+| Find checks that would still pass if the behavior broke | audit-weak-checks | "Audit weak checks", "are our tests fake?" |
+| Understand how far to trust a pass | explain | "Can I trust these checks?", "how is checkout checked?" |
+| Test a teammate's pull request on the real app | verify-pr | "Verify PR #123" |
 
 ```mermaid
 flowchart LR
-  subgraph vf[vf: you run it by name]
-    setup[setup<br/>proves the app can start]
-    audit[audit<br/>gaps and weak checks]
-    pr[verify-pr<br/>tests a teammate's PR]
-  end
-  subgraph vfv[vf-verify: you or your agent]
-    verify[verify<br/>runs the checks a change touches]
-    build[add-checks<br/>builds checks, proves they can fail]
-    tools[add-tools<br/>builds probes and actions]
-    verify -->|check missing| build
-    build -->|probe or action missing| tools
+  subgraph vf[vf: one skill, a mode per job]
+    subgraph person[you ask for these by name]
+      setup[setup<br/>proves the app can start]
+      audit[audit<br/>gaps and weak checks]
+      pr[verify-pr<br/>tests a teammate's PR]
+    end
+    subgraph agent[you or your agent]
+      verify[verify<br/>runs the checks a change touches]
+      build[add-checks<br/>builds checks, proves they can fail]
+      tools[add-tools<br/>builds probes and actions]
+      explain[explain<br/>how far can I trust it?]
+      verify -->|check missing| build
+      build -->|probe or action missing| tools
+    end
   end
   you[Your change] --> app[verify-&lt;app&gt;<br/>everyday entry point] --> verify
   harness[(Harness)]
-  setup & audit & pr & verify & build & tools --> harness
-  explain[vf-explain<br/>how far can I trust it?] --> harness
+  setup & audit & pr & verify & build & tools & explain --> harness
 ```
 
-vf runs only when you call it, so setup, audit, and PR verification never start on their own. Your agent may start vf-verify to verify its own change, and vf-explain because it only reads. After setup, use the app's own verify skill for everyday work.
+Setup, the audits, and PR verification run only when you ask for them by name, so they never start on their own. Your agent may start vf to verify its own change, add the checks that change needs, or explain a pass. After setup, use the app's own verify skill for everyday work.
 
 ## Set up a harness
 
@@ -177,9 +179,9 @@ Run vf again to resume. It rereads its notes, checks they're still true, and con
 
 ### Update a harness after updating the framework
 
-Each harness keeps its own copy of the shared rules and the framework scripts, and the skills directory holding it keeps a copy of vf, vf-verify, and vf-explain, so teammates who clone the repo have everything without installing the framework. After every framework update, run the installed vf in the repo and ask it to update the harness. It replaces each copy that differs, names the files it replaced, and runs `vf.py validate`; commit the result for your teammates. The repo's own copy of vf can't do this, and says so with the install command.
+Each harness keeps its own copy of the shared rules and the framework scripts, and the skills directory holding it keeps a copy of vf, so teammates who clone the repo have everything without installing the framework. After every framework update, run the installed vf in the repo and ask it to update the harness. It replaces each copy that differs, names the files it replaced, and runs `vf.py validate`; commit the result for your teammates. The repo's own copy of vf can't do this, and says so with the install command.
 
-If a copy was edited since the last update, it shows the edit and asks before replacing it. A fix you need in a framework script belongs in the framework, not the harness. If the harness's rules are newer than the installed skills, it asks you to update the skills instead. A skill on another Rules version than the harness fails `vf.py validate` and names the side to update.
+If a copy was edited since the last update, it shows the edit and asks before replacing it. A fix you need in a framework script belongs in the framework, not the harness. If the harness's rules are newer than the installed skills, it asks you to update the skills instead. A vf on another Rules version than the harness fails `vf.py validate` and names the side to update.
 
 ### Harness files
 
@@ -198,13 +200,13 @@ Everything on the bench lives in one folder:
 | `scripts/framework/` | The framework scripts, copied unchanged |
 | `evidence/` | One folder per check holding the record of each run |
 | `rules.md` | The shared rules every harness follows, copied unchanged |
-| `SKILL.md` | The app's verify skill, which points vf-verify at this harness |
+| `SKILL.md` | The app's verify skill, which points vf at this harness |
 
 Don't edit `rules.md` or anything in `scripts/framework/`. They're identical in every harness, so an update can replace them in one step. Your team decides whether to keep records in Git. [Harness layout](docs/internals.md#harness-layout) shows every file.
 
 ## Add checks for a feature
 
-vf-verify's add-checks mode builds the checks that test a behavior and calibrates each one. Name what you want, such as "add checks for checkout". The agent previews first: the behaviors in plain words, how it will use the app, what it will read back, what it won't prove, and the requirements that set the expected behavior. The agreed plan is saved in the feature's file, with each source named so it can be reopened and the revision it was read at. Before a later run on that plan, the agent reopens the sources and asks you when one has changed; a source it has no tool to open is reported as unread.
+The add-checks mode builds the checks that test a behavior and calibrates each one. Name what you want, such as "add checks for checkout". The agent previews first: the behaviors in plain words, how it will use the app, what it will read back, what it won't prove, and the requirements that set the expected behavior. The agreed plan is saved in the feature's file, with each source named so it can be reopened and the revision it was read at. Before a later run on that plan, the agent reopens the sources and asks you when one has changed; a source it has no tool to open is reported as unread.
 
 Ask "what should we add next?" for three to five suggestions, with one recommended. It builds nothing until you pick.
 
@@ -239,7 +241,7 @@ A check for behavior your team wants but hasn't built yet stays in the harness a
 
 ## Add a tool on its own
 
-vf-verify's add-tools mode adds an instrument, a probe or an action, before any check needs it. Give it a script, a request you found (such as an undocumented API call), or a way to find one (such as watching the browser's network requests). It keeps the request, rewrites the rest to the harness's rules, and proves it on the real app. A separate agent reviews each tool before it runs.
+The add-tools mode adds an instrument, a probe or an action, before any check needs it. Give it a script, a request you found (such as an undocumented API call), or a way to find one (such as watching the browser's network requests). It keeps the request, rewrites the rest to the harness's rules, and proves it on the real app. A separate agent reviews each tool before it runs.
 
 A tool reads passwords and tokens from your project's settings, never from a captured request. When the project has no setting for one, set it yourself as an environment variable. The tool guide names the variable, and `vf.py validate` rejects a tool with a secret written into it.
 
@@ -266,7 +268,7 @@ The report puts what went wrong before what passed. A Failed behavior that was r
 
 ## Ask how far to trust a pass
 
-vf-explain is for someone who didn't build the bench and didn't watch it run. It reads the harness and runs nothing. For every check it answers the five questions an engineer asks of an instrument:
+The explain mode is for someone who didn't build the bench and didn't watch it run. It reads the harness and runs nothing. For every check it answers the five questions an engineer asks of an instrument:
 
 1. Does it do what a user does?
 2. Does it look at the result itself, rather than asking the app?
@@ -301,7 +303,7 @@ vf's verify-pr mode tests a pull request on the real app, or several across repo
 
 You approve the list.
 
-It checks out each PR in a git worktree of its own, so your checkouts stay as they are, builds the approved checks on a branch named `vf-verify-pr/<number>-checks`, and runs them with every PR's code loaded together. It drafts a comment and posts it only when you say so. When a check showed the changed behavior on screen, the draft comes with a short demo video, reviewed for anything that shouldn't be public.
+It checks out each PR in a git worktree of its own, so your checkouts stay as they are, builds the approved checks on a branch named `vf-pr/<number>-checks`, and runs them with every PR's code loaded together. It drafts a comment and posts it only when you say so. When a check showed the changed behavior on screen, the draft comes with a short demo video, reviewed for anything that shouldn't be public.
 
 At the end it offers to open a pull request for the new checks, so they merge with the code they test.
 
@@ -360,9 +362,9 @@ A probe's answer describes the app's current data. It isn't a Verified result on
 ## Glossary
 
 - **Skill**: a set of written instructions an AI agent loads to do one kind of job.
-- **Mode**: one job inside a skill. vf's modes are setup, audit, and verify-pr; vf-verify's are verify, add-checks, and add-tools.
+- **Mode**: one job inside the skill. vf's modes are setup, verify, add-checks, add-tools, explain, audit-coverage, audit-weak-checks, and verify-pr.
 - **Verification harness**: the app's test bench, a `verify-<app>/` folder in your repository holding the app's manifest, feature map, checks, results, tools, and records.
-- **App verify skill**: the skill setup creates for one app, such as `verify-storefront`. The everyday way to verify a change; it points vf-verify at the harness.
+- **App verify skill**: the skill setup creates for one app, such as `verify-storefront`. The everyday way to verify a change; it points vf at the harness.
 - **Repository**: one Git project folder. An app may run code from several.
 - **Commit**: one saved snapshot of the code in Git, named by a short code such as `a1b2c3d`.
 - **Manifest**: the harness's `harness.json`, with everything specific to one app: repositories, where requirements live, the commands that start, stop, check, and inspect it, and an entry for each instrument.

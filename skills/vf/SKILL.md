@@ -1,63 +1,52 @@
 ---
 name: vf
 description: >-
-  Start here for anything a person runs by name about proving an app works: set
-  up or update a verification harness, audit it, verify a teammate's pull
-  request, or ask what the framework can do. Use for "set up verification for
-  this app", "update the harness", "audit coverage", "are our checks fake?",
-  "verify PR #123", "did my change work?". Use
-  vf-verify to verify or build checks for your own change, and vf-explain to ask
-  how far to trust a pass.
+  Prove an app works on the real thing through its verification harness: verify
+  a change, build the checks and the probes and actions the harness lacks, each
+  proven on the real app, and explain how far to trust a pass. Use when a
+  verify-<app> skill delegates here, or for "verify this change", "check
+  checkout on this branch", "add checks for checkout", "what should we add
+  next?", "add this script as a tool", "can I trust these checks?", "how is
+  checkout checked?". Setting up or updating a harness, auditing it, and
+  verifying a teammate's pull request are jobs a person starts by name, such as
+  "/vf set up verification for this app"; with no harness, offer setup and
+  build nothing.
 ---
 
 # Verification framework
 
-You own getting the person from a plain request to the right job, run in the right order. Four jobs are modes of this skill, run from its `references/`; two are skills of their own, vf-verify and vf-explain, which an agent may also start unasked.
+You own getting a request to the right job, run by its own procedure. Every job is a mode of this skill, with its procedure in `references/mode-<name>.md`. Four modes start only when the person asks for that job by name in this session: setup, audit-coverage, audit-weak-checks, and verify-pr. The other four, verify, add-checks, add-tools, and explain, an agent may start for its own change or question.
 
-## 1. Look at the repo
+## 1. Pick the mode
 
-Run `python3 <this skill's directory>/scripts/locate.py`; a copy of this skill committed beside a harness has no `scripts/`, so it runs `../verify-*/scripts/framework/locate.py` instead. Its `--help` describes the output. For each harness it lists, run `<harness>/scripts/framework/vf.py validate` and note whether it stops on incomplete setup. With several harnesses and a request that doesn't name the app, ask which. A harness whose `vf.py` is missing or doesn't know `validate` predates the installed framework; plan the update mode first.
+Match the request to one mode:
 
-Done when you know whether vf-verify and vf-explain are installed or committed beside the harness, and whether the repo has no harness, a harness whose setup stopped, or a ready one.
+| Mode | When | Who starts it | File |
+| --- | --- | --- | --- |
+| setup | "Set up verification", "resume setup", "update the harness", "I updated the framework" | The person | `references/mode-setup.md` |
+| verify | "Did my change work?", "verify checkout", a `verify-<app>` handoff | Anyone | `references/mode-verify.md` |
+| add-checks | "Add checks for search", "what should we check next?" | Anyone | `references/mode-add-checks.md` |
+| add-tools | "Add this script as a tool", "let agents look up an order" | Anyone | `references/mode-add-tools.md` |
+| explain | "Can I trust these checks?", "how is checkout checked?", "what does verify-shop check?" | Anyone | `references/mode-explain.md` |
+| audit-coverage | "What aren't we checking?", "audit coverage", "audit the harness" | The person | `references/mode-audit-coverage.md` |
+| audit-weak-checks | "Are our checks fake?", "audit weak checks" | The person | `references/mode-audit-weak-checks.md` |
+| verify-pr | A teammate's pull request | The person | `references/mode-verify-pr.md` |
 
-## 2. Pick a playbook
+Verify delegates missing proof to add-checks within the agreed scope, and add-checks loads add-tools for each probe or action a check needs; an existing-checks-only request keeps verify from building. "Audit the harness" with nothing more is coverage first, since weak checks hold checks to a map coverage keeps current; ask before running both. The weak-checks audit and verify-pr also work on a harness this framework didn't build, such as a repo's own folder of smoke checks, so neither waits for setup; every other mode needs a harness vf built, and with none, or one whose setup stopped, setup comes first and the original request becomes the offered next step. With no match, two equally good matches, or a question about the framework itself, list the modes one line each and ask which, recommending the one the repo's state points to.
 
-Match the request to one playbook:
+Done when one mode is chosen, or the person has been asked.
 
-| Playbook | When | Steps |
-| --- | --- | --- |
-| Set up | "Set up verification", "resume setup" | Setup mode, `references/mode-setup.md`, then offer vf-verify in add-checks mode for one feature the person names |
-| Update | "Update the harness", "I updated the framework" | Setup mode, asked only to update, then offer it again to prove readiness |
-| Verify a change | "Did my change work?", "verify checkout" | The app's verify skill, `<harness>/SKILL.md`, which hands off to vf-verify |
-| Add checks | "Add checks for search", "what should we check next?" | vf-verify in add-checks mode |
-| Add tools | "Add this script as a tool", "let agents look up an order" | vf-verify in add-tools mode |
-| Verify a PR | A teammate's pull request | Verify-pr mode, `references/mode-verify-pr.md` |
-| Trust | "Can I trust these checks?", "how is checkout checked?" | vf-explain, then offer the audit mode for weak checks if it names checks never seen failing |
-| Audit | "What aren't we checking?", "are our checks fake?", "audit the harness" | Audit mode: `references/mode-audit-coverage.md` for what has no check or checks stale code, `references/mode-audit-weak-checks.md` for checks that would pass anyway. "What aren't we checking?" is coverage, "are our checks fake?" is weak checks; for both, recommend coverage first, since weak checks hold checks to a map coverage keeps current, and ask before running both |
+## 2. Say what will run
 
-With no harness, or a harness whose setup stopped, the playbook is Set up whatever the request said, and the original request becomes the offered next step. With no match, two equally good matches, or a question about the framework itself, list the playbooks one line each and ask which, recommending the one the repo's state points to.
-
-Done when one playbook is chosen, or the person has been asked.
-
-## 3. Check its skills are installed
-
-A playbook that names vf-verify or vf-explain needs its path from step 1. For a missing one, stop and give its install line: `npx skills add kennymatsudo/verification-framework -s <name>`, with `-g` when this skill sits under the home directory. When this skill is a copy committed beside a harness, the missing skill's copy was deleted: say the harness owner restores it by running vf's update mode from an installed framework.
-
-Done when every skill the playbook needs has a path, or you stopped with the install lines.
-
-## 4. Say what will run
-
-When the playbook does what the person asked, say it in one line, such as `Running vf-explain: you asked how far to trust the checkout checks.`, and continue. When it does something else first, such as setup before the verification they asked for, show the steps and end with `Needs you:` as `references/messages.md` describes, then wait.
+When the mode does what the person asked, say it in one line, such as `Running explain: you asked how far to trust the checkout checks.`, and continue. When the job needs a mode only the person starts and they did not ask for it by name, such as setup in a repo with no harness before the verification they asked for, show the steps and end with `Needs you:` as `references/messages.md` describes, then wait: build nothing and start nothing until they say yes.
 
 Done when the person knows what runs and has approved anything beyond their request.
 
-## 5. Run each step
+## 3. Run the mode
 
-For a mode of this skill, read its `references/mode-<name>.md` in full and follow it as if the person had asked for that job; paths inside it are relative to this skill's folder. For vf-verify or vf-explain, load the skill by name with the person's request and the mode it should run in. Pass on what step 1 found, such as the harness path and `vf.py validate`'s output, so no step redoes it or asks again.
+Read the mode's file in full and follow every step; paths inside it are relative to this skill's folder. Read only the chosen mode's file and the references it names; a mode that hands off to another reads that one when it gets there. When a mode finishes, offer the natural next step in one line, such as add-checks for a feature the person names after setup, or the weak-checks audit after explain names checks never seen failing, and run it only on a yes.
 
-When a step finishes, offer the playbook's next step in one line, and run it only on a yes.
-
-Done when the step's own procedure is done or it stopped on a named blocker, and any next step has been offered.
+Done when the mode's procedure reached its last step or stopped with the reason it gives, and any next step has been offered.
 
 ## Guardrails
 
@@ -68,4 +57,4 @@ Done when the step's own procedure is done or it stopped on a named blocker, and
 - Run a mode only from its file, read in full during this run, never from memory of what it says.
 - Outside a mode's steps, build no checks, start no app, and edit no harness file.
 
-Reply: the mode's or the loaded skill's own reply, then at most one line offering the playbook's next step.
+Reply: the mode's own reply, then at most one line offering the next step.

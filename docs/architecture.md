@@ -18,10 +18,10 @@ flowchart LR
   end
   contract -->|copied by setup| harness
   skills -->|read and write| harness
-  entry -->|delegates to vf-verify| skills
+  entry -->|delegates to vf| skills
 ```
 
-This repo holds three skills in `skills/<name>/`: **vf** for the jobs a person starts by name, **vf-verify** for the jobs an agent may start for its own change, and **vf-explain**, which only reads ([ADR 0002](adr/0002-three-skills.md)). Each job is a mode with its procedure in the skill's `references/`. The shared contract lives in vf's `references/` and `scripts/`, because vf's setup mode is what copies it into a harness. Setup also commits a copy of each skill, without `scripts/`, beside the harness, so a clone of the app's repo is the install ([ADR 0007](adr/0007-the-framework-ships-inside-the-app-repo.md)).
+This repo holds one skill, `skills/vf/`, with a mode for each job ([ADR 0014](adr/0014-one-skill.md)). Setup, the two audits, and verify-pr run only when the person asks for them by name; verify, add-checks, add-tools, and explain an agent may start for its own change or question. Each mode's procedure is one file in `references/`. The shared contract lives in the same `references/` and `scripts/`, because the setup mode is what copies it into a harness. Setup also commits a copy of the skill, without `scripts/`, beside the harness, so a clone of the app's repo is the install ([ADR 0007](adr/0007-the-framework-ships-inside-the-app-repo.md)).
 
 A harness is a `verify-<app>/` folder in one of the app's skills directories. The folder holding that skills directory is the **project root**: the repo's top folder for a single-repo app, or the app's own folder in a monorepo. Commands run from it and the manifest's paths resolve from it ([ADR 0001](adr/0001-one-harness-per-app.md)). One harness can cover an app that spans several repos.
 
@@ -32,9 +32,9 @@ Each fact has one home. Put a change in the layer that owns it.
 | Layer | Owns | Lives in | Who changes it |
 | --- | --- | --- | --- |
 | Rules | What a pass means, the evidence and feature map formats, report words, harness layout | `rules.md`, copied unchanged into every harness | This repo only |
-| Message shape | How every skill asks, previews, and reports | `references/messages.md`, identical in vf and vf-verify | This repo only |
+| Message shape | How every mode asks, previews, and reports | `references/messages.md` | This repo only |
 | Manifest | How this app starts, is driven, and is read, and which tools it has | Harness `harness.json`, from the template | Setup, then the skills that add tools |
-| Procedure | The steps for each job | The skills in this repo | This repo only |
+| Procedure | The steps for each job | The mode files in this repo | This repo only |
 | Entry point | Which app and which harness | Generated `verify-<app>/SKILL.md` | Setup |
 | Harness artifacts | Feature map, results, tool guide, tools, checks, evidence | Fixed folders inside the harness | The skills, at run time |
 
@@ -44,7 +44,7 @@ Every harness gets an identical `rules.md`, so anyone can check it for edits, up
 
 Two terms used throughout: the **doctor** is the harness's readiness check, a command that confirms the app is up and running the requested code. A **planned break** is a deliberate bug, made in a scratch copy of the code, that a new check must catch before its passes count.
 
-Setup copies nine Python scripts unchanged into each harness's `scripts/framework/`: the ones a run, a verdict, a launch, or a replay needs, plus `locate.py` and `trust_facts.py`. `vf.py` is the one command people and skills call for runs and records; the scripts below sit behind it, and the skills run `locate.py` and `trust_facts.py` by path. The three audit scripts stay in the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)).
+Setup copies eight Python scripts unchanged into each harness's `scripts/framework/`: the ones a run, a verdict, a launch, or a replay needs, plus `trust_facts.py`. `vf.py` is the one command people and the skill call for runs and records; the scripts below sit behind it, and the explain mode runs `trust_facts.py` by path. The three audit scripts stay in the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)).
 
 | Script | Job |
 | --- | --- |
@@ -60,43 +60,44 @@ Setup copies nine Python scripts unchanged into each harness's `scripts/framewor
 
 ```mermaid
 flowchart LR
-  subgraph vf[vf: run by a person]
+  subgraph person[modes a person starts by name]
     setup[setup] -->|creates, proves readiness| H[(Harness)]
-    audit[audit] -->|gaps and weak checks| H
+    audit[audit-coverage, audit-weak-checks] -->|gaps and weak checks| H
     pr[verify-pr] --> H
   end
-  subgraph vfv[vf-verify: run by an agent too]
+  subgraph agent[modes an agent may start too]
     app[verify-&lt;app&gt;] --> verify[verify]
     verify -->|missing proof, within scope| build[add-checks]
     build -->|missing probe or action| tools[add-tools]
+    explain[explain]
   end
   verify -->|runs checks, records results| H
   build -->|adds proven checks| H
   tools -->|adds proven probes and actions| H
   pr -->|PR claims| build
-  explain[vf-explain] -->|how far can I trust it?| H
+  explain -->|how far can I trust it?| H
 ```
 
-| Skill and mode | Owns | Writes |
+| Mode | Owns | Writes |
 | --- | --- | --- |
-| vf, setup | A harness whose startup and doctor are proven on the real app. Ends with zero feature coverage | Skeleton, manifest, doctor |
-| vf, audit and verify-pr | Finding where an existing harness has drifted from the app, and testing a teammate's pull request | Harness fixes, findings, drafts |
-| vf-verify, verify | Running proof for a change or named feature on the requested version | `evidence/`, and `status.md` through `vf.py` |
-| vf-verify, add-checks | Feature checks, each agreed with the user and proven to fail on a planned break | Feature files, `scripts/`, tool entries |
-| vf-verify, add-tools | Probes and actions, each proven on the real app | `scripts/`, tool entries |
-| vf-explain | Telling someone what the harness checks and how far to trust it | Nothing in the repo |
+| setup | A harness whose startup and doctor are proven on the real app. Ends with zero feature coverage | Skeleton, manifest, doctor |
+| audit-coverage, audit-weak-checks, and verify-pr | Finding where an existing harness has drifted from the app, and testing a teammate's pull request | Harness fixes, findings, drafts |
+| verify | Running proof for a change or named feature on the requested version | `evidence/`, and `status.md` through `vf.py` |
+| add-checks | Feature checks, each agreed with the user and proven to fail on a planned break | Feature files, `scripts/`, tool entries |
+| add-tools | Probes and actions, each proven on the real app | `scripts/`, tool entries |
+| explain | Telling someone what the harness checks and how far to trust it | Nothing in the repo |
 
-Three hand-offs carry most of the design ([ADR 0002](adr/0002-three-skills.md)):
+Three hand-offs carry most of the design ([ADR 0002](adr/0002-three-skills.md), whose three-skill split [ADR 0014](adr/0014-one-skill.md) reversed):
 
 1. **Setup stops at readiness.** Proving the environment and building feature proof are separate jobs.
-2. **The app entry point stays thin.** It names the harness and delegates. The procedure lives once, in vf-verify's verify mode, so a fix reaches every app.
+2. **The app entry point stays thin.** It names the harness and delegates. The procedure lives once, in the verify mode, so a fix reaches every app.
 3. **Verification delegates missing proof.** The verify mode hands coverage it lacks to the add-checks mode, inside the agreed scope. A request for existing checks only turns missing coverage into reported gaps.
 
-vf's audit mode for weak checks and its verify-pr mode also work on a harness this framework didn't create, so they carry the few rules they need instead of relying on `rules.md`. Where the weak-checks rubric states a rule `rules.md` already has, it repeats the sentence word for word, and `tests/test_rubric.py` keeps the copies identical.
+The weak-checks audit and verify-pr also work on a harness this framework didn't create, so they carry the few rules they need instead of relying on `rules.md`. Where the weak-checks rubric states a rule `rules.md` already has, it repeats the sentence word for word, and `tests/test_rubric.py` keeps the copies identical.
 
 ## A verification run
 
-1. The user asks `verify-<app>` to verify a change. It loads vf-verify in verify mode with its own directory as the harness.
+1. The user asks `verify-<app>` to verify a change. It loads vf in verify mode with its own directory as the harness.
 2. The verify mode runs `vf.py validate`. Incomplete setup stops here with the saved blocker.
 3. It previews the behaviors, actions, observations, and exclusions, and asks only about expected behavior it had to infer.
 4. Missing proof goes to the add-checks mode: agree on a plan, build the check, have a separate reviewer compare check to plan, and prove the check fails on a planned break in a scratch worktree.
@@ -111,7 +112,7 @@ vf's audit mode for weak checks and its verify-pr mode also work on a harness th
 - Skills and `validate.py` support only the current harness format. An older harness fails `validate.py` ([ADR 0001](adr/0001-one-harness-per-app.md)).
 - Every skill passes the Rules version it was written for to `vf.py validate --written-for`, which fails on a mismatch and names the side to update, so a personal install can't run another procedure against the repo's harness unnoticed ([ADR 0007](adr/0007-the-framework-ships-inside-the-app-repo.md)).
 - The framework adapts to a project by finding what it already has (start scripts, clients, requirement docs), not by adding options. Generated tools use the project's own language.
-- The main agent synthesizes and decides. Subagents on a mid-tier model gather evidence: discovery during setup, the plan reviewer, per-feature readers in the audit, check readers in vf-explain.
+- The main agent synthesizes and decides. Subagents on a mid-tier model gather evidence: discovery during setup, the plan reviewer, per-feature readers in the audit, check readers in the explain mode.
 - Product code changes only in scratch worktrees. Skills drive and stop only app instances they started or the user named. Anything with a real or shared side effect needs the user's OK, and a harness action refuses to touch anything shared without `--user-approved`.
 
 ## Where a change goes
@@ -121,9 +122,9 @@ vf's audit mode for weak checks and its verify-pr mode also work on a harness th
 | What a pass means, the evidence format, or the report words | `rules.md`, the manifest template, `validate.py`, USAGE.md, and internals.md, together |
 | The message shape | Both copies of `references/messages.md`, kept identical, and USAGE.md |
 | Something only some apps need | A field in the manifest template, not a rule |
-| How one job is done | That skill's `SKILL.md` and its `references/`, then the eval smoke tier (`evals/README.md`) |
+| How one job is done | That mode's file under `references/`, then the eval smoke tier (`evals/README.md`) |
 | Who does which job | The modes involved, USAGE.md, the README index, and an ADR |
-| Which skills or modes exist, or their names | The skill folders and `references/mode-*.md`, the README index, USAGE.md, vf's playbooks (the ordered lists of modes it runs for a request), and `locate.py` |
+| Which modes exist, or their names | `references/mode-*.md`, the mode table in `SKILL.md`, the README index, USAGE.md, and `tests/test_preamble.py` |
 | A large or hard-to-reverse decision | A new ADR in `docs/adr/`, linked from design.md |
 
 A change to a script's formats or output also updates [internals.md](internals.md). [AGENTS.md](../AGENTS.md) has the repo rules and skill conventions.
