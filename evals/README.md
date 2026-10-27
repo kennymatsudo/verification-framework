@@ -227,6 +227,10 @@ The guard case for the merge missed, and not in the way the ADR feared: no perso
 
 What it says: with one agent-invocable skill, no run across the ten started setup, an audit, or PR verification unasked, and the two modes that work on a foreign harness no longer route through setup. What it also says: the description is the one thing the merge put at risk, and this suite checks it with one case; a description change needs that case rerun more than once.
 
+### After the seventh run: the `repos` review line
+
+An independent review of the whole redesign found that a behavior's `repos` list was written by the same agent that wrote the check and read by no reviewer. The blind reviewer in `verification-plan.md` now checks it, the add-checks mode says when to name it, and `split-stack` gained `items.require-name`, whose check drives the API alone with `repos: ["api"]`, so tier 0 exercises the field. Two sentences changed in two mode files, so only the two smoke cases that read them were rerun rather than the whole tier (2026-10-27, Opus 5.5, $3.31): add-checks-ledger 1.00 ($2.74, all six hidden breaks caught), verify-ledger-change 1.00 ($0.57).
+
 ## Adding a practice repo or a case
 
 A practice repo needs: `repo/` with a README that says how to run it and a `REQUIREMENTS.md` with IDs, one item left open and, where it fits, one the code contradicts; `practice.json` (copy `ledger`'s); `hidden/answers.json` in the developer's voice, never revealing a break; `hidden/breaks/*.patch` made with `git diff` against `repo/`, one behavior each, each a bug a response could hide; `hidden/harness/` as a ready reference harness at zero coverage and `hidden/coverage/` with its checks, both following `rules.md`, so the fixture test proves the breaks are real and the harness is a worked example; and `tests/test_practice_<name>.py` (copy one). Keep it under 200 lines of app code and starting in a second.
