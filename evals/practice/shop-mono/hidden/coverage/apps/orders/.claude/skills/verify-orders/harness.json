@@ -1,0 +1,56 @@
+{
+  "app": "Orders",
+  "setup": {
+    "status": "ready",
+    "target": "the orders service under apps/orders in the shop monorepo, started locally with `python3 -m orders` on port 8073, and its hand-off to the mailer through the shared outbox; the mailer sends real mail and is not run by the harness.",
+    "findings": "apps/orders/README.md:9 gives the start command and port; orders/server.py:73 reads `ORDERS_PORT`, `ORDERS_DB`, and `SHOP_OUTBOX`; README.md:12 at the repo root says the mail-sink folder forwards to the team's shared inbox; REQUIREMENTS.md holds SR-1 to SR-3.",
+    "looked_in": "README.md, apps/orders/README.md, apps/orders/REQUIREMENTS.md, apps/orders/orders/, apps/mailer/README.md, apps/mailer/worker.js.",
+    "blocker": null,
+    "next": null,
+    "doctor_proof": "saved output in evidence/doctor/setup.txt: ready after Start (exit 0), not ready after Stop (exit 1), on the commit recorded there."
+  },
+  "requirements": "REQUIREMENTS.md",
+  "repos": {
+    "orders": "."
+  },
+  "commands": {
+    "start": "python3 .claude/skills/verify-orders/scripts/framework/vf.py start --checkout orders={checkout:orders} --until \"curl -sf http://127.0.0.1:8073/health\" -- env PYTHONPATH={checkout:orders} python3 {checkout:orders}/orders/server.py",
+    "stop": "python3 .claude/skills/verify-orders/scripts/framework/vf.py stop",
+    "doctor": "python3 .claude/skills/verify-orders/scripts/framework/vf.py doctor --probe \"curl -sf http://127.0.0.1:8073/health\"",
+    "ready_line": "ready",
+    "probe": "python3 .claude/skills/verify-orders/scripts/probe.py",
+    "reloads": false
+  },
+  "tools": {
+    "doctor": {
+      "command": "python3 .claude/skills/verify-orders/scripts/framework/vf.py doctor --probe \"curl -sf http://127.0.0.1:8073/health\"",
+      "use_when": "before driving the API by hand or running a check, or when a check stopped with \"not ready\".",
+      "inputs": "none.",
+      "environment": "an instance started with the Start command in `harness.json`; the project root is `apps/orders`.",
+      "permissions": "read-only.",
+      "result": "prints `ready` and the loaded code's commit as JSON, exit 0.",
+      "failure": "exit 1 with one reason per line; exit 2 when it could not tell. Start the service with the Start command, or restart it after editing code.",
+      "limits": "says the process is up on the recorded code; says nothing about the data in it or about the mailer."
+    },
+    "probe": {
+      "command": "python3 .claude/skills/verify-orders/scripts/probe.py order 1",
+      "use_when": "checking an order after placing it, or seeing which confirmation jobs are pending.",
+      "inputs": "the order ID; `outbox` lists every job in the shared outbox with its status.",
+      "environment": "the database at `data/orders.db` under apps/orders (or `ORDERS_DB`) and the outbox at `../../queue/outbox.jsonl` (or `SHOP_OUTBOX`); the service need not be running.",
+      "permissions": "read-only; opens the database read-only and imports no app code.",
+      "result": "one JSON object: the order row with its lines and total, or `{\"jobs\": [...]}`.",
+      "failure": "exit 1 with `{\"not_found\": ..., \"hint\": ...}` when the order has no row; exit 2 with `STOPPED: <reason>` when the database or outbox is unreadable.",
+      "limits": "reports stored state only; a pending job says nothing about whether mail was sent."
+    },
+    "verify": {
+      "command": "python3 .claude/skills/verify-orders/scripts/framework/vf.py verify orders.create",
+      "use_when": "proving a behavior after a change, or reproducing a failed step by hand.",
+      "inputs": "one or more sub-feature IDs from `features/`.",
+      "environment": "the service started with the Start command.",
+      "permissions": "places orders in the local database and jobs in the shared outbox file; runs no mailer, sends no mail.",
+      "result": "one status line per ID and an evidence file under `evidence/<check>/`; `status.md` is refreshed.",
+      "failure": "exit 1 when a step failed; exit 2 when the service was not ready.",
+      "limits": "a pass proves only the behaviors the feature file maps to that command, on the recorded code."
+    }
+  }
+}

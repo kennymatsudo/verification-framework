@@ -1,6 +1,6 @@
 # Template for `verify-<app>/README.md`
 
-Fill the app name, surface, and commands from discovery and `settings.md`. This is the page a person sees when they open the harness folder, including on GitHub, so write it for a teammate who has never heard of the framework. Keep it to what they act on; the files it links hold the details.
+Fill the app name, surface, and commands from discovery and `harness.json`. This is the page a person sees when they open the harness folder, including on GitHub, so write it for a teammate who has never heard of the framework. Keep it to what they act on; the files it links hold the details.
 
 ---
 
@@ -12,7 +12,7 @@ This folder proves changes to <app> work by driving the running <surface> and re
 - **Verify a change:** ask your agent to "verify my change to <app>".
 - **See what passed and failed:** [status.md](status.md). Known limits and untested cases are in [notes.md](notes.md).
 - **See how each check last ran, and watch recordings:** open [recordings.html](recordings.html) in a browser.
-- **See what's covered:** [the feature map](features/README.md).
+- **See what's covered:** the feature files in `features/`, one per feature; [status.md](status.md) lists every behavior.
 - **Debug by hand:** [tools.md](tools.md) lists every command. Check the app is up with `<doctor command>`.
 
 Keep a passing run's video by running a check with `VERIFY_KEEP_RECORDING=1`. A failed run keeps its video on its own.

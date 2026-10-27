@@ -1,0 +1,47 @@
+{
+  "app": "Stock",
+  "setup": {
+    "status": "ready",
+    "target": "the stock command-line client in this repo and the Stock API from the api repo beside it, run locally on port 8075.",
+    "findings": "README.md:5 names `stack.env` and its two keys; stock/cli.py:11 reads them; ../api/README.md:7 gives the build and run commands and the `-X main.version` stamp; ../api/main.go:13 reads `version`; REQUIREMENTS.md holds ST-1 to ST-3; an agent with both checkouts and Go can start everything.",
+    "looked_in": "README.md, REQUIREMENTS.md, stack.env.example, stock/, ../api/README.md, ../api/main.go, ../api/go.mod.",
+    "blocker": null,
+    "next": null,
+    "doctor_proof": "saved output in evidence/doctor/setup.txt: ready after Start (exit 0, `/version` equal to the api checkout's stamp), not ready after Stop (exit 1), on the commits recorded there."
+  },
+  "requirements": "REQUIREMENTS.md",
+  "repos": {
+    "web": ".",
+    "api": "env:stack.env:API_CHECKOUT"
+  },
+  "commands": {
+    "start": "python3 .claude/skills/verify-stock/scripts/api_server.py start --restart --checkout api={checkout:api}",
+    "stop": "python3 .claude/skills/verify-stock/scripts/framework/vf.py stop",
+    "doctor": "python3 .claude/skills/verify-stock/scripts/api_server.py doctor",
+    "ready_line": "stock ready",
+    "probe": "python3 .claude/skills/verify-stock/scripts/probe.py",
+    "reloads": false
+  },
+  "tools": {
+    "doctor": {
+      "command": "python3 .claude/skills/verify-stock/scripts/api_server.py doctor",
+      "use_when": "before running the client by hand or running a check, or when a check stopped with \"not ready\".",
+      "inputs": "none; `start` builds the API from the api checkout and starts it, `start --restart` restarts it, and `--checkout api=PATH` builds from another checkout (break sessions use it).",
+      "environment": "Go; the api checkout `stack.env` names; an instance started by `start`.",
+      "permissions": "`doctor` is read-only; `start` builds into the api checkout's `bin/` and starts a process.",
+      "result": "`stock ready` and the loaded code's state as JSON, exit 0, only when the process is up, the code on disk matches the launch record, and `/version` equals the checkout's commit and uncommitted-code fingerprint.",
+      "failure": "exit 1 with the reason (no instance, process gone, code changed, stale build); exit 2 when it could not tell.",
+      "limits": "proves which code the API runs; says nothing about the client or the data."
+    },
+    "probe": {
+      "command": "python3 .claude/skills/verify-stock/scripts/probe.py items",
+      "use_when": "checking stored items after driving the client, or re-checking a verdict by hand.",
+      "inputs": "none; `item NAME` prints one item.",
+      "environment": "the data file at `data/stock-items.json` under the project root, where `start` points the API; the API need not be running.",
+      "permissions": "read-only; parses the file and loads no API or client code.",
+      "result": "one JSON object with the stored items.",
+      "failure": "exit 1 with `{\"not_found\": ...}` when the item (or the file) does not exist; exit 2 with `STOPPED: <reason>` when the file is not JSON.",
+      "limits": "reports stored state only, never what the client printed."
+    }
+  }
+}

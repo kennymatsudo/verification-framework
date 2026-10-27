@@ -71,7 +71,7 @@ class Context:
         return scaffold.shell(f"{shlex.quote(sys.executable)} {shlex.quote(str(self.vf))} {' '.join(shlex.quote(a) for a in args)}", self.project_root, timeout=timeout)
 
     def setting(self, label):
-        return scaffold.setting(self.harness, label) if self.harness and (self.harness / "settings.md").is_file() else None
+        return scaffold.setting(self.harness, label) if self.harness and (self.harness / "harness.json").is_file() else None
 
     def start_app(self):
         """Run Start with its {checkout:<repo>} placeholders filled; (started, output). An app with no Start command
@@ -152,16 +152,15 @@ def _harness_missing(ctx):
 
 
 def sub_feature_lines(harness):
-    """{id: text} for every sub-feature in the feature map, with the file's other lines that name the id appended."""
+    """{id: text} for every behavior in the feature map: its words, plan, check, and reasons, joined."""
     found = {}
-    for path in sorted((harness / "features").glob("*.md")) if (harness / "features").is_dir() else []:
-        if path.name == "README.md":
-            continue
-        for line in path.read_text().splitlines():
-            if line.startswith("- ") and ":" in line and line[2:].split(":", 1)[0].strip().replace(".", "").replace("-", "").isalnum():
-                sub_id, rest = line[2:].split(":", 1)
-                found.setdefault(sub_id.strip(), []).append(rest.strip())
-    return {sub_id: " ".join(parts) for sub_id, parts in found.items()}
+    for sub_id, entry in scaffold.feature_entries(harness).items():
+        parts = [str(entry.get(key)) for key in ("words", "plan", "check", "reads", "not_break_tested") if entry.get(key)]
+        unreachable = entry.get("unreachable")
+        if isinstance(unreachable, dict):
+            parts += [str(unreachable.get("blocker", "")), str(unreachable.get("tried", ""))]
+        found[sub_id] = " ".join(parts)
+    return found
 
 
 def resolve_ids(ctx, practice_id):
@@ -193,7 +192,7 @@ def harness_ready(ctx):
     if missing := _harness_missing(ctx):
         return missing
     code, output = ctx.run_vf("validate")
-    ready = "- Status: ready" in (ctx.harness / "settings.md").read_text() if (ctx.harness / "settings.md").is_file() else False
+    ready = ((scaffold.manifest(ctx.harness).get("setup") or {}).get("status") == "ready")
     return Result(code == 0 and ready, f"validate exit {code}; Status ready: {ready}\n{output[-600:]}")
 
 
@@ -222,7 +221,7 @@ def zero_feature_files(ctx):
     """Setup stopped at readiness: the feature map has no feature files."""
     if missing := _harness_missing(ctx):
         return missing
-    files = [path.name for path in (ctx.harness / "features").glob("*.md") if path.name != "README.md"] if (ctx.harness / "features").is_dir() else []
+    files = [path.name for path in (ctx.harness / "features").glob("*.json")] if (ctx.harness / "features").is_dir() else []
     return Result(not files, f"feature files: {files or 'none'}")
 
 
@@ -233,7 +232,7 @@ def doctor_works(ctx):
         return missing
     doctor = ctx.setting("Doctor")
     if not doctor:
-        return Result(0, "settings.md has no Doctor command")
+        return Result(0, "harness.json has no doctor command")
     kind = ctx.practice.get("setup", {}).get("start")
     if kind == "none":
         code, output = scaffold.shell(doctor, ctx.project_root, timeout=60)
@@ -399,19 +398,10 @@ def asked_about(ctx, pattern, before_building=True):
 
 
 def sub_feature_definitions(harness):
-    """{id: behavior text} from the Sub-features sections only, without plan or proof lines."""
-    found = {}
-    for path in sorted((harness / "features").glob("*.md")) if harness and (harness / "features").is_dir() else []:
-        if path.name == "README.md":
-            continue
-        in_section = False
-        for line in path.read_text().splitlines():
-            if line.startswith("## "):
-                in_section = line.strip() == "## Sub-features"
-            elif in_section and line.startswith("- ") and ":" in line:
-                sub_id, rest = line[2:].split(":", 1)
-                found[sub_id.strip()] = rest.strip()
-    return found
+    """{id: words} for every behavior, without its plan or check."""
+    if not harness:
+        return {}
+    return {sub_id: str(entry.get("words", "")) for sub_id, entry in scaffold.feature_entries(harness).items()}
 
 
 @grader
@@ -495,13 +485,21 @@ def no_app_code_in_checks(ctx):
 
 
 def map_lines(text):
-    """The `- id: ...` lines under Sub-features and How to prove it: what a feature file promises and how it is proven."""
-    lines, section = set(), None
-    for line in text.splitlines():
-        if line.startswith("## "):
-            section = line.strip()
-        elif section in ("## Sub-features", "## How to prove it") and line.startswith("- "):
-            lines.add(line.strip())
+    """What a feature file promises and how it is proven: one line per behavior with its words, and one with its check or reason."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return set()
+    lines = set()
+    for sub_id, entry in ((data.get("behaviors") or {}) if isinstance(data, dict) else {}).items():
+        entry = entry if isinstance(entry, dict) else {}
+        lines.add(f"{sub_id}: {entry.get('words', '')}")
+        if entry.get("check"):
+            lines.add(f"{sub_id}: `{entry['check']}` {entry.get('reads', '')} {entry.get('not_break_tested') or ''}".strip())
+        elif entry.get("unreachable"):
+            lines.add(f"{sub_id}: unreachable {json.dumps(entry['unreachable'], sort_keys=True)}")
+        else:
+            lines.add(f"{sub_id}: No check yet.")
     return lines
 
 

@@ -1,0 +1,56 @@
+{
+  "app": "Ledger",
+  "setup": {
+    "status": "ready",
+    "target": "the ledger HTTP API in this repo, started locally from the checkout with `python3 -m ledger` on port 8071; no UI, no external services.",
+    "findings": "README.md:9 gives the start command and port; README.md:11 names `GET /health` as the ready signal; ledger/server.py:95 reads `LEDGER_PORT` and `LEDGER_DB`; REQUIREMENTS.md holds the agreed behavior with IDs LR-1 to LR-8; an agent can start the app with only this checkout.",
+    "looked_in": "README.md, REQUIREMENTS.md, ledger/server.py, ledger/store.py, tests/; no Makefile, compose file, or package scripts.",
+    "blocker": null,
+    "next": null,
+    "doctor_proof": "saved output in evidence/doctor/setup.txt: ready after Start (exit 0), not ready after Stop (exit 1), on the commit recorded there."
+  },
+  "requirements": "REQUIREMENTS.md",
+  "repos": {
+    "ledger": "."
+  },
+  "commands": {
+    "start": "python3 .claude/skills/verify-ledger/scripts/framework/vf.py start --checkout ledger={checkout:ledger} --until \"curl -sf http://127.0.0.1:8071/health\" -- env PYTHONPATH={checkout:ledger} python3 {checkout:ledger}/ledger/server.py",
+    "stop": "python3 .claude/skills/verify-ledger/scripts/framework/vf.py stop",
+    "doctor": "python3 .claude/skills/verify-ledger/scripts/framework/vf.py doctor --probe \"curl -sf http://127.0.0.1:8071/health\"",
+    "ready_line": "ready",
+    "probe": "python3 .claude/skills/verify-ledger/scripts/probe.py",
+    "reloads": false
+  },
+  "tools": {
+    "doctor": {
+      "command": "python3 .claude/skills/verify-ledger/scripts/framework/vf.py doctor --probe \"curl -sf http://127.0.0.1:8071/health\"",
+      "use_when": "before driving the app by hand or running a check, or when a check stopped with \"not ready\".",
+      "inputs": "none.",
+      "environment": "an instance started with the Start command in `harness.json`; the launch record in `evidence/launch/`.",
+      "permissions": "read-only.",
+      "result": "prints `ready` and the loaded code's commit as JSON, exit 0.",
+      "failure": "exit 1 with one reason per line (no instance, process gone, code on disk changed since launch, health probe failing); exit 2 when it could not tell. Start the app with the Start command, or restart it after editing code.",
+      "limits": "says the process is up on the recorded code; says nothing about the data in it."
+    },
+    "probe": {
+      "command": "python3 .claude/skills/verify-ledger/scripts/probe.py account 1",
+      "use_when": "checking a balance or an account's transactions after driving the API, or re-checking a verdict by hand.",
+      "inputs": "the account ID; `transactions <id>` lists its transactions newest first.",
+      "environment": "the database at `data/ledger.db` under the project root (or `LEDGER_DB`); the app need not be running.",
+      "permissions": "read-only; opens the database in read-only mode and imports no app code.",
+      "result": "one JSON object: the account row, or `{\"transactions\": [...]}`; `--full` adds every column.",
+      "failure": "exit 1 with `{\"not_found\": ..., \"hint\": ...}` when the account has no row; exit 2 with `STOPPED: <reason>` when the database is missing or unreadable.",
+      "limits": "reports stored state only, never what the API would answer."
+    },
+    "verify": {
+      "command": "python3 .claude/skills/verify-ledger/scripts/framework/vf.py verify transactions.deposit",
+      "use_when": "proving a behavior after a change, or reproducing a failed step by hand.",
+      "inputs": "one or more sub-feature IDs from `features/`; the check scripts under `scripts/checks/` can also run directly through `vf.py run -- <command>`.",
+      "environment": "the app started with the Start command; the database it created.",
+      "permissions": "creates accounts and transactions in the local database only; nothing shared.",
+      "result": "one status line per ID, and an evidence file under `evidence/<check>/`; `status.md` is refreshed.",
+      "failure": "exit 1 when a step failed, with the step and what it found; exit 2 when the app was not ready or the run stopped.",
+      "limits": "a pass proves only the behaviors the feature file maps to that command, on the recorded code."
+    }
+  }
+}

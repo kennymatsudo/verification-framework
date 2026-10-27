@@ -1,0 +1,36 @@
+{
+  "name": "Convert",
+  "summary": "A finance teammate converts an expense CSV to the upload tool's JSON.",
+  "reach": [
+    "`python3 -m relay convert INPUT.csv OUTPUT.json` from a checkout."
+  ],
+  "sources": [
+    "REQUIREMENTS.md CR-1 to CR-4. CR-5's other currencies are undecided and have no check."
+  ],
+  "behaviors": {
+    "convert.rows": {
+      "words": "every input row becomes one output row with the same name and the amount in exact whole cents",
+      "plan": "convert a four-row file whose amounts include ones a float conversion gets wrong by a cent; compare each output row with the cents CR-1 fixes for those amounts. Reads the output file.",
+      "check": "python3 .claude/skills/verify-relay/scripts/checks/convert.py",
+      "reads": "state"
+    },
+    "convert.total": {
+      "words": "the output's total equals the sum of every row's cents",
+      "plan": "compare the output total with the sum of those expected cents. Reads the output file.",
+      "check": "python3 .claude/skills/verify-relay/scripts/checks/convert.py",
+      "reads": "state"
+    },
+    "convert.reject-malformed": {
+      "words": "a malformed amount means exit code 2, a message naming the line, and no output file written",
+      "plan": "convert a file with a bad amount on line 3; expect exit 2, \"line 3\" in the message, and no output file. Reads the exit code, the message, and the output path.",
+      "check": "python3 .claude/skills/verify-relay/scripts/checks/reject.py",
+      "reads": "state"
+    },
+    "convert.repeatable": {
+      "words": "converting the same input again produces an identical output file, replacing any earlier one",
+      "plan": "convert the same file twice over a stale output file; expect identical bytes and no trace of the stale content. Reads both output files.",
+      "check": "python3 .claude/skills/verify-relay/scripts/checks/repeat.py",
+      "reads": "state"
+    }
+  }
+}

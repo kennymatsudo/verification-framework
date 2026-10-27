@@ -1,0 +1,18 @@
+{
+  "name": "Menu",
+  "summary": "A customer sees what they can order.",
+  "reach": [
+    "The kiosk page at `/`, menu section."
+  ],
+  "sources": [
+    "REQUIREMENTS.md KR-1."
+  ],
+  "behaviors": {
+    "menu.shown": {
+      "words": "the kiosk page shows every menu item with its name and price: Espresso $3.00, Latte $4.50, Croissant $3.75",
+      "plan": "open the page in a browser and read the menu list as shown; compare with the items and prices KR-1 fixes. Reads the rendered menu.",
+      "check": "node .claude/skills/verify-kiosk/scripts/checks/menu.js",
+      "reads": "screen"
+    }
+  }
+}

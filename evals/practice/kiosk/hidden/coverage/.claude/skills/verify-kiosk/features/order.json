@@ -1,0 +1,24 @@
+{
+  "name": "Order",
+  "summary": "A customer places the order, or is told to add something first.",
+  "reach": [
+    "The kiosk page at `/`, \"Place order\" button."
+  ],
+  "sources": [
+    "REQUIREMENTS.md KR-4 and KR-5."
+  ],
+  "behaviors": {
+    "order.place": {
+      "words": "placing the order stores it with the same lines and total the customer saw, and the page shows the stored order's number",
+      "plan": "build a cart of two lattes and a croissant, note the total shown, place it; read the stored order from the data file and compare its lines and total with what was shown, and the confirmation's number with the stored number. Reads the stored order and the confirmation shown.",
+      "check": "node .claude/skills/verify-kiosk/scripts/checks/order.js",
+      "reads": "screen"
+    },
+    "order.empty-refused": {
+      "words": "placing an order with an empty cart shows \"Add something first\" and stores nothing",
+      "plan": "tap Place order with nothing in the cart; read the message shown and count stored orders before and after. Reads the message shown and the stored orders.",
+      "check": "node .claude/skills/verify-kiosk/scripts/checks/order.js",
+      "reads": "screen"
+    }
+  }
+}

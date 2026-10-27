@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from harness_json import edit_manifest, write_manifest  # noqa: E402
 from support import git
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
@@ -35,10 +36,10 @@ def commit(path, name, text):
     return git(path, "rev-parse", "HEAD")
 
 
-def make_harness(project, repos="- app: .\n"):
+def make_harness(project, repos=None):
     harness = project / ".agents" / "skills" / "verify-app"
     harness.mkdir(parents=True)
-    (harness / "settings.md").write_text(f"# App verification settings\n\n## Repos\n\n{repos}\n## Commands\n\n- Start: make dev\n")
+    write_manifest(harness, repos={"app": "."} if repos is None else repos)
     return harness
 
 
@@ -89,7 +90,7 @@ class CodeStateTest(unittest.TestCase):
             scratch = Path(directory) / "scratch"
             git(project, "worktree", "add", "-q", "--detach", str(scratch))
             scratch_harness = scratch / harness.relative_to(project)
-            (scratch_harness / "settings.md").write_text("changed harness settings\n")
+            (scratch_harness / "harness.json").write_text("{}\n")
             self.assertFalse(code_state.checkout_state(scratch, harness)["dirty"])
             (project / "cache").mkdir()
             (project / "cache/output").write_text("ignored\n")
@@ -171,7 +172,7 @@ class CodeStateTest(unittest.TestCase):
             worker = make_repo(Path(directory) / "worker", branch="master")
             (project / "local-dev").mkdir()
             (project / "local-dev" / ".env").write_text(f"WORKER={worker}\n")
-            harness = make_harness(project, "- project: .\n- worker: env:local-dev/.env:WORKER\n")
+            harness = make_harness(project, {"project": ".", "worker": "env:local-dev/.env:WORKER"})
 
             result, state, _ = run_state(harness)
             self.assertEqual(result, 0)
@@ -186,12 +187,11 @@ class CodeStateTest(unittest.TestCase):
             empty.mkdir()
             git(empty, "init", "-q")
             cases = {
-                "missing checkout": ("- app: .\n- worker: ../missing\n", [], "worker: no Git checkout"),
-                "invalid repo line": ("- app: .\n- Worker: ../worker\n", [], "invalid repo line: - Worker: ../worker"),
-                "duplicate repo": ("- app: .\n- app: ../other\n", [], "duplicate repo app"),
-                "unlisted override": ("- app: .\n", ["--checkout", f"api={project}"], "api, which settings.md does not list"),
-                "no commit": ("- app: .\n", ["--checkout", f"app={empty}"], "has no commit"),
-                "no repos": ("", [], "lists no repos"),
+                "missing checkout": ({"app": ".", "worker": "../missing"}, [], "worker: no Git checkout"),
+                "invalid repo name": ({"app": ".", "Worker": "../worker"}, [], "repo name 'Worker' is not lowercase"),
+                "unlisted override": ({"app": "."}, ["--checkout", f"api={project}"], "api, which harness.json does not list"),
+                "no commit": ({"app": "."}, ["--checkout", f"app={empty}"], "has no commit"),
+                "no repos": ({}, [], "repos must be a non-empty object"),
             }
             for case, (repos, flags, reason) in cases.items():
                 with self.subTest(case):
@@ -238,7 +238,7 @@ class MonorepoTest(unittest.TestCase):
             for folder in ("worker", "other"):
                 (services / folder).mkdir()
                 commit(services, f"{folder}/code.txt", "first\n")
-            harness = make_harness(project, "- app: .\n- worker: ../services/worker\n")
+            harness = make_harness(project, {"app": ".", "worker": "../services/worker"})
 
             (services / "other" / "code.txt").write_text("another service's edit\n")
             result, state, errors = run_state(harness)
@@ -273,9 +273,7 @@ class MonorepoTest(unittest.TestCase):
             service = make_repo(Path(directory) / "service")
             (root / "app" / "local-dev").mkdir()
             (root / "app" / "local-dev" / ".env").write_text(f"SERVICE_DIR={service}\n")
-            (harness / "settings.md").write_text(
-                (harness / "settings.md").read_text().replace("- app: .\n", "- app: .\n- service: env:local-dev/.env:SERVICE_DIR\n")
-            )
+            edit_manifest(harness, lambda d: d["repos"].update(service="env:local-dev/.env:SERVICE_DIR"))
 
             result, state, errors = run_state(harness)
 

@@ -1,0 +1,24 @@
+{
+  "name": "Accounts",
+  "summary": "A client opens an account and reads it back by ID.",
+  "reach": [
+    "`POST /accounts` and `GET /accounts/<id>`."
+  ],
+  "sources": [
+    "REQUIREMENTS.md LR-1 and LR-2."
+  ],
+  "behaviors": {
+    "accounts.open": {
+      "words": "opening an account returns its new ID, and the account reads back with a zero balance",
+      "plan": "open an account through the API; read the stored row for its name and zero balance, then read it back through the API. Proves stored state and the API answer. Reads the account row.",
+      "check": "python3 .claude/skills/verify-ledger/scripts/checks/accounts.py",
+      "reads": "state"
+    },
+    "accounts.unknown-404": {
+      "words": "reading an account that does not exist answers 404",
+      "plan": "read an ID with no stored row; expect 404 and still no row. Reads the account row.",
+      "check": "python3 .claude/skills/verify-ledger/scripts/checks/accounts.py",
+      "reads": "state"
+    }
+  }
+}

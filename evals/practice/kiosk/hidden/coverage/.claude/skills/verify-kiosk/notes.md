@@ -1,13 +1,8 @@
 # Verification notes
 
-## Setup: verify-kiosk
+## Setup notes
 
-- Target: the kiosk web page and its Node server in this repo, started locally with `node server.js` on port 8072; no external services.
-- Findings: README.md:7 gives the start command and port; server.js:5 reads `KIOSK_PORT` and `KIOSK_DATA`; server.js:93 serves `public/` from the server's own folder; REQUIREMENTS.md holds the agreed behavior KR-1 to KR-6; an agent can start the app with only this checkout and Node.
-- Looked in: README.md, REQUIREMENTS.md, package.json, server.js, public/app.js, tests/; no compose file or Makefile.
-- Blocker: none
-- Next action: none
-- Doctor proof: saved output in evidence/doctor/setup.txt: ready after Start (exit 0), not ready after Stop (exit 1), on the commit recorded there.
+Every command runs from the project root. The server runs the checkout's files directly, so the framework launcher starts it from `{checkout:kiosk}` and records the code it loaded; `server.js` serves `public/` from its own folder on every request, so a planned break's scratch copy serves its own page files, and the server needs a restart after an edit (Reloads: no). The agent may start and stop it; no login. Orders live in `data/orders.json` under the project root, which `.gitignore` keeps out of the repo. Checks drive the page with Playwright's bundled Chromium (`node -e "require('playwright')"` must work) and read orders from the data file, never through the server. Nothing here reaches an external or shared system.
 
 ## Known failing checks
 

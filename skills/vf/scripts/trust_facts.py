@@ -3,16 +3,16 @@
 
 Usage: trust_facts.py HARNESS_DIR [--html PATH]
 
-Reads the harness's feature files, status.md, notes.md, and the evidence they cite, and
+Reads the harness's features/*.json, status.md, notes.md, and the evidence they cite, and
 prints one JSON object:
 
 - harness: the harness directory name.
 - behaviors: one entry per sub-feature, in feature-map order:
-  - id, feature, behavior: the sub-feature line.
-  - plan: its Verification plan line (what the check does and reads), or null.
-  - proof: "check", "none", or "unreachable", from its How to prove it line.
+  - id, feature, behavior: the behavior's ID, its feature's name, and its words.
+  - plan: its agreed plan (what the check does and reads), or null.
+  - proof: "check", "none", or "unreachable", from its entry.
   - command: the check's command, or null.
-  - reads: what the proof line says the check reads, such as "(state)", or null.
+  - reads: what the entry says the check reads, such as "state", or null.
   - break: the newest planned break aimed at this behavior, or null when none is recorded:
     {"date", "what", "evidence", "on_hand", "aimed_at", "failed_steps"}. It comes from
     the accepted break runs in evidence/, or, when none is here, from the harness's
@@ -38,7 +38,7 @@ validate.py for format errors and stale-evidence warnings.
 --html writes a self-contained page to PATH and prints the path instead.
 
 Exits 0 with the output, 2 when the harness has no scripts/framework/validate.py or no
-features/README.md, with the reason on a STOPPED: line on stderr.
+features/ folder, with the reason on a STOPPED: line on stderr.
 """
 
 import argparse
@@ -49,7 +49,6 @@ import re
 import sys
 from pathlib import Path
 
-NOT_BREAK_TESTED = re.compile(r"Not break-tested: (.+)$")
 TALLY = {
     "behaviors": "sub-features in the map",
     "checked": "have a check",
@@ -89,37 +88,26 @@ def read_json(path):
         return None
 
 
-def feature_files(validate, features_dir):
-    """The feature files in feature-map order: those the index links first, then any it leaves out."""
-    index = features_dir / "README.md"
-    if not index.is_file():
-        raise Stopped(f"no feature index at {index}")
-    listed = [features_dir / name for name in validate.INDEX_LINK.findall(index.read_text())]
-    others = sorted(p for p in features_dir.glob("*.md") if p.name != "README.md")
-    return [p for p in dict.fromkeys(listed + others) if p.is_file()]
+def feature_files(features_dir):
+    """The feature files in feature-map order: every features/<slug>.json by name."""
+    if not features_dir.is_dir():
+        raise Stopped(f"no features folder at {features_dir}")
+    return sorted(features_dir.glob("*.json"))
 
 
-def id_lines(validate, lines):
-    """The '- <id>: <text>' lines of a section as {id: text}."""
-    return {match.group(1): match.group(2) for line in lines if (match := validate.PROOF.match(line))}
-
-
-def parse_proof(validate, harness_dir, sub_id, text, records):
-    """The proof facts for one behavior from its How to prove it line: proof kind, command, what it reads,
-    its newest planned break, and any Not break-tested or Unreachable reason."""
-    kind = validate.proof_kind(text)
+def parse_proof(validate, harness_dir, sub_id, entry, records):
+    """The proof facts for one behavior from its entry: proof kind, command, what it reads,
+    its newest planned break, and any not_break_tested or unreachable reason."""
+    kind = validate.behavior_kind(entry)
     facts = {"proof": "check" if kind == "command" else kind, "command": None, "reads": None,
              "break": None, "not_break_tested": None, "unreachable": None}
     if kind == "unreachable":
-        facts["unreachable"] = text[len("Unreachable:"):].strip()
+        facts["unreachable"] = validate.unreachable_text(entry)[len("Unreachable: "):]
     if kind != "command":
         return facts
-    command = validate.BACKTICK.search(text)
-    facts["command"] = command.group(1)
-    rest = text[command.end():].lstrip(". ")
-    facts["reads"] = re.split(r"\s*Not break-tested", rest, maxsplit=1)[0].strip() or None
-    if match := NOT_BREAK_TESTED.search(text):
-        facts["not_break_tested"] = match.group(1)
+    facts["command"] = entry.get("check")
+    facts["reads"] = entry.get("reads") or None
+    facts["not_break_tested"] = validate.not_break_tested_reason(entry)
     facts["break"] = break_facts(validate, harness_dir, sub_id, records)
     return facts
 
@@ -206,24 +194,19 @@ def gather(harness_dir):
     """Everything this script prints: each mapped behavior's proof and latest result, the notes.md lists, and the tally."""
     validate = load_validator(harness_dir)
     project = validate.project_root(harness_dir)
-    repos = validate.check_settings(harness_dir / "settings.md", []) if (harness_dir / "settings.md").is_file() else {}
-    checkouts = {name: validate.resolve_repo(locator, project) for name, locator in repos.items()}
+    repos = (validate.manifest(harness_dir) or {}).get("repos") or {}
+    checkouts = {name: validate.resolve_repo(locator, project) for name, locator in repos.items() if isinstance(locator, str)}
     results, bullets = latest_results(validate, harness_dir, checkouts)
     records = validate.accepted_records(harness_dir / "evidence")
 
     behaviors = []
-    for path in feature_files(validate, harness_dir / "features"):
-        text = path.read_text()
-        _, body = validate.sections(text)
-        title = next((line[2:] for line in text.splitlines() if line.startswith("# ")), path.stem)
-        plans = id_lines(validate, body.get("Verification plan", []))
-        proofs = id_lines(validate, body.get("How to prove it", []))
-        for line in body.get("Sub-features", []):
-            if not (match := validate.PROOF.match(line)):
-                continue
-            sub_id, behavior = match.groups()
-            entry = {"id": sub_id, "feature": title, "behavior": behavior, "plan": plans.get(sub_id)}
-            entry.update(parse_proof(validate, harness_dir, sub_id, proofs.get(sub_id, "No check yet."), records))
+    for path in feature_files(harness_dir / "features"):
+        data = read_json(path) or {}
+        title = str(data.get("name") or path.stem)
+        for sub_id, spec in (data.get("behaviors") or {}).items():
+            spec = spec if isinstance(spec, dict) else {}
+            entry = {"id": sub_id, "feature": title, "behavior": str(spec.get("words", "")), "plan": spec.get("plan")}
+            entry.update(parse_proof(validate, harness_dir, sub_id, spec, records))
             entry["result"] = results.get(sub_id)
             entry["caveats"] = [line[len(sub_id) + 2:] for line in bullets["may_mislead"] if line.startswith(sub_id + ": ")]
             behaviors.append(entry)

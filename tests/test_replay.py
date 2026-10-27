@@ -246,10 +246,9 @@ class ReplayTest(unittest.TestCase):
             evidence = write(directory, dict(RECORD, steps=steps, sub_features=["checkout.pay", "checkout.unlisted", "checkout.refund"]))
             features = Path(directory) / "features"
             features.mkdir()
-            (features / "checkout.md").write_text(
-                "# Checkout\n\nA shopper pays.\n\n## Sub-features\n\n- checkout.pay: paying with a new card creates a paid order.\n\n"
-                "## How to prove it\n\n- checkout.pay: `bin/verify check checkout-pay`.\n"
-            )
+            (features / "checkout.json").write_text(json.dumps({
+                "name": "Checkout", "summary": "A shopper pays.",
+                "behaviors": {"checkout.pay": {"words": "paying with a new card creates a paid order.", "check": "bin/verify check checkout-pay", "reads": "state"}}}))
             recordings = replay.recordings_page(evidence.parents[2])
             self.assertIn('<h2>Checkout <span class="slug">checkout-pay</span></h2>', recordings)
             self.assertIn('</h2><p class="purpose">A shopper pays.</p>', recordings, "the feature's summary says what the check tests")
@@ -275,9 +274,8 @@ class ReplayTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             features = Path(directory) / "features"
             features.mkdir()
-            (features / "cart.md").write_text(
-                "# Cart\n\nA shopper calls `add_item` from\nthe [cart page](cart.md). The cart keeps it.\n\n## Sub-features\n"
-            )
+            (features / "cart.json").write_text(json.dumps({
+                "name": "Cart", "summary": "A shopper calls `add_item` from\nthe [cart page](cart.md). The cart keeps it.", "behaviors": {}}))
             self.assertEqual(replay.feature_metadata(Path(directory))[0][:2], ("Cart", "A shopper calls add_item from the cart page."))
 
     def test_details_say_so_when_no_step_names_the_behaviors_it_judges(self):

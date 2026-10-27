@@ -1,0 +1,24 @@
+{
+  "name": "Cart",
+  "summary": "A customer builds their order and watches the total.",
+  "reach": [
+    "The kiosk page at `/`, \"Add\" buttons and the \"Your order\" section."
+  ],
+  "sources": [
+    "REQUIREMENTS.md KR-2 and KR-3, with KR-1's prices. KR-6's tax line is undecided and has no check."
+  ],
+  "behaviors": {
+    "cart.add": {
+      "words": "tapping \"Add\" on an item puts one of it in the cart; tapping it again raises the quantity by one",
+      "plan": "tap Add Latte twice and Add Espresso once; read the cart lines and the latte quantity as shown. Reads the rendered cart.",
+      "check": "node .claude/skills/verify-kiosk/scripts/checks/cart.js",
+      "reads": "screen"
+    },
+    "cart.total": {
+      "words": "the total shown on the page equals the sum of each cart line's price times its quantity",
+      "plan": "read the total as shown; expect $12.00, computed from KR-1's prices, not from the page's own arithmetic. Reads the rendered total.",
+      "check": "node .claude/skills/verify-kiosk/scripts/checks/cart.js",
+      "reads": "screen"
+    }
+  }
+}

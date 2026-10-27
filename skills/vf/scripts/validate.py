@@ -1,28 +1,26 @@
 #!/usr/bin/env python3
-"""Validate a verification harness's settings, feature map, and rendered results against their format, the repo, and the evidence.
+"""Validate a verification harness's manifest, feature map, and rendered results against their format, the repo, and the evidence.
 
 Usage: validate.py [HARNESS_DIR] [--require-evidence] [--run-help]
 
 HARNESS_DIR defaults to the harness this script sits in, at scripts/framework/. The harness's
 rules.md must match the hash vf.py sync recorded for it in scripts/framework/framework.sha256,
-so an edited copy, or one from another framework version, fails before anything else. Exits 0 when the map is
-valid, 1 when it has errors, 2 when it cannot run. Evidence age is reported as
+so an edited copy, or one from another framework version, fails before anything else. Exits 0 when the
+harness is valid, 1 when it has errors, 2 when it cannot run. Evidence age is reported as
 warnings only; evidence retention and Git tracking belong to the team.
-status.md is written by `vf.py status` from the evidence, never by hand; the hand-written
-Setup record and notes live in notes.md. A behavior is Verified only when its latest accepted run passed
-against a ready app, an accepted planned break of the same check aimed at that sub-feature failed a step
-judging it, every step that caught the break still judges it in the passing run, every harness file the
-break ran is unchanged in the pass, and no `vf.py not-verified` record written after that run stands.
-Every Verified line in the section must be the one `vf.py status` would write now. A cited file that is absent is a warning, since a fresh checkout may not carry
-evidence; pass --require-evidence right after recording results to make it an error.
-Cited evidence sits at evidence/<check>/<run>.json. Each step in it records its 'at' time,
-and a recording it names must sit inside evidence/.
-An incomplete setup exits 2 with its recorded blocker and resume action.
-The harness keeps features/, notes.md, status.md, tools.md, and evidence/ inside its directory.
-Each tools.md entry needs every field the tool guide template names, a Run from folder that
-exists, and a Help command whose script exists; --run-help also runs each Help command, which
-must exit 0 within 10 seconds. A token, cookie, password, or key written into tools.md or a
-harness script is an error: tools read credentials from the project's connection settings.
+
+Everything a script reads is in two kinds of JSON file: harness.json (setup, requirements source, repos,
+commands, tools) and one features/<slug>.json per feature (its behaviors, each with its check or the reason
+there is none). notes.md is free prose. status.md is written by `vf.py status` and tools.md by `vf.py tools`,
+never by hand: a Verified line that `status` would not write now, or a tools.md that `tools` would not write
+now, is an error. A behavior is Verified only when its latest accepted run passed against a ready app, an
+accepted planned break of the same check aimed at it failed a step judging it, every step that caught the
+break still judges it in the passing run, every harness file the break ran is unchanged in the pass, and no
+`vf.py not-verified` record written after that run stands. A cited file that is absent is a warning, since a
+fresh checkout may not carry evidence; pass --require-evidence right after recording results to make it an
+error. An incomplete setup exits 2 with its recorded blocker and next action. --run-help runs each tool's
+`<command> --help`, which must exit 0 within 10 seconds. A token, cookie, password, or key written into
+harness.json or a harness script is an error: tools read credentials from the project's connection settings.
 """
 
 import argparse
@@ -48,25 +46,23 @@ START_NONE = "none"
 START_USER = "user"
 RELOADS = ("yes", "no")
 SHA256 = re.compile(r"[0-9a-f]{64}")
-SUB_FEATURE = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): \S")
-PROOF = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): (.+)$")
-INDEX_LINK = re.compile(r"\]\(([^)#]+\.md)\)")
-BACKTICK = re.compile(r"`([^`]+)`")
-# A proof line may name the repos its check runs; a behavior with no clause runs every repo in settings.
-REPOS_CLAUSE = re.compile(r"\bRepos: ([a-z0-9][a-z0-9_-]*(?:, ?[a-z0-9][a-z0-9_-]*)*)\.")
-REQUIRED = ["Sub-features", "How a user reaches it", "How to prove it"]
-OPTIONAL = ["Request flow", "Verification plan", "Gotchas"]
-SETTING = re.compile(r"^- ([A-Z][A-Za-z ]*): (.*)$")
-SETTINGS = {
-    "Workflow": ["Requirements source"],
-    "Commands": ["Start", "Stop", "Doctor", "Ready line", "Probe", "Reloads"],
-}
-SETUP_LABELS = ["Target", "Findings", "Looked in", "Blocker", "Next action", "Doctor proof"]
+# The manifest: everything a script reads about the app, its repos, its commands, and its tools.
+MANIFEST = "harness.json"
+SUB_ID = re.compile(r"[a-z0-9][a-z0-9._-]*")
+REPO_NAME = re.compile(r"[a-z0-9][a-z0-9_-]*")
+# A template blank left in a value: `<` followed by a lowercase letter.
+UNFILLED = re.compile(r"<[a-z]")
+SETUP_TEXT = ("target", "findings", "looked_in")
+COMMANDS = ("start", "stop", "doctor", "ready_line")
+TOOL_REQUIRED = ("command", "use_when", "permissions", "limits")
+TOOL_OPTIONAL = ("inputs", "environment", "result", "failure")
 RESULT = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): (Verified|Failed|Not verified)\b")
 RESULTS_HEADING = "Latest results"
 RENDERED_NOTE = ("Written by `vf.py status` from the evidence on this machine; every accepted run refreshes it, "
                  "and `vf.py not-verified` records a check that could not run. Edits here are overwritten; "
                  "notes belong in notes.md.")
+RENDERED_TOOLS_NOTE = ("Written by `vf.py tools` from the tools in harness.json; edit the entry there and run it again. "
+                       "A read reports current state; it does not by itself prove a feature works.")
 # Not verified records agents write with vf.py not-verified, one JSON object per line.
 NOT_VERIFIED_LOG = Path("evidence") / "not-verified.jsonl"
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -74,11 +70,7 @@ TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 EVIDENCE_CITE = re.compile(r"Evidence: `?([^\s`]+\.json)`?")
 # One folder per check keeps evidence/ browsable as runs pile up; rules.md fixes the layout.
 EVIDENCE_PATH = re.compile(r"evidence/[^/]+/[^/]+\.json")
-REPO = re.compile(r"^- ([a-z0-9][a-z0-9_-]*): (\S+)$")
 ENV_LOCATOR = re.compile(r"^env:([^:]+):([A-Za-z_][A-Za-z0-9_]*)$")
-TOOL_FIELDS = ["Permissions", "Limits"]
-RUN_FROM = re.compile(r"^Run from (.+?):\s*$")
-HELP = re.compile(r"^Help: `(.+?) --help`")
 HELP_TIMEOUT = 10
 # A credential pasted from a captured request is the risk; values with $, <, or { are lookups or
 # template blanks, and the assignment rule needs a digit so env var names don't match.
@@ -113,30 +105,45 @@ def latest_result_lines(text):
     return {match.group(1): line for line in body.get("Latest results", []) if (match := RESULT.match(line))}
 
 
-def proof_kind(body):
-    """What a 'How to prove it' line offers: none, unreachable, command, or bad or bad-unreachable when malformed."""
-    if body.startswith("No check yet"):
+def behavior_kind(entry):
+    """What a behavior's entry offers: command (it has a check), unreachable, or none."""
+    if not isinstance(entry, dict):
         return "none"
-    if body.startswith("Unreachable:"):
-        return "unreachable" if "Tried" in body else "bad-unreachable"
-    if body.startswith("`"):
+    if entry.get("check"):
         return "command"
-    return "bad"
+    if entry.get("unreachable"):
+        return "unreachable"
+    return "none"
 
 
-def setting(harness_dir, section, label):
-    """A labeled value from settings.md, without surrounding backticks, or None when the line is missing or blank."""
-    path = harness_dir / "settings.md"
-    if not path.is_file():
+def read_json(path):
+    """The JSON object a file holds, or None when the file is missing, unreadable, or holds something else."""
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
         return None
-    _, body = sections(path.read_text())
-    for line in body.get(section, []):
-        match = SETTING.match(line)
-        if match and match.group(1) == label:
-            value = match.group(2).strip()
-            value = value[1:-1] if len(value) > 1 and value[0] == value[-1] == "`" else value
-            return value or None
-    return None
+    return data if isinstance(data, dict) else None
+
+
+def manifest(harness_dir):
+    """The harness's harness.json as a dict, or None when it is missing or not a JSON object."""
+    return read_json(harness_dir / MANIFEST)
+
+
+def command(harness_dir, key):
+    """A command from harness.json's commands, or None when the manifest or the command is missing or blank."""
+    data = manifest(harness_dir)
+    commands = (data or {}).get("commands")
+    value = commands.get(key) if isinstance(commands, dict) else None
+    if isinstance(value, bool):
+        return value
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def unreachable_text(entry):
+    """The Unreachable sentence status.md carries for a behavior with no route to a check."""
+    block = entry.get("unreachable") or {}
+    return f"Unreachable: {str(block.get('blocker', '')).rstrip('.')}. Tried {str(block.get('tried', '')).rstrip('.')}."
 
 
 def checkout_placeholders(command):
@@ -149,7 +156,7 @@ def fill_checkouts(command, checkouts):
     def fill(match):
         name = match.group(1)
         if name not in checkouts:
-            raise ValueError(f"{{checkout:{name}}}: no checkout for {name} here, or settings.md does not list it")
+            raise ValueError(f"{{checkout:{name}}}: no checkout for {name} here, or harness.json does not list it")
         return shlex.quote(str(checkouts[name]))
     return CHECKOUT_PLACEHOLDER.sub(fill, command)
 
@@ -168,7 +175,7 @@ def file_fingerprint(path):
 
 
 def harness_code(harness_dir, command=()):
-    """The harness's own code as {path from the project root: fingerprint}: settings.md, every file under
+    """The harness's own code as {path from the project root: fingerprint}: harness.json, every file under
     scripts/ apart from the framework copies, and any file the check command names. A planned break and a
     later pass must agree on it.
 
@@ -182,8 +189,8 @@ def harness_code(harness_dir, command=()):
              if "/" in word and "\n" not in word and not word.startswith("-") and len(word) < 1024 and (project / word).is_file()]
     named_checks = {check_entry(checks, path) for path in named} - {None}
     files = list(named)
-    if (harness_dir / "settings.md").is_file():
-        files.append(harness_dir / "settings.md")
+    if (harness_dir / MANIFEST).is_file():
+        files.append(harness_dir / MANIFEST)
     for path in scripts.rglob("*") if scripts.is_dir() else ():
         if not path.is_file() or "__pycache__" in path.parts:
             continue
@@ -217,205 +224,234 @@ def command_path_exists(command, project):
     return (project / first).exists()
 
 
-def check_feature(path, project, seen_ids, errors):
-    """Check one feature file's sections, sub-feature IDs, and proof lines, adding its IDs to seen_ids.
+def unfilled(value):
+    """Whether a string still holds a template blank."""
+    return isinstance(value, str) and bool(UNFILLED.search(value))
 
-    Returns each sub-feature's well-formed proof line, in file order.
+
+def text_field(data, key, label, errors, required=True, slots=True):
+    """A non-empty string field, and with slots set one without a template blank; an error otherwise. Returns the value or None.
+
+    Prose fields that describe a tool may legitimately write `<id>` or `<reason>`, so they pass slots=False."""
+    value = data.get(key)
+    if value is None or value == "":
+        if required:
+            errors.append(f"{label}: {key} is missing")
+        return None
+    if not isinstance(value, str) or not value.strip():
+        errors.append(f"{label}: {key} must be a non-empty string")
+        return None
+    if slots and unfilled(value):
+        errors.append(f"{label}: {key} still has an unfilled slot: {value}")
+        return None
+    return value.strip()
+
+
+def string_list(data, key, label, errors):
+    """An optional list of strings; an error when it is something else. Returns the list."""
+    value = data.get(key)
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        errors.append(f"{label}: {key} must be a list of strings")
+        return []
+    return value
+
+
+def check_feature(path, project, repos, seen_ids, errors):
+    """Check one features/<slug>.json: its name and summary, and each behavior's entry, adding its IDs to seen_ids.
+
+    Returns each well-formed behavior's entry, in file order, with "feature" set to the file's name.
     """
-    order, body = sections(path.read_text())
     name = path.name
-    headings = [h for h in order if h not in OPTIONAL]
-    if headings != REQUIRED:
-        errors.append(f"{name}: sections are {order}, expected {REQUIRED} in order")
+    data = read_json(path)
+    if data is None:
+        errors.append(f"{name}: not a JSON object")
         return {}
-
-    ids = []
-    for line in body["Sub-features"]:
-        if line.startswith("- "):
-            match = SUB_FEATURE.match(line)
-            if not match:
-                errors.append(f"{name}: sub-feature line is not '- <id>: <behavior>': {line}")
-                continue
-            sub_id = match.group(1)
-            if sub_id in seen_ids:
-                errors.append(f"{name}: {sub_id} is also defined in {seen_ids[sub_id]}")
-            seen_ids[sub_id] = name
-            ids.append(sub_id)
-
-    proofs = {}
-    for line in body["How to prove it"]:
-        if not line.startswith("- "):
-            continue
-        match = PROOF.match(line)
-        if not match:
-            errors.append(f"{name}: proof line is not '- <id>: <proof>': {line}")
-            continue
-        sub_id, proof = match.groups()
-        if sub_id in proofs:
-            errors.append(f"{name}: {sub_id} has more than one proof line")
-        proofs[sub_id] = proof
-
+    text_field(data, "name", name, errors)
+    text_field(data, "summary", name, errors)
+    for key in ("reach", "sources", "gotchas"):
+        string_list(data, key, name, errors)
+    behaviors = data.get("behaviors")
+    if not isinstance(behaviors, dict):
+        errors.append(f"{name}: behaviors must be an object of <id>: <entry>")
+        return {}
     well_formed = {}
-    for sub_id in ids:
-        if sub_id not in proofs:
-            errors.append(f"{name}: {sub_id} has no line under 'How to prove it'")
+    for sub_id, entry in behaviors.items():
+        label = f"{name}: {sub_id}"
+        if not SUB_ID.fullmatch(sub_id):
+            errors.append(f"{label}: an ID is lowercase letters, digits, dots, dashes, and underscores")
             continue
-        proof = proofs[sub_id]
-        kind = proof_kind(proof)
-        if kind == "bad":
-            errors.append(f"{name}: {sub_id} proof must be a `command`, 'No check yet.', or 'Unreachable: ... Tried ...'")
+        if sub_id in seen_ids:
+            errors.append(f"{label}: also defined in {seen_ids[sub_id]}")
+        seen_ids[sub_id] = name
+        if not isinstance(entry, dict):
+            errors.append(f"{label}: must be an object")
             continue
-        if kind == "bad-unreachable":
-            errors.append(f"{name}: {sub_id} is Unreachable but does not say what was tried")
+        text_field(entry, "words", label, errors)
+        text_field(entry, "plan", label, errors, required=False)
+        check = entry.get("check")
+        unreachable = entry.get("unreachable")
+        if check is not None and (not isinstance(check, str) or not check.strip()):
+            errors.append(f"{label}: check must be a command or null")
             continue
-        if kind == "command":
-            if "Break-tested" in proof:
-                errors.append(f"{name}: {sub_id} says Break-tested, but nobody writes that: vf.py status computes it from the evidence")
-            for command in BACKTICK.findall(proof):
-                if not command_path_exists(command, project):
-                    errors.append(f"{name}: {sub_id} names `{command}`, but {command.split()[0]} does not exist")
-        well_formed[sub_id] = proof
-    for sub_id in proofs:
-        if sub_id not in ids:
-            errors.append(f"{name}: proof line for {sub_id}, which is not a sub-feature here")
+        if check and unfilled(check):
+            errors.append(f"{label}: check still has an unfilled slot: {check}")
+            continue
+        if check:
+            if not command_path_exists(check, project):
+                errors.append(f"{label}: check names `{check}`, but {check.split()[0]} does not exist")
+            text_field(entry, "reads", label, errors)
+            if unreachable:
+                errors.append(f"{label}: has both a check and an unreachable reason")
+        else:
+            if "reads" in entry and entry["reads"] is not None:
+                errors.append(f"{label}: reads belongs with a check")
+            if entry.get("not_break_tested"):
+                errors.append(f"{label}: not_break_tested belongs with a check")
+            if unreachable is not None:
+                if not isinstance(unreachable, dict):
+                    errors.append(f"{label}: unreachable must be {{\"blocker\": ..., \"tried\": ...}}")
+                    continue
+                else:
+                    text_field(unreachable, "blocker", f"{label} unreachable", errors)
+                    text_field(unreachable, "tried", f"{label} unreachable", errors)
+        text_field(entry, "not_break_tested", label, errors, required=False)
+        for key in entry:
+            if key not in ("words", "plan", "check", "reads", "repos", "not_break_tested", "unreachable"):
+                errors.append(f"{label}: unknown field {key}")
+        named = entry.get("repos")
+        if named is not None:
+            if not isinstance(named, list) or not named or not all(isinstance(item, str) for item in named):
+                errors.append(f"{label}: repos must be a non-empty list of repo names")
+            else:
+                for repo in named:
+                    if repo not in repos:
+                        errors.append(f"{label}: repos names {repo}, which is not a repo in harness.json")
+        well_formed[sub_id] = dict(entry, feature=name)
     return well_formed
 
 
-def command_proofs(proofs):
-    """The proof lines that name a check."""
-    return {sub_id: proof for sub_id, proof in proofs.items() if proof_kind(proof) == "command"}
+def command_proofs(behaviors):
+    """The behaviors that have a check."""
+    return {sub_id: entry for sub_id, entry in behaviors.items() if behavior_kind(entry) == "command"}
 
 
-def proof_repos(proof):
-    """The repos a proof line's `Repos: a, b.` clause names, in order, or None when it names none."""
-    match = REPOS_CLAUSE.search(proof or "")
-    return [name.strip() for name in match.group(1).split(",")] if match else None
+def behavior_repos(entry, repos):
+    """The repos a behavior's check runs, which its records must cover: its repos list, else every repo in harness.json."""
+    named = entry.get("repos") if isinstance(entry, dict) else None
+    return list(named) if named else list(repos)
 
 
-def behavior_repos(proof, repos):
-    """The repos a behavior's check runs, which its records must cover: the proof line's clause, else every settings repo."""
-    named = proof_repos(proof)
-    return named if named is not None else list(repos)
+def read_map(harness_dir, project, repos=None):
+    """Read and check the feature map: every features/<slug>.json, in name order.
 
-
-def check_proof_repos(proofs, repos, errors):
-    """An error for each proof line whose Repos clause names a repo settings.md does not list."""
-    for sub_id, proof in proofs.items():
-        for name in proof_repos(proof) or []:
-            if name not in repos:
-                errors.append(f"{sub_id}: its proof line names repo {name}, which is not under settings.md's '## Repos'")
-
-
-def read_map(harness_dir, project):
-    """Read and check the feature map.
-
-    Returns (feature file names, sub-feature IDs in map order with their file, each sub-feature's
-    proof line, errors), or None when the harness has no feature index.
+    Returns (feature file names, behavior IDs in map order with their file, each behavior's entry, errors),
+    or None when the harness has no features/ folder.
     """
     features_dir = harness_dir / "features"
-    index = features_dir / "README.md"
-    if not index.is_file():
+    if not features_dir.is_dir():
         return None
+    if repos is None:
+        repos = (manifest(harness_dir) or {}).get("repos") or {}
     errors = []
-    index_text = index.read_text()
-    _, index_sections = sections(index_text)
-    linked = {link.lstrip("./") for link in INDEX_LINK.findall("\n".join(index_sections.get("Features", [])))}
-    for link in set(INDEX_LINK.findall(index_text)):
-        if "://" not in link and not (features_dir / link).is_file():
-            errors.append(f"README.md links {link}, which does not exist")
-    files = {p.name for p in features_dir.glob("*.md") if p.name != "README.md"}
-    for unlisted in sorted(files - linked):
-        errors.append(f"{unlisted} is not listed in README.md")
-    seen_ids, proofs = {}, {}
+    files = {p.name for p in features_dir.glob("*.json")}
+    seen_ids, behaviors = {}, {}
     for name in sorted(files):
-        proofs.update(check_feature(features_dir / name, project, seen_ids, errors))
-    return files, seen_ids, proofs, errors
+        behaviors.update(check_feature(features_dir / name, project, repos, seen_ids, errors))
+    return files, seen_ids, behaviors, errors
 
 
-def parse_repos(body):
-    """The repos under settings.md's '## Repos', by name, and an error for each line that is not a valid repo."""
-    repos, errors = {}, []
-    for line in body.get("Repos", []):
-        if not line.startswith("- "):
-            continue
-        match = REPO.match(line)
-        if not match:
-            errors.append(f"settings.md: invalid repo line: {line}")
-            continue
-        name, locator = match.groups()
-        if name in repos:
-            errors.append(f"settings.md: duplicate repo {name}")
-        if locator.startswith("env:") and not ENV_LOCATOR.match(locator):
-            errors.append(f"settings.md: invalid locator for {name}")
-        elif re.search(r"<[a-z]", locator):
-            errors.append(f"settings.md: {name} has an unfilled repo locator")
-        repos[name] = locator
-    return repos, errors
-
-
-def check_settings(path, errors):
-    """Check settings.md's required lines and repo list, and that the harness's fixed files exist. Returns the repos by name."""
-    _, body = sections(path.read_text())
-    for section, labels in SETTINGS.items():
-        values = {}
-        for line in body.get(section, []):
-            match = SETTING.match(line)
-            if match:
-                values[match.group(1)] = match.group(2).strip()
-        for label in labels:
-            value = values.get(label)
-            if not value:
-                errors.append(f"settings.md: no '- {label}: <value>' line under '## {section}'")
-            elif re.search(r"<[a-z]", value):
-                errors.append(f"settings.md: {label} still has an unfilled slot: {value}")
-
-    repos, repo_errors = parse_repos(body)
-    errors.extend(repo_errors)
-    if "Repos" not in body:
-        errors.append("settings.md: no '## Repos' section")
-    elif not repos:
-        errors.append("settings.md: no repos listed under '## Repos'")
-    for filename in ("README.md", "notes.md", "status.md", "tools.md"):
-        if not (path.parent / filename).is_file():
-            errors.append(f"{filename} is missing from the harness")
+def check_repos(repos, errors):
+    """harness.json's repos: a non-empty object of valid names to portable locators. Returns it, or {} when malformed."""
+    if not isinstance(repos, dict) or not repos:
+        errors.append("harness.json: repos must be a non-empty object of <name>: <locator>")
+        return {}
     for name, locator in repos.items():
-        if Path(locator).is_absolute() or locator.startswith("~"):
-            errors.append(f"settings.md: {name} locator must be portable")
-    commands = {match.group(1): match.group(2).strip() for line in body.get("Commands", []) if (match := SETTING.match(line))}
-    if (reloads := commands.get("Reloads")) and reloads.lower() not in RELOADS:
-        errors.append(f"settings.md: Reloads must be yes or no, not {reloads}")
-    for name in checkout_placeholders(commands.get("Start")):
+        if not REPO_NAME.fullmatch(name):
+            errors.append(f"harness.json: repo name {name!r} is not lowercase letters, digits, dashes, and underscores")
+        if not isinstance(locator, str) or not locator:
+            errors.append(f"harness.json: {name} needs a locator")
+        elif locator.startswith("env:") and not ENV_LOCATOR.match(locator):
+            errors.append(f"harness.json: invalid locator for {name}")
+        elif unfilled(locator):
+            errors.append(f"harness.json: {name} has an unfilled repo locator")
+        elif Path(locator).is_absolute() or locator.startswith("~"):
+            errors.append(f"harness.json: {name} locator must be portable")
+    return {name: locator for name, locator in repos.items() if isinstance(locator, str)}
+
+
+def check_manifest(harness_dir, errors):
+    """Check harness.json's app, requirements, repos, commands, and tools, and that the harness's fixed files exist.
+    Returns the repos by name."""
+    data = manifest(harness_dir)
+    if data is None:
+        errors.append("harness.json is missing or is not a JSON object")
+        return {}
+    text_field(data, "app", "harness.json", errors)
+    requirements = data.get("requirements")
+    if requirements is not None and (not isinstance(requirements, str) or unfilled(requirements)):
+        errors.append("harness.json: requirements must be a source, or null")
+    repos = check_repos(data.get("repos"), errors)
+    commands = data.get("commands")
+    if not isinstance(commands, dict):
+        errors.append("harness.json: commands must be an object")
+        commands = {}
+    for key in COMMANDS:
+        text_field(commands, key, "harness.json commands", errors)
+    probe = commands.get("probe")
+    if probe is not None and (not isinstance(probe, str) or not probe.strip() or unfilled(probe)):
+        errors.append("harness.json commands: probe must be a command, or null")
+    if not isinstance(commands.get("reloads"), bool):
+        errors.append("harness.json commands: reloads must be true or false")
+    for name in checkout_placeholders(commands.get("start") if isinstance(commands.get("start"), str) else ""):
         if name not in repos:
-            errors.append(f"settings.md: Start names {{checkout:{name}}}, which is not a repo under '## Repos'")
+            errors.append(f"harness.json commands: start names {{checkout:{name}}}, which is not a repo")
+    tools = data.get("tools")
+    if tools is not None and not isinstance(tools, dict):
+        errors.append("harness.json: tools must be an object of <name>: <entry>")
+    for filename in ("README.md", "notes.md", "status.md", "tools.md"):
+        if not (harness_dir / filename).is_file():
+            errors.append(f"{filename} is missing from the harness")
     return repos
 
 
+def tool_folder(entry, project):
+    """The folder a tool runs from: the project root for "." or "the project root", else a folder under it."""
+    run_from = entry.get("run_from") or "."
+    return project if run_from in (".", "the project root") else project / run_from
+
+
 def check_tools(harness_dir, project, run_help, errors):
-    """Check each tools.md entry's fields and Help command, running it when run_help is set."""
-    order, body = sections((harness_dir / "tools.md").read_text())
-    for entry in order:
-        lines = [line.strip() for line in body[entry]]
-        label = f"tools.md '{entry}'"
-        if not any(line.startswith("Use when:") for line in lines):
-            errors.append(f"{label}: no 'Use when:' line")
-        for field in TOOL_FIELDS:
-            if not any(line.startswith(f"- {field}:") for line in lines):
-                errors.append(f"{label}: no '- {field}:' line")
-        run_from = next((match.group(1).strip("` ") for line in lines if (match := RUN_FROM.match(line))), None)
-        if run_from is None:
-            errors.append(f"{label}: no 'Run from <folder>:' line")
+    """Check each tool entry in harness.json, that tools.md is what vf.py tools writes now, and, with run_help, each help command."""
+    data = manifest(harness_dir) or {}
+    tools = data.get("tools") if isinstance(data.get("tools"), dict) else {}
+    for name, entry in tools.items():
+        label = f"harness.json tool {name!r}"
+        if not isinstance(entry, dict):
+            errors.append(f"{label}: must be an object")
             continue
-        folder = project if run_from in (".", "the project root") else project / run_from
+        for key in TOOL_REQUIRED:
+            text_field(entry, key, label, errors, slots=key == "command")
+        for key in TOOL_OPTIONAL:
+            text_field(entry, key, label, errors, required=False, slots=False)
+        run_from = entry.get("run_from")
+        if run_from is not None and (not isinstance(run_from, str) or not run_from):
+            errors.append(f"{label}: run_from must be a folder relative to the project root")
+            continue
+        for key in entry:
+            if key not in TOOL_REQUIRED + TOOL_OPTIONAL + ("run_from",):
+                errors.append(f"{label}: unknown field {key}")
+        folder = tool_folder(entry, project)
         if not folder.is_dir():
             errors.append(f"{label}: runs from {run_from}, which is not a folder under the project root")
             continue
-        command = next((match.group(1) for line in lines if (match := HELP.match(line))), None)
-        if command is None:
-            errors.append(f"{label}: no 'Help: `<command> --help`' line")
+        command = entry.get("command")
+        if not isinstance(command, str) or not command.strip():
             continue
         script = next((word for word in command.split() if "/" in word and not word.startswith("-")), None)
         if script and not (folder / script).exists():
-            errors.append(f"{label}: {script} does not exist in {run_from}")
+            errors.append(f"{label}: {script} does not exist in {run_from or '.'}")
             continue
         if run_help:
             try:
@@ -428,12 +464,44 @@ def check_tools(harness_dir, project, run_help, errors):
                 continue
             if ran.returncode != 0:
                 errors.append(f"{label}: '{command} --help' exited {ran.returncode}")
+    rendered = harness_dir / "tools.md"
+    if rendered.is_file() and rendered.read_text() != render_tools(data):
+        errors.append("tools.md is not what vf.py tools writes now; run it to refresh tools.md")
+
+
+def render_tools(data):
+    """tools.md as vf.py tools writes it from harness.json: one entry per tool, every field it has, and its help command."""
+    tools = data.get("tools") if isinstance(data.get("tools"), dict) else {}
+    lines = [f"# {data.get('app') or 'Harness'} tools", "", RENDERED_TOOLS_NOTE, ""]
+    if not tools:
+        lines.append("No tools yet.")
+    for name, entry in tools.items():
+        entry = entry if isinstance(entry, dict) else {}
+        run_from = entry.get("run_from") or "."
+        where = "the project root" if run_from in (".", "the project root") else f"`{run_from}`"
+        lines += [f"## {name}", "", f"Use when: {entry.get('use_when', '')}", "", f"Run from {where}:", "", f"`{entry.get('command', '')}`", ""]
+        for key, title in (("inputs", "Inputs"), ("environment", "Environment"), ("permissions", "Permissions"),
+                           ("result", "Result"), ("failure", "Failure"), ("limits", "Limits")):
+            if entry.get(key):
+                lines.append(f"- {title}: {entry[key]}")
+        lines += ["", f"Help: `{entry.get('command', '')} --help`", ""]
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def write_tools(harness_dir):
+    """Write tools.md from harness.json through a temporary file; returns the rendered text."""
+    text = render_tools(manifest(harness_dir) or {})
+    target = harness_dir / "tools.md"
+    temporary = target.with_name(target.name + ".tmp")
+    temporary.write_text(text)
+    temporary.replace(target)
+    return text
 
 
 def credential_errors(harness_dir):
-    """Report each line in tools.md or a harness script that holds what looks like a credential, without echoing it."""
+    """Report each line in harness.json or a harness script that holds what looks like a credential, without echoing it."""
     scripts = harness_dir / "scripts"
-    files = [harness_dir / "tools.md"]
+    files = [harness_dir / MANIFEST]
     if scripts.is_dir():
         files += sorted(
             path for path in scripts.rglob("*")
@@ -501,7 +569,7 @@ def check_rules(harness_dir, errors):
     if recorded is None:
         errors.append(f"{FRAMEWORK_LOCK} has no entry for rules.md; run vf to bring the harness's framework copies up to date")
     elif rules_sha256(data) != recorded:
-        errors.append("rules.md differs from the copy vf last synced; run vf to update or restore it, and put app specifics in settings.md")
+        errors.append("rules.md differs from the copy vf last synced; run vf to update or restore it, and put app specifics in harness.json")
 
 
 def check_written_for(harness_dir, written_for, errors):
@@ -523,51 +591,39 @@ def check_written_for(harness_dir, written_for, errors):
 
 
 def check_setup(harness_dir, errors):
-    """Check the Setup status in settings.md against the Setup record in notes.md.
+    """Check harness.json's setup block: its status, the record setup resumes from, and the proof a ready harness needs.
 
-    Returns the record when setup is incomplete, so the run can stop with its blocker, and None otherwise.
+    Returns the block when setup is incomplete, so the run can stop with its blocker, and None otherwise.
     """
-    settings_path = harness_dir / "settings.md"
-    if not settings_path.is_file():
-        errors.append("settings.md is missing; the harness's settings belong there")
+    data = manifest(harness_dir)
+    if data is None:
+        errors.append("harness.json is missing or is not a JSON object; the harness's settings belong there")
         return None
-    _, body = sections(settings_path.read_text())
-    status = dict(
-        match.groups() for line in body.get("Setup", []) if (match := SETTING.match(line))
-    ).get("Status")
+    setup = data.get("setup")
+    if not isinstance(setup, dict):
+        errors.append("harness.json: setup must be an object")
+        return None
+    status = setup.get("status")
     if status not in ("incomplete", "ready"):
-        errors.append("settings.md: Setup Status must be incomplete or ready")
+        errors.append("harness.json: setup.status must be incomplete or ready")
         return None
-    notes = "notes.md"
-    notes_path = harness_dir / notes
-    try:
-        notes_text = notes_path.read_text()
-    except OSError:
-        errors.append(f"the Setup record cannot be read at {notes_path}")
-        return None
-    _, notes_body = sections(notes_text)
-    heading = f"Setup: {harness_dir.name}"
-    if notes_text.splitlines().count(f"## {heading}") != 1:
-        errors.append(f"{notes}: expected one '{heading}' section for this harness")
-        return None
-    record = dict(
-        match.groups() for line in notes_body[heading] if (match := SETTING.match(line))
-    )
-    for label in SETUP_LABELS:
-        value = record.get(label, "").strip()
-        if not value or re.search(r"<[a-z]", value):
-            errors.append(f"{notes}: Setup needs a filled {label} line")
+    for key in SETUP_TEXT:
+        text_field(setup, key, "harness.json setup", errors)
+    for key in ("blocker", "next", "doctor_proof"):
+        value = setup.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip() or unfilled(value)):
+            errors.append(f"harness.json setup: {key} must be text or null")
     if status == "incomplete":
-        for label in ("Blocker", "Next action"):
-            if record.get(label, "").strip().lower() == "none":
-                errors.append(f"{notes}: incomplete setup needs a {label}")
-        return record
-    proof = record.get("Doctor proof", "").strip().lower()
-    if proof == "none" or proof.startswith("not run"):
-        errors.append(f"{notes}: ready setup needs doctor proof")
-    for label in ("Blocker", "Next action"):
-        if record.get(label, "").strip().lower() != "none":
-            errors.append(f"{notes}: ready setup still has a {label}")
+        for key in ("blocker", "next"):
+            if not setup.get(key):
+                errors.append(f"harness.json setup: incomplete setup needs a {key}")
+        return setup
+    proof = setup.get("doctor_proof")
+    if not proof or str(proof).strip().lower().startswith("not run"):
+        errors.append("harness.json setup: ready setup needs doctor_proof")
+    for key in ("blocker", "next"):
+        if setup.get(key):
+            errors.append(f"harness.json setup: ready setup still has a {key}")
     return None
 
 
@@ -580,7 +636,7 @@ def git(directory, *args):
 def project_root(harness_dir):
     """The folder holding the skills directory the harness sits in: `app/` for `app/.agents/skills/verify-app/`.
 
-    Recipe commands run from it, and settings.md's repo locators and env: files resolve from it.
+    Recipe commands run from it, and harness.json's repo locators and env: files resolve from it.
     In a single-repo app it is the Git top level; in a monorepo it is the app's own folder.
     """
     return Path(harness_dir).resolve().parents[2]
@@ -680,7 +736,7 @@ def evidence_warnings(evidence_dir, check_proofs, project, repos):
                 checkouts[name] = resolve_repo(locator, project)
             checkout = checkouts[name]
             if not checkout:
-                subs_by_message.setdefault(f"{name} checkout cannot be found from settings.md", []).append(sub_id)
+                subs_by_message.setdefault(f"{name} checkout cannot be found from harness.json", []).append(sub_id)
                 continue
             message = stale_commit_warning(name, checkout, commit)
             if message:
@@ -924,6 +980,7 @@ def verdict(kind, text, problems, cite=None, absent_video=(), standing=None):
 
 
 def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
+    # `proof` is the behavior's entry from its features/<slug>.json.
     """A behavior's verdict from its proof line, the accepted evidence, and the Not verified records.
 
     Verified needs the latest accepted run of a check covering the behavior to have passed against a
@@ -933,11 +990,11 @@ def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
     written after the run. Anything less is Failed, when the latest
     run failed, or Not verified with the reason.
     """
-    kind = proof_kind(proof)
+    kind = behavior_kind(proof)
     if kind == "none":
         return verdict("Not verified", "No check yet.", ["the map has no check for it"])
     if kind == "unreachable":
-        return verdict("Not verified", sentence(proof), ["the map says it is unreachable"])
+        return verdict("Not verified", unreachable_text(proof), ["the map says it is unreachable"])
 
     runs = [(path, record) for path, record in records if sub_id in record["sub_features"] and record.get("planned_break") is None]
     breaks = aimed_breaks(records, sub_id)
@@ -1014,9 +1071,9 @@ def standing_not_verified(sub_id, entries, latest, breaks):
 
 
 def not_break_tested_reason(proof):
-    """The reason an agent noted on the proof line for a check nobody has broken yet, or None."""
-    match = re.search(r"Not break-tested: (.+)$", proof)
-    return match.group(1).strip() if match else None
+    """The reason an agent recorded in the behavior's entry for a check nobody has broken yet, or None."""
+    reason = proof.get("not_break_tested") if isinstance(proof, dict) else None
+    return reason.strip() if isinstance(reason, str) and reason.strip() else None
 
 
 def aimed_breaks(records, sub_id):
@@ -1185,7 +1242,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("harness_dir", nargs="?", default=Path(__file__).resolve().parents[2], type=Path)
     parser.add_argument("--require-evidence", action="store_true", help="fail when a Verified line cites a missing evidence file")
-    parser.add_argument("--run-help", action="store_true", help="run each tools.md Help command, which must exit 0 quickly")
+    parser.add_argument("--run-help", action="store_true", help="run each tool's `<command> --help`, which must exit 0 quickly")
     parser.add_argument("--written-for", metavar="VERSION", help="the Rules version the calling skill was written for; fails on a mismatch and names the side to update")
     args = parser.parse_args()
 
@@ -1199,21 +1256,19 @@ def main():
             print(f"ERROR {error}")
         return 1
     if incomplete_setup:
-        print(f"STOPPED: setup incomplete for {incomplete_setup['Target']}")
-        print(f"Blocker: {incomplete_setup['Blocker']}")
-        print(f"Next action: {incomplete_setup['Next action']}")
+        print(f"STOPPED: setup incomplete for {incomplete_setup.get('target')}")
+        print(f"Blocker: {incomplete_setup.get('blocker')}")
+        print(f"Next action: {incomplete_setup.get('next')}")
         return 2
-    repos = check_settings(args.harness_dir / "settings.md", errors)
-    if (args.harness_dir / "tools.md").is_file():
-        check_tools(args.harness_dir, project, args.run_help, errors)
+    repos = check_manifest(args.harness_dir, errors)
+    check_tools(args.harness_dir, project, args.run_help, errors)
     errors.extend(credential_errors(args.harness_dir))
-    mapped = read_map(args.harness_dir, project)
+    mapped = read_map(args.harness_dir, project, repos)
     if mapped is None:
-        print(f"STOPPED: no feature index at {args.harness_dir / 'features' / 'README.md'}", file=sys.stderr)
+        print(f"STOPPED: no features folder at {args.harness_dir / 'features'}", file=sys.stderr)
         return 2
     files, seen_ids, proofs, map_errors = mapped
     errors.extend(map_errors)
-    check_proof_repos(proofs, repos, errors)
     check_proofs = command_proofs(proofs)
 
     result_warnings = []

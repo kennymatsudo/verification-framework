@@ -1,0 +1,24 @@
+{
+  "name": "Transfers",
+  "summary": "A client moves money from one account to another.",
+  "reach": [
+    "`POST /transfers`."
+  ],
+  "sources": [
+    "REQUIREMENTS.md LR-5 and LR-6. LR-7's daily limit is undecided and has no check."
+  ],
+  "behaviors": {
+    "transfers.move": {
+      "words": "a transfer debits the source and credits the destination by the same amount, and both changes happen or neither does",
+      "plan": "fund a source, transfer through the API; read both stored balances and the stored transfer row. Reads both account rows and the transfer row.",
+      "check": "python3 .claude/skills/verify-ledger/scripts/checks/transfers.py",
+      "reads": "state"
+    },
+    "transfers.refuse-overdraft": {
+      "words": "a transfer larger than the source balance is refused with 409 and changes neither account",
+      "plan": "ask for more than the source holds; expect 409 and both stored balances unchanged. Reads both account rows.",
+      "check": "python3 .claude/skills/verify-ledger/scripts/checks/transfers.py",
+      "reads": "state"
+    }
+  }
+}

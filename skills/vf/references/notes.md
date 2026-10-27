@@ -1,18 +1,13 @@
 # Verification notes
 
-Copy this into the harness as `notes.md`. It holds what people and agents write beside the results: the Setup record and the caveats. `status.md` is written by `vf.py status` and never by hand. Delete an empty section only when the harness has no use for it.
+Copy this into the harness as `notes.md`. It is free prose for what people and agents write beside the results; no script parses it beyond reading its headings. The Setup record lives in `harness.json`'s `setup` block, `status.md` is written by `vf.py status`, and `tools.md` by `vf.py tools`. Delete an empty section only when the harness has no use for it.
 
 ```markdown
 # Verification notes
 
-## Setup: <harness directory name>
+## Setup notes
 
-- Target: <app or system, its known boundary, and the requested setup>
-- Findings: <established facts with file:line or user-answer sources>
-- Looked in: <sources inspected, including places that did not answer the question>
-- Blocker: <what prevents finishing setup, or none>
-- Next action: <the answer or action needed to resume, or none>
-- Doctor proof: <not run and why, or the saved output in evidence/doctor/<time>.txt, date, and code versions tested>
+<how the app is started and stopped, where its data lives, which commands run from where, what needs a person (a login, a prompt, an approval), and anything a run must not touch>
 
 ## Known failing checks
 
@@ -26,3 +21,5 @@ None yet.
 
 None yet.
 ```
+
+A line under "Where a pass can mislead" that starts with a behavior's ID and a colon (`checkout.pay: ...`) is attached to that behavior by vf-explain.

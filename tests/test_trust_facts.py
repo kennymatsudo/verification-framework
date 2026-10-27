@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from harness_json import write_manifest  # noqa: E402
 from support import git
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
@@ -19,36 +20,22 @@ SPEC.loader.exec_module(trust_facts)
 
 VALIDATE = SCRIPTS / "validate.py"
 
-FEATURE = """# Checkout
-
-A shopper pays.
-
-## Sub-features
-
-- checkout.pay: paying creates a paid order.
-- checkout.saved-card: a returning shopper pays with a saved card.
-- checkout.receipt: a receipt is queued.
-- checkout.retry: a declined card can be retried.
-- checkout.refund: a refund returns the money.
-
-## How a user reaches it
-
-- `POST /api/checkout`.
-
-## Verification plan
-
-Source: README.
-
-- checkout.pay: submit checkout through the API; read the order row.
-
-## How to prove it
-
-- checkout.pay: `bin/check pay`. Reads the order row (state).
-- checkout.saved-card: `bin/check saved`. Reads the order row (state).
-- checkout.receipt: `bin/check receipt`. Reads the outbox (state). Not break-tested: no way to stop the worker yet.
-- checkout.retry: Unreachable: the sandbox has no declining card. Tried card 4000.
-- checkout.refund: No check yet.
-"""
+FEATURE = {
+    "name": "Checkout",
+    "summary": "A shopper pays.",
+    "reach": ["POST /api/checkout"],
+    "sources": ["README"],
+    "behaviors": {
+        "checkout.pay": {"words": "paying creates a paid order", "plan": "submit checkout through the API; read the order row.",
+                         "check": "bin/check pay", "reads": "state"},
+        "checkout.saved-card": {"words": "a returning shopper pays with a saved card", "check": "bin/check saved", "reads": "state"},
+        "checkout.receipt": {"words": "a receipt is queued", "check": "bin/check receipt", "reads": "state",
+                             "not_break_tested": "no way to stop the worker yet."},
+        "checkout.retry": {"words": "a declined card can be retried",
+                           "unreachable": {"blocker": "the sandbox has no declining card", "tried": "card 4000"}},
+        "checkout.refund": {"words": "a refund returns the money"},
+    },
+}
 
 NOTES = """# Verification notes
 
@@ -89,9 +76,8 @@ class TrustFacts(unittest.TestCase):
         (self.harness / "features").mkdir()
         (self.harness / "evidence" / "pay").mkdir(parents=True)
         shutil.copy(VALIDATE, self.harness / "scripts" / "framework" / "validate.py")
-        (self.harness / "settings.md").write_text("# Settings\n\n## Repos\n\n- app: .\n")
-        (self.harness / "features" / "README.md").write_text("# Map\n\n## Features\n\n- [Checkout](checkout.md): pay.\n")
-        (self.harness / "features" / "checkout.md").write_text(FEATURE)
+        write_manifest(self.harness)
+        (self.harness / "features" / "checkout.json").write_text(json.dumps(FEATURE))
         (self.harness / "notes.md").write_text(NOTES)
         (self.harness / "status.md").write_text(STATUS.format(commit=self.tested[:7]))
         self.write_evidence("break-pay.json", passed=False, steps=[
@@ -117,7 +103,7 @@ class TrustFacts(unittest.TestCase):
         self.assertEqual(pay["break"]["what"], "capture skipped")
         self.assertEqual(pay["break"]["failed_steps"], ["order is paid"])
         self.assertEqual(pay["plan"], "submit checkout through the API; read the order row.")
-        self.assertEqual(pay["reads"], "Reads the order row (state).")
+        self.assertEqual(pay["reads"], "state")
 
     def test_break_known_only_from_the_log_is_not_counted_as_caught(self):
         saved = self.behaviors()["checkout.saved-card"]
@@ -167,7 +153,7 @@ class TrustFacts(unittest.TestCase):
         self.harness = project / ".agents" / "skills" / "verify-shop"
         (project / "local-dev").mkdir()
         (project / "local-dev" / ".env").write_text("APP=.\n")
-        (self.harness / "settings.md").write_text("# Settings\n\n## Repos\n\n- app: env:local-dev/.env:APP\n")
+        write_manifest(self.harness, repos={"app": "env:local-dev/.env:APP"})
 
         result = self.behaviors()["checkout.pay"]["result"]
 
@@ -201,7 +187,7 @@ class TrustFacts(unittest.TestCase):
         self.assertEqual(facts["untested"], ["Two payments at once."])
 
     def test_page_escapes_harness_text(self):
-        (self.harness / "features" / "checkout.md").write_text(FEATURE.replace("paying creates", "<b>paying</b> creates"))
+        (self.harness / "features" / "checkout.json").write_text(json.dumps(FEATURE).replace("paying creates", "<b>paying</b> creates"))
         page = trust_facts.render_html(trust_facts.gather(self.harness))
         self.assertIn("&lt;b&gt;paying&lt;/b&gt; creates", page)
         self.assertIn("Failed when we broke it (2026-10-03): capture skipped", page)

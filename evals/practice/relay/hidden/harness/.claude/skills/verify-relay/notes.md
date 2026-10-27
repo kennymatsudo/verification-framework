@@ -1,13 +1,8 @@
 # Verification notes
 
-## Setup: verify-relay
+## Setup notes
 
-- Target: the relay command-line converter in this repo, run as `python3 -m relay`; no server, no services.
-- Findings: README.md:7 gives the command; relay/cli.py:44 defines the exit codes (0 converted, 2 malformed, no output written); REQUIREMENTS.md holds CR-1 to CR-5; nothing needs a person.
-- Looked in: README.md, REQUIREMENTS.md, relay/, examples/; no Makefile or package manifest.
-- Blocker: none
-- Next action: none
-- Doctor proof: saved output in evidence/doctor/setup.txt: the doctor reports the checkout ready (exit 0), and not ready when pointed at a folder without relay (exit 1).
+Relay is a command-line tool with no server: nothing starts or stops, and every check runs `python3 -m relay` itself, so Start and Stop are `none`. The checks and the doctor run the tool from the checkout `VERIFY_CHECKOUT_RELAY` names, which `vf.py` sets to this checkout on an ordinary run and to a planned break's scratch copy during one; the doctor confirms that checkout holds a runnable relay and reports its code state. Each run reads the files afresh, so an edit needs no restart (Reloads: yes). Everything runs from the project root; nothing reaches an external or shared system.
 
 ## Known failing checks
 

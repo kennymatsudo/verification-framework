@@ -1,8 +1,8 @@
-# Stock developer tools
+# Stock tools
 
-Use these commands for debugging, investigation, or verification. A read reports current state; it does not by itself prove a feature works.
+Written by `vf.py tools` from the tools in harness.json; edit the entry there and run it again. A read reports current state; it does not by itself prove a feature works.
 
-## Is the Stock API up, built from the api checkout on disk?
+## doctor
 
 Use when: before running the client by hand or running a check, or when a check stopped with "not ready".
 
@@ -17,9 +17,9 @@ Run from the project root:
 - Failure: exit 1 with the reason (no instance, process gone, code changed, stale build); exit 2 when it could not tell.
 - Limits: proves which code the API runs; says nothing about the client or the data.
 
-Help: `python3 .claude/skills/verify-stock/scripts/api_server.py --help`.
+Help: `python3 .claude/skills/verify-stock/scripts/api_server.py doctor --help`
 
-## What has the API stored?
+## probe
 
 Use when: checking stored items after driving the client, or re-checking a verdict by hand.
 
@@ -34,9 +34,9 @@ Run from the project root:
 - Failure: exit 1 with `{"not_found": ...}` when the item (or the file) does not exist; exit 2 with `STOPPED: <reason>` when the file is not JSON.
 - Limits: reports stored state only, never what the client printed.
 
-Help: `python3 .claude/skills/verify-stock/scripts/probe.py --help`.
+Help: `python3 .claude/skills/verify-stock/scripts/probe.py items --help`
 
-## Run one behavior's check
+## verify
 
 Use when: proving a behavior after a change, or reproducing a failed step by hand.
 
@@ -51,4 +51,4 @@ Run from the project root:
 - Failure: exit 1 when a step failed; exit 2 when the API was not ready.
 - Limits: a pass proves only the behaviors the feature file maps to that command, on the recorded code.
 
-Help: `python3 .claude/skills/verify-stock/scripts/framework/vf.py verify --help`.
+Help: `python3 .claude/skills/verify-stock/scripts/framework/vf.py verify items.add --help`

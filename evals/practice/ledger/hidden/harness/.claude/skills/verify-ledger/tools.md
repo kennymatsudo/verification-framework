@@ -1,8 +1,8 @@
-# Ledger developer tools
+# Ledger tools
 
-Use these commands for debugging, investigation, or verification. A read reports current state; it does not by itself prove a feature works.
+Written by `vf.py tools` from the tools in harness.json; edit the entry there and run it again. A read reports current state; it does not by itself prove a feature works.
 
-## Is the ledger up and running the code on disk?
+## doctor
 
 Use when: before driving the app by hand or running a check, or when a check stopped with "not ready".
 
@@ -11,15 +11,15 @@ Run from the project root:
 `python3 .claude/skills/verify-ledger/scripts/framework/vf.py doctor --probe "curl -sf http://127.0.0.1:8071/health"`
 
 - Inputs: none.
-- Environment: an instance started with the Start command in `settings.md`; the launch record in `evidence/launch/`.
+- Environment: an instance started with the Start command in `harness.json`; the launch record in `evidence/launch/`.
 - Permissions: read-only.
 - Result: prints `ready` and the loaded code's commit as JSON, exit 0.
 - Failure: exit 1 with one reason per line (no instance, process gone, code on disk changed since launch, health probe failing); exit 2 when it could not tell. Start the app with the Start command, or restart it after editing code.
 - Limits: says the process is up on the recorded code; says nothing about the data in it.
 
-Help: `python3 .claude/skills/verify-ledger/scripts/framework/vf.py doctor --help`.
+Help: `python3 .claude/skills/verify-ledger/scripts/framework/vf.py doctor --probe "curl -sf http://127.0.0.1:8071/health" --help`
 
-## What does the database say about an account?
+## probe
 
 Use when: checking a balance or an account's transactions after driving the API, or re-checking a verdict by hand.
 
@@ -34,4 +34,4 @@ Run from the project root:
 - Failure: exit 1 with `{"not_found": ..., "hint": ...}` when the account has no row; exit 2 with `STOPPED: <reason>` when the database is missing or unreadable.
 - Limits: reports stored state only, never what the API would answer.
 
-Help: `python3 .claude/skills/verify-ledger/scripts/probe.py --help`.
+Help: `python3 .claude/skills/verify-ledger/scripts/probe.py account 1 --help`

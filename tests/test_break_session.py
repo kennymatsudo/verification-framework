@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from harness_json import write_manifest  # noqa: E402
 from support import git
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
@@ -48,10 +49,7 @@ def make_project(directory, start="echo {checkout:app} > pointed.txt", stop="non
     git(project, "commit", "-qm", "first")
     harness = project / ".agents" / "skills" / "verify-app"
     harness.mkdir(parents=True)
-    (harness / "settings.md").write_text(
-        "# App verification settings\n\n## Repos\n\n- app: .\n\n## Commands\n\n"
-        f"- Start: {start}\n- Stop: {stop}\n- Reloads: {reloads}\n"
-    )
+    write_manifest(harness, commands={"start": start, "stop": stop, "reloads": reloads == "yes"})
     return project, harness
 
 
@@ -67,10 +65,8 @@ def make_monorepo(directory):
     git(root, "commit", "-qm", "first")
     harness = root / "orders" / ".agents" / "skills" / "verify-orders"
     harness.mkdir(parents=True)
-    (harness / "settings.md").write_text(
-        "# Orders verification settings\n\n## Repos\n\n- orders: .\n- mailer: ../mailer\n\n## Commands\n\n"
-        "- Start: echo {checkout:orders} > pointed.txt\n- Stop: none\n- Reloads: yes\n"
-    )
+    write_manifest(harness, repos={"orders": ".", "mailer": "../mailer"},
+                   commands={"start": "echo {checkout:orders} > pointed.txt", "stop": "none", "reloads": True})
     return root, harness
 
 
@@ -187,7 +183,7 @@ class BreakSessionTest(unittest.TestCase):
             # An override into a repo with a session also blocks a harness whose locator names another repo.
             other_harness = other / ".agents" / "skills" / "verify-other"
             other_harness.mkdir(parents=True)
-            (other_harness / "settings.md").write_text((harness / "settings.md").read_text())
+            (other_harness / "harness.json").write_text((harness / "harness.json").read_text())
             with self.assertRaisesRegex(code_state.StateError, "belongs to"):
                 ordinary_state(other_harness, env, {"app": scratch})
 
@@ -196,7 +192,7 @@ class BreakSessionTest(unittest.TestCase):
             project, harness = make_project(directory)
             other_harness = harness.with_name("verify-other")
             other_harness.mkdir()
-            (other_harness / "settings.md").write_text((harness / "settings.md").read_text())
+            (other_harness / "harness.json").write_text((harness / "harness.json").read_text())
             self.assertEqual(run(harness, "start", "app")[0], 0)
             cleanup.callback(run, harness, "end", "app")
             scratch = Path((project / "pointed.txt").read_text().strip())
@@ -334,8 +330,9 @@ sys.exit(0 if record["passed"] else 1)
             (project / ".gitignore").write_text("pointed.txt\nlocal.env\n")
             git(project, "commit", "-qam", "ignore local.env")
             (project / "local.env").write_text(f"SERVICE_DIR={service}\n")
-            settings = harness / "settings.md"
-            settings.write_text(settings.read_text().replace("- app: .\n", "- app: .\n- service: env:local.env:SERVICE_DIR\n"))
+            data = json.loads((harness / "harness.json").read_text())
+            data["repos"]["service"] = "env:local.env:SERVICE_DIR"
+            (harness / "harness.json").write_text(json.dumps(data))
 
             self.assertEqual(run(harness, "start", "service")[0], 0)
             scratch = Path((project / "pointed.txt").read_text().strip())
@@ -405,13 +402,13 @@ sys.exit(0 if record["passed"] else 1)
             self.assertIn("Not break-tested", errors)
             self.assertIsNone(code_state.open_session(project))
 
-    def test_a_command_setting_loses_its_backticks_and_must_be_present(self):
+    def test_a_command_setting_must_be_present(self):
         with tempfile.TemporaryDirectory() as directory:
             _, harness = make_project(directory)
-            self.assertEqual(break_session.command_setting(harness, "Start"), "echo {checkout:app} > pointed.txt")
-            (harness / "settings.md").write_text("# App verification settings\n\n## Commands\n\n- Stop: none\n")
-            with self.assertRaisesRegex(code_state.StateError, "has no '- Start:' line"):
-                break_session.command_setting(harness, "Start")
+            self.assertEqual(break_session.command_setting(harness, "start"), "echo {checkout:app} > pointed.txt")
+            (harness / "harness.json").write_text(json.dumps({"commands": {"stop": "none"}}))
+            with self.assertRaisesRegex(code_state.StateError, "names no start command"):
+                break_session.command_setting(harness, "start")
 
 
 if __name__ == "__main__":

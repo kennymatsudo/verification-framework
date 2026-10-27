@@ -52,7 +52,7 @@ def copy_tree(source, target):
 
 
 def shell(command, cwd, env=None, timeout=120):
-    """Run a settings.md-style shell command from cwd; (exit code, combined output)."""
+    """Run a harness.json-style shell command from cwd; (exit code, combined output)."""
     merged = dict(os.environ, **(env or {}))
     try:
         result = subprocess.run(command, shell=True, cwd=str(cwd), env=merged, stdin=subprocess.DEVNULL,
@@ -115,52 +115,61 @@ def start_command_and_env(practice, workspace):
     return code_state.validate.fill_checkouts(command, checkouts), env
 
 
+def manifest(harness):
+    """The harness's harness.json as a dict, or {} when it is missing or unreadable."""
+    try:
+        data = json.loads((harness / "harness.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def setting(harness, label):
-    """A labeled command from the harness's settings.md Commands section, or None."""
-    for line in (harness / "settings.md").read_text().splitlines():
-        if line.startswith(f"- {label}:"):
-            value = line.split(":", 1)[1].strip()
-            return None if value.lower() == "none" else value
-    return None
+    """A command from harness.json's commands by key (start, stop, doctor, ...), or None when it is none or missing."""
+    commands = manifest(harness).get("commands") or {}
+    value = commands.get(label.lower().replace(" ", "_"))
+    if not isinstance(value, str) or value.strip().lower() == "none":
+        return None
+    return value.strip()
 
 
 def harness_hashes(harness):
-    """SHA-256 of every harness file an agent might weaken: scripts outside framework/, features, settings."""
+    """SHA-256 of every harness file an agent might weaken: scripts outside framework/, features, the manifest."""
     hashes = {}
     for path in sorted(harness.rglob("*")):
         if not path.is_file() or "framework" in path.relative_to(harness).parts or "evidence" in path.relative_to(harness).parts:
             continue
         rel = path.relative_to(harness).as_posix()
-        if rel.startswith(("scripts/", "features/")) or rel == "settings.md":
+        if rel.startswith(("scripts/", "features/")) or rel == "harness.json":
             hashes[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
     return hashes
 
 
-def feature_ids(harness):
-    """Every sub-feature ID in the harness's feature map."""
-    ids = []
-    for path in sorted((harness / "features").glob("*.md")):
-        if path.name == "README.md":
+def feature_entries(harness):
+    """{id: entry} for every behavior in the harness's features/*.json, in file-name order."""
+    found = {}
+    features = harness / "features"
+    for path in sorted(features.glob("*.json")) if features.is_dir() else []:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
             continue
-        in_section = False
-        for line in path.read_text().splitlines():
-            if line.startswith("## "):
-                in_section = line.strip() == "## Sub-features"
-            elif in_section and line.startswith("- ") and ":" in line:
-                ids.append(line[2:].split(":", 1)[0].strip())
-    return ids
+        behaviors = data.get("behaviors") if isinstance(data, dict) else None
+        for sub_id, entry in (behaviors or {}).items():
+            found[sub_id] = entry if isinstance(entry, dict) else {}
+    return found
+
+
+def feature_ids(harness):
+    """Every behavior ID in the harness's feature map."""
+    return list(feature_entries(harness))
 
 
 def proof_command(harness, sub_id):
-    """The backticked check command on a sub-feature's How to prove it line, or None."""
-    for path in (harness / "features").glob("*.md"):
-        in_section = False
-        for line in path.read_text().splitlines():
-            if line.startswith("## "):
-                in_section = line.strip() == "## How to prove it"
-            elif in_section and line.startswith(f"- {sub_id}:") and "`" in line:
-                return line.split("`")[1]
-    return None
+    """A behavior's check command, or None."""
+    entry = feature_entries(harness).get(sub_id) or {}
+    check = entry.get("check")
+    return check if isinstance(check, str) and check.strip() else None
 
 
 def start_app(practice, workspace, log):

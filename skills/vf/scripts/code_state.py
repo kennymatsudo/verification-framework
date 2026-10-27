@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print the Git state of every repo the harness's settings.md lists, as the evidence 'code' field.
+"""Print the Git state of every repo the harness's harness.json lists, as the evidence 'code' field.
 
 Usage: code_state.py [HARNESS_DIR] [--checkout NAME=PATH ...]
 
@@ -33,7 +33,7 @@ While break_session.py has a planned break session open on a repo, ordinary code
 recording refuses on every repo in that Git checkout, including --checkout overrides.
 Only the owning harness may record the scratch copy with VERIFY_PLANNED_BREAK set;
 another repo in the same checkout is then recorded from its own folder in the copy.
-Commands break_session.py runs from settings.md set VERIFY_BREAK_SESSION to the
+Commands break_session.py runs from harness.json set VERIFY_BREAK_SESSION to the
 session's repo name and get the checkout the app is being pointed at. An override
 must name the folder the run would record.
 
@@ -43,7 +43,7 @@ in capitals, other characters as underscores), so a check or doctor that runs
 the code itself runs it from there: the developer's checkout on an ordinary run,
 the scratch copy during a planned break.
 
-Exits 0 with the JSON, 2 when settings.md lists no repos, has an invalid repo
+Exits 0 with the JSON, 2 when harness.json lists no repos, has an invalid repo
 line, a repo cannot be found or has no commit, or a session is open and the run
 is not a planned break, with the reason on a STOPPED: line on stderr.
 """
@@ -75,17 +75,14 @@ class StateError(Exception):
 
 
 def listed_repos(harness_dir):
-    """The repos settings.md lists by name, each with its locator; StateError when it lists none or one is invalid."""
-    settings = harness_dir / "settings.md"
-    try:
-        _, body = validate.sections(settings.read_text())
-    except OSError as error:
-        raise StateError(f"cannot read {settings}: {error}") from error
-    repos, errors = validate.parse_repos(body)
+    """The repos harness.json lists by name, each with its locator; StateError when it lists none or one is invalid."""
+    data = validate.manifest(harness_dir)
+    if data is None:
+        raise StateError(f"cannot read {harness_dir / validate.MANIFEST}")
+    errors = []
+    repos = validate.check_repos(data.get("repos"), errors)
     if errors:
         raise StateError("; ".join(errors))
-    if not repos:
-        raise StateError(f"{settings} lists no repos under '## Repos'")
     return repos
 
 
@@ -251,18 +248,18 @@ def break_session_repo(harness_dir):
 
 
 def recorded_checkouts(harness_dir, overrides, only=None, missing="error"):
-    """The checkout a run records for each repo settings.md lists, by name, with overrides naming another checkout
+    """The checkout a run records for each repo harness.json lists, by name, with overrides naming another checkout
     for a repo. `only` keeps the named repos (every repo when None); with missing="skip", a repo whose checkout
     cannot be found is left out instead of stopping, unless an override names it."""
     harness_dir = harness_dir.resolve()
     repos = listed_repos(harness_dir)
     unknown = sorted(set(overrides) - set(repos))
     if unknown:
-        raise StateError(f"--checkout names {', '.join(unknown)}, which settings.md does not list")
+        raise StateError(f"--checkout names {', '.join(unknown)}, which harness.json does not list")
     if only is not None:
         absent = sorted(set(only) - set(repos))
         if absent:
-            raise StateError(f"settings.md does not list {', '.join(absent)}")
+            raise StateError(f"harness.json does not list {', '.join(absent)}")
         repos = {name: repos[name] for name in repos if name in only}
     project = validate.project_root(harness_dir)
     checkouts = {}
@@ -287,7 +284,7 @@ def checkout_env(checkouts):
 
 
 def code_state(harness_dir, overrides, only=None):
-    """The code entry for every repo settings.md lists (or the `only` ones), with overrides naming another checkout for a repo."""
+    """The code entry for every repo harness.json lists (or the `only` ones), with overrides naming another checkout for a repo."""
     harness_dir = harness_dir.resolve()
     checkouts = recorded_checkouts(harness_dir, overrides, only)
     # Repos are read side by side, since each takes seconds in a large checkout; results and the first error

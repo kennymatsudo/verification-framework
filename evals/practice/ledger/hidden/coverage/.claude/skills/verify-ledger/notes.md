@@ -1,13 +1,8 @@
 # Verification notes
 
-## Setup: verify-ledger
+## Setup notes
 
-- Target: the ledger HTTP API in this repo, started locally from the checkout with `python3 -m ledger` on port 8071; no UI, no external services.
-- Findings: README.md:9 gives the start command and port; README.md:11 names `GET /health` as the ready signal; ledger/server.py:95 reads `LEDGER_PORT` and `LEDGER_DB`; REQUIREMENTS.md holds the agreed behavior with IDs LR-1 to LR-8; an agent can start the app with only this checkout.
-- Looked in: README.md, REQUIREMENTS.md, ledger/server.py, ledger/store.py, tests/; no Makefile, compose file, or package scripts.
-- Blocker: none
-- Next action: none
-- Doctor proof: saved output in evidence/doctor/setup.txt: ready after Start (exit 0), not ready after Stop (exit 1), on the commit recorded there.
+Every command runs from the project root (the repo's top folder). The app runs the checkout's files directly and does not reload on edit (Reloads: no), so the framework launcher starts it from `{checkout:ledger}`, records the code it loaded, and restarts it from the scratch copy for a planned break. The agent may start and stop the app; it needs no login or credentials. Data lives in `data/ledger.db` under the project root, which the launched process creates; `.gitignore` keeps it out of the repo. The probe reads that file read-only without importing app code. Start runs `server.py` from `{checkout:ledger}` with that checkout first on `PYTHONPATH`, from the project root, so a planned break's scratch copy is the code that loads while `data/ledger.db` stays here; `python3 -m ledger` would import this checkout's package instead. Nothing here reaches an external or shared system.
 
 ## Known failing checks
 

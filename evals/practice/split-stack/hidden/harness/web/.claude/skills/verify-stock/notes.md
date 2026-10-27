@@ -1,13 +1,9 @@
 # Verification notes
 
-## Setup: verify-stock
+## Setup notes
 
-- Target: the stock command-line client in this repo and the Stock API from the api repo beside it, run locally on port 8075.
-- Findings: README.md:5 names `stack.env` and its two keys; stock/cli.py:11 reads them; ../api/README.md:7 gives the build and run commands and the `-X main.version` stamp; ../api/main.go:13 reads `version`; REQUIREMENTS.md holds ST-1 to ST-3; an agent with both checkouts and Go can start everything.
-- Looked in: README.md, REQUIREMENTS.md, stack.env.example, stock/, ../api/README.md, ../api/main.go, ../api/go.mod.
-- Blocker: none
-- Next action: none
-- Doctor proof: saved output in evidence/doctor/setup.txt: ready after Start (exit 0, `/version` equal to the api checkout's stamp), not ready after Stop (exit 1), on the commits recorded there.
+The stock command in this repo drives the Stock API from the `api` repo, checked out where `stack.env`'s `API_CHECKOUT` says (`../api` by default); each developer's path stays in their own `stack.env`.
+Every command runs from this repo's top folder, the project root. The API is a compiled Go program, so the launcher alone cannot say which code it runs: `api_server.py start --checkout api={checkout:api}` builds it from the api checkout (the scratch copy during a planned break) with the checkout's commit and uncommitted-code fingerprint stamped into `/version`, then starts it through the framework launcher with its data at `data/stock-items.json` here; `api_server.py doctor` runs the launcher's doctor and then compares `/version` with the api checkout's current code state. It needs a rebuild to run other code (Reloads: no). The agent may start and stop the API; it needs Go and nothing else. The checks run `python3 -m stock` from this checkout, so a break session on the web repo cannot run the client from a scratch copy; breaks are supported on the api repo. Nothing here reaches an external or shared system.
 
 ## Known failing checks
 

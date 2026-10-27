@@ -1,0 +1,56 @@
+{
+  "app": "Relay",
+  "setup": {
+    "status": "ready",
+    "target": "the relay command-line converter in this repo, run as `python3 -m relay`; no server, no services.",
+    "findings": "README.md:7 gives the command; relay/cli.py:44 defines the exit codes (0 converted, 2 malformed, no output written); REQUIREMENTS.md holds CR-1 to CR-5; nothing needs a person.",
+    "looked_in": "README.md, REQUIREMENTS.md, relay/, examples/; no Makefile or package manifest.",
+    "blocker": null,
+    "next": null,
+    "doctor_proof": "saved output in evidence/doctor/setup.txt: the doctor reports the checkout ready (exit 0), and not ready when pointed at a folder without relay (exit 1)."
+  },
+  "requirements": "REQUIREMENTS.md",
+  "repos": {
+    "relay": "."
+  },
+  "commands": {
+    "start": "none",
+    "stop": "none",
+    "doctor": "python3 .claude/skills/verify-relay/scripts/doctor.py",
+    "ready_line": "relay ready",
+    "probe": "python3 .claude/skills/verify-relay/scripts/probe.py",
+    "reloads": true
+  },
+  "tools": {
+    "doctor": {
+      "command": "python3 .claude/skills/verify-relay/scripts/doctor.py",
+      "use_when": "before running a check, or after a break session, to see which checkout the checks point at.",
+      "inputs": "none; `--point <checkout>` repoints the checks at another checkout (break sessions use it), `--point .` points back here.",
+      "environment": "Python 3; the pointer file `evidence/launch/checkout.txt` when one exists.",
+      "permissions": "read-only, except `--point`, which writes the pointer file.",
+      "result": "prints `relay ready`, the version, and the pointed checkout's code state as JSON, exit 0.",
+      "failure": "exit 1 when the pointed checkout has no runnable relay, with the reason; exit 2 when it could not tell.",
+      "limits": "says the tool runs; proves nothing about what it converts."
+    },
+    "probe": {
+      "command": "python3 .claude/skills/verify-relay/scripts/probe.py output out.json",
+      "use_when": "reading an output file a check or a person produced, to re-check a verdict by hand.",
+      "inputs": "the output file's path.",
+      "environment": "none.",
+      "permissions": "read-only; parses the file and loads no relay code.",
+      "result": "one JSON object: the row count, the total, and the rows (`--full` for every field).",
+      "failure": "exit 1 with `{\"not_found\": ...}` when the file does not exist; exit 2 with `STOPPED: <reason>` when it is not valid JSON.",
+      "limits": "reports the file's contents, never whether they are right."
+    },
+    "verify": {
+      "command": "python3 .claude/skills/verify-relay/scripts/framework/vf.py verify convert.rows",
+      "use_when": "proving a behavior after a change, or reproducing a failed step by hand.",
+      "inputs": "one or more sub-feature IDs from `features/`.",
+      "environment": "Python 3; the checks run relay from the checkout the doctor points at.",
+      "permissions": "writes only input and output files in the run's own folder.",
+      "result": "one status line per ID and an evidence file under `evidence/<check>/`; `status.md` is refreshed.",
+      "failure": "exit 1 when a step failed; exit 2 when relay could not run.",
+      "limits": "a pass proves only the behaviors the feature file maps to that command, on the recorded code."
+    }
+  }
+}

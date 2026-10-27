@@ -23,7 +23,7 @@ record. With no record it prints `nothing to stop` and exits 0, so it is safe to
 doctor answers whether the launched instance is worth driving: a record exists, its process is running,
 every repo's code state now equals the state recorded at start, so the files the process loaded are the
 files on disk, and, with --probe, that shell command exits 0, for the port and auth checks only the app
-knows. Ready: prints settings.md's Ready line, or `ready`, then the record's code as JSON, and exits 0.
+knows. Ready: prints harness.json's ready_line, or `ready`, then the record's code as JSON, and exits 0.
 Not ready: one reason per line, exit 1. Could not tell: a STOPPED: line, exit 2.
 
 status prints the record, or `no instance started`, and exits 0.
@@ -133,8 +133,9 @@ def shell(command, cwd, timeout):
 
 
 def ready_line(harness):
-    """What the doctor prints when the app is ready: settings.md's Ready line, or `ready`."""
-    return validate.setting(harness, "Commands", "Ready line") or "ready"
+    """What the doctor prints when the app is ready: harness.json's ready_line, or `ready`."""
+    value = validate.command(harness, "ready_line")
+    return value if isinstance(value, str) else "ready"
 
 
 def kill_group(pid):
@@ -259,8 +260,8 @@ def main():
     commands.add_parser("status", help="print the launch record")
     args = parser.parse_args()
     harness = args.harness.resolve()
-    if not (harness / "settings.md").is_file():
-        print(f"STOPPED: {harness} has no settings.md; this script works from a harness's scripts/framework/", file=sys.stderr)
+    if not (harness / "harness.json").is_file():
+        print(f"STOPPED: {harness} has no harness.json; this script works from a harness's scripts/framework/", file=sys.stderr)
         return 2
 
     try:

@@ -1,0 +1,18 @@
+{
+  "name": "Statement",
+  "summary": "A client reads an account's transactions.",
+  "reach": [
+    "`GET /accounts/<id>/statement`."
+  ],
+  "sources": [
+    "REQUIREMENTS.md LR-8."
+  ],
+  "behaviors": {
+    "statement.newest-first": {
+      "words": "the statement lists the account's transactions newest first, each with the balance after it",
+      "plan": "post two deposits, read the statement; the second must be listed first, and each balance_after must equal the stored transaction's. Order is read from the response because the order is the behavior; balances from the database. Reads the response order and the stored transactions.",
+      "check": "python3 .claude/skills/verify-ledger/scripts/checks/statement.py",
+      "reads": "screen"
+    }
+  }
+}

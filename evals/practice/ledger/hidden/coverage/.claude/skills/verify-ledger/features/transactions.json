@@ -1,0 +1,25 @@
+{
+  "name": "Transactions",
+  "summary": "A client deposits into or withdraws from an account.",
+  "reach": [
+    "`POST /accounts/<id>/transactions` with a positive (deposit) or negative (withdrawal) amount."
+  ],
+  "sources": [
+    "REQUIREMENTS.md LR-3 and LR-4."
+  ],
+  "behaviors": {
+    "transactions.deposit": {
+      "words": "a deposit raises the stored balance by the amount, and the stored balance equals the sum of the account's transactions",
+      "plan": "deposit through the API; read the stored balance and the stored transactions. Proves stored state, not the response body. Reads the account row and transactions.",
+      "check": "python3 .claude/skills/verify-ledger/scripts/checks/deposit.py",
+      "reads": "state"
+    },
+    "transactions.refuse-overdraft": {
+      "words": "a withdrawal that would take the balance below zero is refused with 409 and leaves the balance unchanged",
+      "plan": "withdraw more than the balance; expect 409 \"insufficient funds\" and the stored balance unchanged. The requirement is the expectation even though the current code allows the overdraft (LEDGER-41). Reads the account row.",
+      "check": "python3 .claude/skills/verify-ledger/scripts/checks/overdraft.py",
+      "not_break_tested": "fails on current code (LEDGER-41).",
+      "reads": "state"
+    }
+  }
+}

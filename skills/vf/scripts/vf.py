@@ -11,11 +11,11 @@ doctor can compare it with the checkout under test. Run from a harness's
 scripts/framework/, they act on that harness.
 
 vf.py run -- CHECK COMMAND... runs a check from the project root and writes its evidence file from the
-events the check reports. First it runs settings.md's Doctor command and refuses to run the check unless
+events the check reports. First it runs harness.json's doctor command and refuses to run the check unless
 the doctor exits 0, so no evidence is ever recorded against an app that was not ready or was running
 other code. The doctor's exit code and output go in the record as `doctor`.
 
-It gives the doctor and the check one VERIFY_CHECKOUT_<REPO> variable per repo in settings.md, naming the
+It gives the doctor and the check one VERIFY_CHECKOUT_<REPO> variable per repo in harness.json, naming the
 checkout the run records for that repo (the scratch copy during a planned break), so a check that runs
 the code itself runs it from there. It gives the check two more: VERIFY_REPORT, a file the check appends
 one JSON object per line to, and VERIFY_RUN_DIR, the folder for its video, screenshots, and logs. The events are check
@@ -27,13 +27,13 @@ name, plus, when it judged none or stopped, the ones the feature map proves with
 so a run that stops before judging what it was run for is recorded as stopped rather than refused.
 
 vf.py run records started_at and finished_at and the code code_state.py reports for the repos the run needs
-(those the proof lines of the behaviors this command proves name with `Repos: a, b.`, else every repo in
-settings.md), which must not change while the check runs, VERIFY_PLANNED_BREAK as planned_break with the repo of the break session this
+(those the entries of the behaviors this command proves name in `repos`, else every repo in
+harness.json), which must not change while the check runs, VERIFY_PLANNED_BREAK as planned_break with the repo of the break session this
 harness has open (the repo `break start` named, when several repos share its Git checkout), and the
 verdict from the exit code: 0 passed, 1 a step failed, anything else stopped.
 With VERIFY_PLANNED_BREAK set and no session open, or sessions open on several checkouts, it stops before
 running the check. It also records `harness_code`, a SHA-256 (line endings
-normalized) of settings.md, of every file under the harness's scripts/ apart from scripts/framework/ and
+normalized) of harness.json, of every file under the harness's scripts/ apart from scripts/framework/ and
 other checks' entries under scripts/checks/, and of any file the check command names, so a planned break
 and a later pass can be shown to have run the same check. It accepts the record under
 evidence/<check>/<time>.json only when the events follow the Evidence rules and agree with the exit
@@ -44,10 +44,13 @@ vf.py break run REPO "IDS: WHAT" -- python3 scripts/framework/vf.py run -- CHECK
 
 vf.py verify ID [ID ...] [--start] runs the proof of each named sub-feature: it looks up each one's
 check command in the feature map, runs every distinct command once through vf.py run, which runs the
-doctor first, then prints each named sub-feature's line from status.md. --start runs settings.md's Start
+doctor first, then prints each named sub-feature's line from status.md. --start runs harness.json's start
 command, with each {checkout:<repo>} filled with that repo's checkout, when the doctor says the app is not
-ready, then waits for the doctor to report ready; a Start of `user` means only a person starts the app, so
-it stops and says so. Exits 0 when every named sub-feature is
+ready, then waits for the doctor to report ready; a start of `user` means only a person starts the app, so
+it stops and says so.
+
+vf.py tools writes tools.md from the tools in harness.json, so the guide people and agents read is never
+hand-written; validate.py fails a tools.md that differs from what this writes. Exits 0 when every named sub-feature is
 Verified, 1 when any is not, and 2 when a check could not run, such as when the doctor reports not ready.
 
 vf.py status computes every mapped behavior's verdict from the feature map, the accepted evidence,
@@ -154,7 +157,7 @@ def needed_repos(harness, validate, command):
     repos = settings_repos(harness, validate)
     needed = []
     for sub_id in ids:
-        if validate.proof_repos(proofs.get(sub_id)) is None:
+        if not proofs.get(sub_id, {}).get("repos"):
             return None
         needed += [name for name in validate.behavior_repos(proofs[sub_id], repos) if name not in needed]
     return needed
@@ -171,7 +174,7 @@ def uncovered_repo_problems(harness, validate, record):
     problems = []
     for sub_id in record.get("sub_features") or []:
         proof = proofs.get(sub_id)
-        if proof is None or validate.proof_kind(proof) != "command":
+        if proof is None or validate.behavior_kind(proof) != "command":
             continue
         for name in validate.behavior_repos(proof, repos):
             if name not in code:
@@ -182,9 +185,9 @@ def uncovered_repo_problems(harness, validate, record):
 def run_doctor(harness, validate, env):
     """The doctor's verdict on the running instance, as the evidence records it: {"exit_code", "output"}.
     Raises Stopped when settings name no doctor."""
-    command = validate.setting(harness, "Commands", "Doctor")
+    command = validate.command(harness, "doctor")
     if not command:
-        raise Stopped("settings.md has no Doctor line under Commands; vf.py run checks the app is ready before every check")
+        raise Stopped("harness.json names no doctor command; vf.py run checks the app is ready before every check")
     try:
         result = subprocess.run(command, shell=True, cwd=validate.project_root(harness), stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, timeout=DOCTOR_TIMEOUT, env=env)
@@ -331,7 +334,7 @@ def judged_by_steps(steps):
 
 
 def mapped_to_command(harness, validate, command):
-    """The sub-features whose proof line in the feature map is this exact command, in map order.
+    """The behaviors whose check in the feature map is this exact command, in map order.
 
     A check that stops, or judges nothing, still covers what the map says its command proves,
     so the stop is recorded against them instead of refused."""
@@ -340,9 +343,9 @@ def mapped_to_command(harness, validate, command):
     except Stopped:
         return []
     mapped = []
-    for sub_id, proof in validate.command_proofs(proofs).items():
+    for sub_id, entry in validate.command_proofs(proofs).items():
         try:
-            if shlex.split(validate.BACKTICK.search(proof).group(1)) == list(command):
+            if shlex.split(entry["check"]) == list(command):
                 mapped.append(sub_id)
         except ValueError:
             continue
@@ -462,19 +465,18 @@ def run_check(command):
 
 
 def feature_map(harness, validate):
-    """The feature map's sub-feature IDs, their proof lines, and its errors; raises Stopped when the harness has no map."""
-    mapped = validate.read_map(harness, validate.project_root(harness))
+    """The feature map's behavior IDs, their entries, and its errors; raises Stopped when the harness has no features folder."""
+    mapped = validate.read_map(harness, validate.project_root(harness), settings_repos(harness, validate))
     if mapped is None:
-        raise Stopped(f"{harness} has no feature index at features/README.md")
+        raise Stopped(f"{harness} has no features folder")
     _, seen_ids, proofs, errors = mapped
-    validate.check_proof_repos(proofs, settings_repos(harness, validate), errors)
     return seen_ids, proofs, errors
 
 
 def settings_repos(harness, validate):
-    """The repos settings.md lists, or none when the harness has no settings yet."""
-    settings = harness / "settings.md"
-    return validate.parse_repos(validate.sections(settings.read_text())[1])[0] if settings.is_file() else {}
+    """The repos harness.json lists, or none when the harness has no manifest yet."""
+    repos = (validate.manifest(harness) or {}).get("repos")
+    return repos if isinstance(repos, dict) else {}
 
 
 def mapped_verdicts(harness, validate):
@@ -509,7 +511,7 @@ def refresh_status(harness, validate):
 
 
 def proof_commands(harness, validate, ids):
-    """Each named sub-feature's check command from the feature map, as {command: [ids]}, in map order,
+    """Each named behavior's check command from the feature map, as {command: [ids]}, in map order,
     and the IDs with no command. Raises Stopped for an ID the map lacks or a map with errors."""
     seen_ids, proofs, errors = feature_map(harness, validate)
     if errors:
@@ -519,27 +521,27 @@ def proof_commands(harness, validate, ids):
         raise Stopped(f"not in the feature map: {', '.join(missing)}")
     commands, uncovered = {}, []
     for sub_id in ids:
-        proof = proofs.get(sub_id, "")
-        if validate.proof_kind(proof) != "command":
+        proof = proofs.get(sub_id, {})
+        if validate.behavior_kind(proof) != "command":
             uncovered.append(sub_id)
             continue
-        commands.setdefault(validate.BACKTICK.search(proof).group(1), []).append(sub_id)
+        commands.setdefault(proof["check"], []).append(sub_id)
     return commands, uncovered
 
 
 def start_app(harness, validate, code_state, env):
-    """Run settings.md's Start command with its checkouts filled in and wait for the doctor to report ready; the lines to print."""
-    command = validate.setting(harness, "Commands", "Start")
+    """Run harness.json's start command with its checkouts filled in and wait for the doctor to report ready; the lines to print."""
+    command = validate.command(harness, "start")
     if not command:
-        raise Stopped("settings.md has no Start line under Commands")
+        raise Stopped("harness.json names no start command")
     if command.lower() == validate.START_USER:
-        raise Stopped("settings.md says only a person starts the app (Start: user); ask the user to start it")
+        raise Stopped("harness.json says only a person starts the app (start: user); ask the user to start it")
     if command.lower() == validate.START_NONE:
-        raise Stopped("settings.md says there is nothing to start (Start: none), yet the doctor reports not ready")
+        raise Stopped("harness.json says there is nothing to start (start: none), yet the doctor reports not ready")
     try:
         command = validate.fill_checkouts(command, code_state.recorded_checkouts(harness, {}, None, "skip"))
     except (ValueError, code_state.StateError) as error:
-        raise Stopped(f"settings.md: {error}") from error
+        raise Stopped(f"harness.json: {error}") from error
     lines = [f"Starting the app: {command}"]
     started = subprocess.run(command, shell=True, cwd=validate.project_root(harness), stdin=subprocess.DEVNULL, env=env)
     if started.returncode:
@@ -578,6 +580,15 @@ def verify(harness, ids, start):
     return lines + results, 0 if verified else 1
 
 
+def tools(harness):
+    """Write tools.md from harness.json's tools; return the lines to print and the exit code."""
+    validate = sibling("validate")
+    if validate.manifest(harness) is None:
+        raise Stopped(f"{harness / validate.MANIFEST} is missing or is not a JSON object")
+    validate.write_tools(harness)
+    return [f"Wrote {harness / 'tools.md'}"], 0
+
+
 def status(harness):
     """Compute every behavior's verdict and write status.md's Latest results; return the lines to print and the exit code."""
     validate = sibling("validate")
@@ -613,8 +624,8 @@ def not_verified(harness, sub_id, reason, until_break):
 def harness_of(scripts_dir, command="this command"):
     """The harness this copy of vf.py sits in, at scripts/framework/; raises Stopped elsewhere, naming the command."""
     harness = scripts_dir.parent.parent
-    if not (harness / "settings.md").is_file():
-        raise Stopped(f"{command} works from a harness's scripts/framework/, and {harness} has no settings.md")
+    if not (harness / "harness.json").is_file():
+        raise Stopped(f"{command} works from a harness's scripts/framework/, and {harness} has no harness.json")
     return harness
 
 
@@ -765,7 +776,7 @@ def sync(harness_dir, restore=False):
     edited = edited_copies(copies, recorded)
     if edited and not restore:
         names = ", ".join(name for name, _, _ in edited)
-        lines = [f"STOPPED: {names} edited since the last sync; app specifics belong in settings.md. "
+        lines = [f"STOPPED: {names} edited since the last sync; app specifics belong in harness.json. "
                  "Rerun with --restore once the user agrees to replace the edited copies."]
         lines += [edit_diff(source, copy, name) for name, source, copy in edited]
         return lines, 1
@@ -827,6 +838,7 @@ def main():
     verify_parser.add_argument("sub_features", nargs="+", metavar="ID", help="sub-feature IDs from the feature map")
     verify_parser.add_argument("--start", action="store_true", help="run the Start command when the doctor says the app is not ready")
     commands.add_parser("status", help="compute every behavior's verdict from the evidence and write status.md's Latest results")
+    commands.add_parser("tools", help="write tools.md from the tools in harness.json")
     not_verified_parser = commands.add_parser("not-verified", help="record that a behavior's check could not run, and refresh status.md")
     not_verified_parser.add_argument("sub_feature", help="the sub-feature ID")
     not_verified_parser.add_argument("reason", help="why it is Not verified, in a sentence")
@@ -841,6 +853,8 @@ def main():
             lines, code = verify(harness_of(SCRIPTS_DIR), list(dict.fromkeys(args.sub_features)), args.start)
         elif args.command == "status":
             lines, code = status(harness_of(SCRIPTS_DIR))
+        elif args.command == "tools":
+            lines, code = tools(harness_of(SCRIPTS_DIR))
         elif args.command == "not-verified":
             lines, code = not_verified(harness_of(SCRIPTS_DIR), args.sub_feature, args.reason, args.until_break)
         else:

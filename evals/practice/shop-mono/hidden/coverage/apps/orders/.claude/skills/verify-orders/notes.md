@@ -1,13 +1,9 @@
 # Verification notes
 
-## Setup: verify-orders
+## Setup notes
 
-- Target: the orders service under apps/orders in the shop monorepo, started locally with `python3 -m orders` on port 8073, and its hand-off to the mailer through the shared outbox; the mailer sends real mail and is not run by the harness.
-- Findings: apps/orders/README.md:9 gives the start command and port; orders/server.py:73 reads `ORDERS_PORT`, `ORDERS_DB`, and `SHOP_OUTBOX`; README.md:12 at the repo root says the mail-sink folder forwards to the team's shared inbox; REQUIREMENTS.md holds SR-1 to SR-3.
-- Looked in: README.md, apps/orders/README.md, apps/orders/REQUIREMENTS.md, apps/orders/orders/, apps/mailer/README.md, apps/mailer/worker.js.
-- Blocker: none
-- Next action: none
-- Doctor proof: saved output in evidence/doctor/setup.txt: ready after Start (exit 0), not ready after Stop (exit 1), on the commit recorded there.
+The project root is `apps/orders`, this app's folder in the monorepo, so `.` covers only the orders code. The mailer under `../mailer` is not listed: no check runs its code, and running it sends real mail. A check that does run it must add `- mailer: ../mailer` here first.
+Every command runs from `apps/orders`. The orders server runs the checkout's files directly and needs a restart after an edit (Reloads: no), so the framework launcher starts it from `{checkout:orders}` and records the code it loaded; it runs that checkout's `server.py` with the checkout first on `PYTHONPATH`, from this folder, so a planned break's scratch copy is the code that loads while `data/orders.db` and the shared outbox `../../queue/outbox.jsonl` stay here. The agent may start and stop it. The mailer is not started by the harness: `node ../mailer/worker.js --once` sends real mail through the team relay (`../../mail-sink`), so anything that runs it is an action with a shared side effect and needs the user's approval for that run.
 
 ## Known failing checks
 

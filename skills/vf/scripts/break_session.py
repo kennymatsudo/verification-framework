@@ -12,14 +12,14 @@ Usage:
 
 start makes a scratch git worktree of REPO at the commit under test, replays the developer's staged,
 unstaged, and untracked changes into it, and confirms its code_state.py fingerprint matches the
-developer's checkout. It then opens a session and points the app at the copy: when settings.md's
-Start is a command, it runs Stop and then Start with {checkout:REPO} filled with the copy and every
+developer's checkout. It then opens a session and points the app at the copy: when harness.json's
+start is a command, it runs Stop and then Start with {checkout:REPO} filled with the copy and every
 other repo's placeholder with that repo's checkout. Start must name {checkout:REPO}; when Start is
 `none`, nothing runs and the checks read the copy from VERIFY_CHECKOUT_<REPO>; when Start is `user`,
 only a person starts the app and a break can't run. Make the break as an uncommitted edit in the copy it prints.
 
 run confirms the developer's checkout still matches and the copy holds an edit, stops and starts the
-app again the same way when settings.md's Reloads is `no`, and runs the check from the project root with
+app again the same way when harness.json's reloads is `no`, and runs the check from the project root with
 VERIFY_PLANNED_BREAK set. It saves the edit as <time>.patch beside the <time>.json evidence the check
 wrote, outside the run folder so it can be committed with the record, then restores the copy to its starting state and confirms its fingerprint, whether the check
 passed, failed, or crashed. When vf.py run accepted the break run, it appends one line per targeted
@@ -38,7 +38,7 @@ A session copies REPO's whole Git checkout, so settings repos in that checkout s
 take the repo start named, and a start for another of them while it is open is refused. While a
 session is open, code_state.py refuses ordinary code recording on every repo in it, including --checkout
 overrides. Only the harness that opened the session may run or end it, or record its scratch code.
-Commands from settings.md run from the project root with each {checkout:<repo>} filled in, with
+Commands from harness.json run from the project root with each {checkout:<repo>} filled in, with
 VERIFY_CHECKOUT_<REPO> set for every repo, and with VERIFY_BREAK_SESSION set so their own code_state.py
 calls are not refused.
 
@@ -92,19 +92,19 @@ def git_output(directory, *args, data=None, env=None):
 
 
 def command_setting(harness, label):
-    """A '## Commands' value from settings.md, or StateError when the line is missing."""
-    value = validate.setting(harness, "Commands", label)
+    """A command from harness.json, or StateError when it is missing or blank."""
+    value = validate.command(harness, label)
     if value is None:
-        raise StateError(f"settings.md has no '- {label}:' line under '## Commands'")
+        raise StateError(f"harness.json names no {label} command")
     return value
 
 
 def reloads(harness):
-    """Whether the app picks up an edit to its checkout without a restart, from settings.md's Reloads line."""
-    value = command_setting(harness, "Reloads").lower()
-    if value not in validate.RELOADS:
-        raise StateError(f"settings.md's Reloads must be yes or no, not {value}")
-    return value == "yes"
+    """Whether the app picks up an edit to its checkout without a restart, from harness.json's reloads flag."""
+    value = validate.command(harness, "reloads")
+    if not isinstance(value, bool):
+        raise StateError("harness.json's commands.reloads must be true or false")
+    return value
 
 
 def session_checkouts(harness, session, scratch):
@@ -126,11 +126,11 @@ def session_checkouts(harness, session, scratch):
 
 
 def run_command(harness, command, checkouts, repo):
-    """Run a settings.md command from the project root with its {checkout:<repo>} placeholders filled; StateError when it fails."""
+    """Run a harness.json command from the project root with its {checkout:<repo>} placeholders filled; StateError when it fails."""
     try:
         text = validate.fill_checkouts(command, checkouts)
     except ValueError as error:
-        raise StateError(f"settings.md: {error}") from error
+        raise StateError(f"harness.json: {error}") from error
     print(f"Running: {text}", flush=True)
     env = {**os.environ, "VERIFY_BREAK_SESSION": repo, **code_state.checkout_env(checkouts)}
     result = subprocess.run(text, shell=True, cwd=validate.project_root(harness), env=env)
@@ -141,11 +141,11 @@ def run_command(harness, command, checkouts, repo):
 def point_app(harness, session, repo, scratch):
     """Make the app load the scratch copy, or the developer's checkouts again: Stop, then Start with the
     checkouts filled in. Nothing runs when Start is `none`, since the checks then read VERIFY_CHECKOUT_<REPO>."""
-    start = command_setting(harness, "Start")
+    start = command_setting(harness, "start")
     if start.lower() in (validate.START_NONE, validate.START_USER):
         return
     checkouts = session_checkouts(harness, session, scratch)
-    stop = command_setting(harness, "Stop")
+    stop = command_setting(harness, "stop")
     if stop.lower() != "none":
         run_command(harness, stop, checkouts, repo)
     run_command(harness, start, checkouts, repo)
@@ -155,7 +155,7 @@ def locate(harness, repo):
     """The developer's checkout for REPO, which may be a folder inside a Git checkout, and that checkout's top."""
     repos = code_state.listed_repos(harness)
     if repo not in repos:
-        raise StateError(f"settings.md lists no repo named {repo}")
+        raise StateError(f"harness.json lists no repo named {repo}")
     checkout = validate.resolve_repo(repos[repo], validate.project_root(harness))
     if not checkout:
         raise StateError(f"{repo}: no Git checkout at {repos[repo]}")
@@ -230,10 +230,10 @@ def start(harness, repo):
         code_state.require_session_owner(session, harness)
         require_session_repo(session, repo)
         raise GuardError(f"a break session is already open for {repo}; see `vf.py break status`, or close it with `vf.py break end {repo}`")
-    start_command = command_setting(harness, "Start")
+    start_command = command_setting(harness, "start")
     reloads(harness)
     if start_command.lower() == validate.START_USER:
-        raise StateError("settings.md says only a person starts the app (Start: user), so a planned break can't run here; record the proof as Not break-tested")
+        raise StateError("harness.json says only a person starts the app (start: user), so a planned break can't run here; record the proof as Not break-tested")
     under_test = code_state.checkout_state(checkout, harness)
 
     folder = code_state.session_folder(checkout)

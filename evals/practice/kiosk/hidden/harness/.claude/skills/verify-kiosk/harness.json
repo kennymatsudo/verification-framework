@@ -1,0 +1,46 @@
+{
+  "app": "Kiosk",
+  "setup": {
+    "status": "ready",
+    "target": "the kiosk web page and its Node server in this repo, started locally with `node server.js` on port 8072; no external services.",
+    "findings": "README.md:7 gives the start command and port; server.js:5 reads `KIOSK_PORT` and `KIOSK_DATA`; server.js:93 serves `public/` from the server's own folder; REQUIREMENTS.md holds the agreed behavior KR-1 to KR-6; an agent can start the app with only this checkout and Node.",
+    "looked_in": "README.md, REQUIREMENTS.md, package.json, server.js, public/app.js, tests/; no compose file or Makefile.",
+    "blocker": null,
+    "next": null,
+    "doctor_proof": "saved output in evidence/doctor/setup.txt: ready after Start (exit 0), not ready after Stop (exit 1), on the commit recorded there."
+  },
+  "requirements": "REQUIREMENTS.md",
+  "repos": {
+    "kiosk": "."
+  },
+  "commands": {
+    "start": "python3 .claude/skills/verify-kiosk/scripts/framework/vf.py start --checkout kiosk={checkout:kiosk} --until \"curl -sf http://127.0.0.1:8072/api/health\" -- node {checkout:kiosk}/server.js",
+    "stop": "python3 .claude/skills/verify-kiosk/scripts/framework/vf.py stop",
+    "doctor": "python3 .claude/skills/verify-kiosk/scripts/framework/vf.py doctor --probe \"curl -sf http://127.0.0.1:8072/api/health\"",
+    "ready_line": "ready",
+    "probe": "node .claude/skills/verify-kiosk/scripts/probe.js",
+    "reloads": false
+  },
+  "tools": {
+    "doctor": {
+      "command": "python3 .claude/skills/verify-kiosk/scripts/framework/vf.py doctor --probe \"curl -sf http://127.0.0.1:8072/api/health\"",
+      "use_when": "before driving the page by hand or running a check, or when a check stopped with \"not ready\".",
+      "inputs": "none.",
+      "environment": "an instance started with the Start command in `harness.json`.",
+      "permissions": "read-only.",
+      "result": "prints `ready` and the loaded code's commit as JSON, exit 0.",
+      "failure": "exit 1 with one reason per line; exit 2 when it could not tell. Start the app with the Start command, or restart it after editing `server.js`.",
+      "limits": "says the server is up on the recorded code; says nothing about the page a browser has loaded."
+    },
+    "probe": {
+      "command": "node .claude/skills/verify-kiosk/scripts/probe.js order 1",
+      "use_when": "checking what was stored after placing an order on the page, or re-checking a verdict by hand.",
+      "inputs": "the order number shown on the page; `orders` lists every stored order's number and total.",
+      "environment": "the data file at `data/orders.json` under the project root (or `KIOSK_DATA`); the server need not be running.",
+      "permissions": "read-only; reads the file directly and loads no server code.",
+      "result": "one JSON object: the stored order with its lines and total, or `{\"orders\": [...]}`.",
+      "failure": "exit 1 with `{\"not_found\": ..., \"hint\": ...}` when no such order is stored; exit 2 with `STOPPED: <reason>` when the file is unreadable.",
+      "limits": "reports stored state only, never what the page showed."
+    }
+  }
+}

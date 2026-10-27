@@ -1,0 +1,18 @@
+{
+  "name": "Mail",
+  "summary": "The mailer turns each outbox job into one confirmation email.",
+  "reach": [
+    "`node ../mailer/worker.js --once` from apps/orders, or the running worker, which polls the outbox every five seconds."
+  ],
+  "sources": [
+    "REQUIREMENTS.md SR-3. Running the mailer drops real mail into the team relay's folder (`../../mail-sink`), which forwards to the shared test inbox, so any check that runs it is an action with a shared side effect and needs the user's approval for that run."
+  ],
+  "behaviors": {
+    "mail.confirmation-sent": {
+      "words": "the mailer sends exactly one confirmation per outbox job to the customer's email, with the order ID in the subject"
+    },
+    "mail.marks-done": {
+      "words": "the mailer marks each job done after sending, so a second run sends nothing for it"
+    }
+  }
+}

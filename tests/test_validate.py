@@ -22,45 +22,26 @@ validate = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(validate)
 REFERENCES = SCRIPTS.parent / "references"
 
-SETTINGS = (
-    "# App verification settings\n\n"
-    "## Setup\n\n- Status: ready\n\n"
-    "## Workflow\n\n- Requirements source: none\n\n"
-    "## Repos\n\n- app: .\n\n"
-    "## Commands\n\n"
-    "- Start: npm run dev\n- Stop: npm run stop\n- Doctor: bin/verify doctor\n- Ready line: verify: ready\n"
-    "- Probe: none yet\n"
-    "- Reloads: no\n"
-)
+from harness_json import edit_feature, edit_manifest, manifest, read_manifest, write_feature, write_manifest  # noqa: E402
+
+CHECK = ".agents/skills/verify-app/scripts/pay"
 
 
-def setup_record(name, blocker="none", next_action="none", proof="evidence/doctor/2026-10-09T10-00-00Z.txt, 2026-10-09, app abc123"):
-    return (
-        f"# Notes\n\n## Setup: {name}\n\n"
-        "- Target: storefront\n- Findings: README.md:4 documents startup\n"
-        "- Looked in: README.md and scripts/dev\n"
-        f"- Blocker: {blocker}\n- Next action: {next_action}\n- Doctor proof: {proof}\n"
-    )
+def json_template(name, key=None):
+    """The JSON a reference file tells setup to copy into the harness; `key` wraps a fragment such as tool-guide.md's."""
+    block = (REFERENCES / name).read_text().split("```json\n", 1)[1].split("\n```", 1)[0]
+    return json.loads("{" + block + "}" if key else block)
 
 
-def template(name):
-    """The markdown block a reference file tells setup to copy into the harness."""
-    return (REFERENCES / name).read_text().split("```markdown\n", 1)[1].split("\n```", 1)[0] + "\n"
-
-
-def fill(text, harness):
-    """A template with every slot filled the way a ready harness fills it."""
-    text = text.replace("<harness directory name>", harness.name).replace("- Status: incomplete", "- Status: ready")
-    text = re.sub(r"^(- (?:Blocker|Next action): ).*$", r"\1none", text, flags=re.M)
-    text = re.sub(r"^(- Reloads: ).*$", r"\1no", text, flags=re.M)
-    while (filled := re.sub(r"<[^<>]*>", "filled", text)) != text:
-        text = filled
-    return text
-
-
-def labels(text, section):
-    _, body = validate.sections(text)
-    return [match.group(1) for line in body[section] if (match := validate.SETTING.match(line))]
+def fill(value):
+    """A template with every <slot> filled the way a ready harness fills it."""
+    if isinstance(value, dict):
+        return {k: fill(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [fill(v) for v in value]
+    if isinstance(value, str):
+        return re.sub(r"<[^<>]*>", "filled", value)
+    return value
 
 
 def lock_rules(harness):
@@ -71,20 +52,17 @@ def lock_rules(harness):
     lock.write_text(f"{digest}  rules.md\n")
 
 
-def make_harness(root):
+def make_harness(root, **overrides):
     harness = root / ".agents" / "skills" / "verify-app"
     (harness / "features").mkdir(parents=True)
     (harness / "evidence" / "checkout-pay").mkdir(parents=True)
     shutil.copy(REFERENCES / "rules.md", harness / "rules.md")
     lock_rules(harness)
-    (harness / "tools.md").write_text("# App tools\n")
     (harness / "README.md").write_text("# Verify app\n")
-    (harness / "notes.md").write_text(setup_record(harness.name))
+    (harness / "notes.md").write_text("# Verification notes\n\n## Untested cases\n\nNone yet.\n")
     (harness / "status.md").write_text("# Verification status\n\n## Latest results\n\nNo behaviors in the feature map yet.\n")
-    (harness / "settings.md").write_text(SETTINGS)
-    (harness / "features" / "README.md").write_text(
-        "# Map\n\nRead [results](../status.md).\n\n## Features\n"
-    )
+    write_manifest(harness, **overrides)
+    validate.write_tools(harness)
     return harness
 
 
@@ -108,7 +86,7 @@ class RulesCopyTest(unittest.TestCase):
     def test_edited_or_other_version_rules_fail_before_the_setup_gate(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
-            (harness / "settings.md").write_text(SETTINGS.replace("Status: ready", "Status: incomplete"))
+            write_manifest(harness, setup={"status": "incomplete", "blocker": "no start command found", "next": "ask the user"})
             rules = harness / "rules.md"
             original = rules.read_text()
 
@@ -142,136 +120,170 @@ class RulesCopyTest(unittest.TestCase):
             self.assertIn("update the installed framework skills", output)
 
 
-class FeatureIndexTest(unittest.TestCase):
-    def test_status_link_is_not_a_feature_and_broken_links_fail(self):
+class FeatureFilesTest(unittest.TestCase):
+    def test_a_feature_file_counts_its_behaviors_and_a_markdown_file_beside_it_is_ignored(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
-            features = harness / "features"
-            (features / "README.md").write_text(
-                "# Map\n\nRead [status](../status.md).\n\n"
-                "## Baseline\n\nReady.\n\n## Features\n\n"
-                "- [Checkout](checkout.md): pay.\n"
-            )
-            (features / "checkout.md").write_text(
-                "# Checkout\n\n## Sub-features\n\n"
-                "- checkout.pay: a paid order appears.\n\n"
-                "## How a user reaches it\n\n- Checkout button.\n\n"
-                "## How to prove it\n\n- checkout.pay: No check yet.\n\n"
-                "## Gotchas\n\nNone.\n"
-            )
+            write_feature(harness, "checkout", {"checkout.pay": {"words": "a paid order appears"}}, gotchas=["None."])
+            (harness / "features" / "checkout.md").write_text("# Checkout\n\nLong prose about the request flow.\n")
             result, output = run_check(harness)
             self.assertEqual(result, 0, output)
             self.assertIn("1 features, 1 sub-features", output)
 
-            (features / "README.md").write_text(
-                "# Map\n\nRead [results](../results.md).\n\n## Features\n\n"
-                "- [Checkout](checkout.md): pay.\n"
-            )
-            result, output = run_check(harness)
-            self.assertEqual(result, 1)
-            self.assertIn("README.md links ../results.md, which does not exist", output)
-
-
-class FeatureSectionsTest(unittest.TestCase):
-    def test_feature_accepts_verification_plan_without_relaxing_proof_requirements(self):
-        with tempfile.TemporaryDirectory() as directory:
-            feature = Path(directory) / "checkout.md"
-            text = (
-                "# Checkout\n\n## Sub-features\n\n- checkout.pay: an order is paid.\n\n"
-                "## How a user reaches it\n\n- Checkout API.\n\n"
-                "## Verification plan\n\nSource: launch requirements.\n"
-                "Submit checkout and read matching order/payment. UI excluded.\n\n"
-                "## How to prove it\n\n- checkout.pay: No check yet.\n\n"
-                "## Gotchas\n\nNone.\n"
-            )
-            feature.write_text(text)
-            errors = []
-            validate.check_feature(feature, Path(directory), {}, errors)
-            self.assertEqual(errors, [])
-            feature.write_text(text.replace("- checkout.pay: No check yet.\n", ""))
-            errors = []
-            validate.check_feature(feature, Path(directory), {}, errors)
-            self.assertIn("checkout.md: checkout.pay has no line under 'How to prove it'", errors)
-
-
-class AppSettingsTest(unittest.TestCase):
-    def test_settings_need_every_label_filled(self):
+    def test_a_feature_file_that_is_not_an_object_or_has_an_unknown_field_fails(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
-            unfilled = SETTINGS.replace("- Doctor: bin/verify doctor\n", "").replace(
-                "verify: ready", "<ready line>"
-            )
-            (harness / "settings.md").write_text(unfilled)
-            result, output = run_check(harness)
-            self.assertEqual(result, 1)
-            self.assertIn("settings.md: no '- Doctor: <value>' line under '## Commands'", output)
-            self.assertIn("settings.md: Ready line still has an unfilled slot: <ready line>", output)
-
-    def test_settings_require_code_repos(self):
-        with tempfile.TemporaryDirectory() as directory:
-            harness = make_harness(Path(directory))
-            settings = harness / "settings.md"
-            settings.write_text(SETTINGS.replace("## Repos\n\n- app: .\n\n", ""))
+            (harness / "features" / "checkout.json").write_text("[]")
             result, output = run_check(harness)
             self.assertEqual(result, 1, output)
-            self.assertIn("no '## Repos' section", output)
+            self.assertIn("checkout.json: not a JSON object", output)
+            write_feature(harness, "checkout", {"checkout.pay": {"words": "a paid order appears", "proof": "by hand"}})
+            result, output = run_check(harness)
+            self.assertEqual(result, 1, output)
+            self.assertIn("checkout.json: checkout.pay: unknown field proof", output)
+
+    def test_a_behavior_needs_words_and_a_check_or_an_unreachable_reason_or_neither(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            (harness / "scripts").mkdir(exist_ok=True)
+            (harness / "scripts" / "pay").write_text("# check\n")
+            cases = (
+                ({"words": "an order is paid", "plan": "submit checkout; read the order"}, None),
+                ({"words": "an order is paid", "check": CHECK, "reads": "state"}, None),
+                ({"words": "an order is paid", "unreachable": {"blocker": "no declining card", "tried": "card 4000"}}, None),
+                ({"check": CHECK, "reads": "state"}, "checkout.pay: words is missing"),
+                ({"words": "x", "check": CHECK}, "checkout.pay: reads is missing"),
+                ({"words": "x", "check": CHECK, "reads": "state", "unreachable": {"blocker": "b", "tried": "t"}}, "has both a check and an unreachable reason"),
+                ({"words": "x", "reads": "state"}, "reads belongs with a check"),
+                ({"words": "x", "not_break_tested": "new"}, "not_break_tested belongs with a check"),
+                ({"words": "x", "unreachable": "no card"}, 'unreachable must be {"blocker": ..., "tried": ...}'),
+                ({"words": "x", "unreachable": {"blocker": "no card"}}, "checkout.pay unreachable: tried is missing"),
+                ({"words": "x", "check": "scripts/missing"}, "check names `scripts/missing`, but scripts/missing does not exist"),
+                ({"words": "x", "check": "<the command>", "reads": "state"}, "check still has an unfilled slot"),
+            )
+            for entry, expected in cases:
+                with self.subTest(entry=entry):
+                    write_feature(harness, "checkout", {"checkout.pay": entry})
+                    result, output = run_check(harness)
+                    if expected is None:
+                        self.assertEqual(result, 0, output)
+                    else:
+                        self.assertEqual(result, 1, output)
+                        self.assertIn(expected, output)
+
+    def test_ids_are_well_formed_and_unique_across_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            write_feature(harness, "checkout", {"checkout.pay": {"words": "paid"}, "Checkout.Refund": {"words": "refunded"}})
+            write_feature(harness, "orders", {"checkout.pay": {"words": "paid again"}}, name="Orders")
+            result, output = run_check(harness)
+            self.assertEqual(result, 1, output)
+            self.assertIn("checkout.json: Checkout.Refund: an ID is lowercase letters, digits, dots, dashes, and underscores", output)
+            self.assertIn("orders.json: checkout.pay: also defined in checkout.json", output)
+
+
+class ManifestTest(unittest.TestCase):
+    def test_the_manifest_needs_every_command_filled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            edit_manifest(harness, lambda d: (d["commands"].pop("doctor"), d["commands"].update(ready_line="<ready line>")))
+            result, output = run_check(harness)
+            self.assertEqual(result, 1)
+            self.assertIn("harness.json commands: doctor is missing", output)
+            self.assertIn("harness.json commands: ready_line still has an unfilled slot: <ready line>", output)
+
+    def test_the_manifest_requires_repos_a_reloads_flag_and_known_start_placeholders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            cases = (
+                (lambda d: d.pop("repos"), "repos must be a non-empty object"),
+                (lambda d: d.update(repos={"Worker": "../worker"}), "repo name 'Worker' is not lowercase"),
+                (lambda d: d.update(repos={"app": "/Users/sam/app"}), "app locator must be portable"),
+                (lambda d: d.update(repos={"app": "env:local.env"}), "invalid locator for app"),
+                (lambda d: d["commands"].update(reloads="no"), "reloads must be true or false"),
+                (lambda d: d["commands"].update(start="run {checkout:api}"), "start names {checkout:api}, which is not a repo"),
+                (lambda d: d["commands"].update(probe=""), "probe must be a command, or null"),
+                (lambda d: d.pop("app"), "harness.json: app is missing"),
+            )
+            for change, expected in cases:
+                with self.subTest(expected=expected):
+                    write_manifest(harness)
+                    edit_manifest(harness, change)
+                    result, output = run_check(harness)
+                    self.assertEqual(result, 1, output)
+                    self.assertIn(expected, output)
 
 
 class TemplateTest(unittest.TestCase):
-    def test_templates_carry_exactly_the_labels_check_reads(self):
-        for section, expected in validate.SETTINGS.items():
-            self.assertEqual(labels(template("settings.md"), section), expected)
-        self.assertEqual(labels(template("notes.md"), "Setup: <harness directory name>"), validate.SETUP_LABELS)
+    def test_the_tool_guide_names_exactly_the_fields_check_reads(self):
+        entry = next(iter(json_template("tool-guide.md", key="tools")["tools"].values()))
+        self.assertEqual(set(entry), set(validate.TOOL_REQUIRED) | set(validate.TOOL_OPTIONAL) | {"run_from"})
 
-    def test_filled_templates_pass(self):
+    def test_the_filled_manifest_template_passes(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
-            (harness / "settings.md").write_text(fill(template("settings.md"), harness))
-            (harness / "notes.md").write_text(fill(template("notes.md"), harness))
-            (harness / "tools.md").write_text(fill(template("tool-guide.md"), harness))
-            (Path(directory) / "filled").mkdir()
+            data = fill(json_template("harness.md"))
+            data["setup"].update(status="ready", blocker=None, next=None, doctor_proof="filled")
+            data["repos"] = {"app": "."}
+            data["commands"]["probe"] = None
+            write_manifest(harness, data)
+            validate.write_tools(harness)
             result, output = run_check(harness)
             self.assertEqual(result, 0, output)
 
 
-def tool_entry(command="scripts/probe order --help", run_from="the project root", skip=None):
-    lines = [
-        "## Look up an order", "", "Use when: you need an order's state.", "", f"Run from {run_from}:", "",
-        "`scripts/probe order o_1`", "",
-        *(f"- {field}: filled." for field in validate.TOOL_FIELDS if field != skip), "",
-        f"Help: `{command}`.",
-    ]
-    return "# App tools\n\n" + "\n".join(lines) + "\n"
+def tool_entry(command="scripts/probe order o_1", run_from=None, skip=None):
+    entry = {"command": command, "use_when": "you need an order's state.", "permissions": "read-only.", "limits": "stored state only."}
+    if run_from:
+        entry["run_from"] = run_from
+    if skip:
+        entry.pop(skip)
+    return {"probe": entry}
 
 
-class ToolGuideTest(unittest.TestCase):
+class ToolsTest(unittest.TestCase):
     def make_tool(self, root, body="#!/bin/sh\necho usage\n"):
         script = root / "scripts" / "probe"
         script.parent.mkdir()
         script.write_text(body)
         script.chmod(0o755)
 
-    def test_a_complete_entry_with_a_working_help_passes(self):
+    def with_tools(self, harness, tools):
+        write_manifest(harness, tools=tools)
+        validate.write_tools(harness)
+
+    def test_a_complete_entry_with_a_working_help_passes_and_renders_the_guide(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
             self.make_tool(Path(directory))
-            (harness / "tools.md").write_text(tool_entry())
+            self.with_tools(harness, tool_entry())
             result, output = run_check(harness, "--run-help")
             self.assertEqual(result, 0, output)
+            guide = (harness / "tools.md").read_text()
+            self.assertIn("## probe\n\nUse when: you need an order's state.\n\nRun from the project root:\n\n`scripts/probe order o_1`\n", guide)
+            self.assertIn("- Limits: stored state only.\n\nHelp: `scripts/probe order o_1 --help`\n", guide)
+
+    def test_a_hand_edited_guide_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            (harness / "tools.md").write_text((harness / "tools.md").read_text() + "\n## Added by hand\n")
+            result, output = run_check(harness)
+            self.assertEqual(result, 1, output)
+            self.assertIn("tools.md is not what vf.py tools writes now; run it to refresh tools.md", output)
 
     def test_an_entry_missing_a_field_or_its_script_fails(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
-            (harness / "tools.md").write_text(tool_entry(skip="Limits"))
+            self.with_tools(harness, tool_entry(skip="limits"))
             result, output = run_check(harness)
             self.assertEqual(result, 1)
-            self.assertIn("tools.md 'Look up an order': no '- Limits:' line", output)
-            self.assertIn("scripts/probe does not exist in the project root", output)
+            self.assertIn("harness.json tool 'probe': limits is missing", output)
+            self.assertIn("scripts/probe does not exist in .", output)
 
     def test_an_entry_running_from_a_missing_folder_fails(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
-            (harness / "tools.md").write_text(tool_entry(run_from="services/api"))
+            self.with_tools(harness, tool_entry(run_from="services/api"))
             result, output = run_check(harness)
             self.assertEqual(result, 1)
             self.assertIn("runs from services/api, which is not a folder under the project root", output)
@@ -280,17 +292,17 @@ class ToolGuideTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
             self.make_tool(Path(directory), "#!/bin/sh\nexit 3\n")
-            (harness / "tools.md").write_text(tool_entry())
+            self.with_tools(harness, tool_entry())
             self.assertEqual(run_check(harness)[0], 0)
             result, output = run_check(harness, "--run-help")
             self.assertEqual(result, 1)
-            self.assertIn("'scripts/probe order --help' exited 3", output)
+            self.assertIn("'scripts/probe order o_1 --help' exited 3", output)
 
     def test_run_help_fails_a_help_that_hangs(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
             self.make_tool(Path(directory), "#!/bin/sh\nsleep 5\n")
-            (harness / "tools.md").write_text(tool_entry())
+            self.with_tools(harness, tool_entry())
             with patch.object(validate, "HELP_TIMEOUT", 0.5):
                 result, output = run_check(harness, "--run-help")
             self.assertEqual(result, 1)
@@ -298,7 +310,18 @@ class ToolGuideTest(unittest.TestCase):
 
 
 class CredentialTest(unittest.TestCase):
-    def test_a_credential_in_a_tool_or_the_guide_fails_without_echoing_it(self):
+    def test_a_credential_in_the_manifest_fails_without_echoing_it(self):
+        token = "eyJhbGciOiJIUzI1NiJ9abc123def456"
+        with tempfile.TemporaryDirectory() as directory:
+            harness = make_harness(Path(directory))
+            write_manifest(harness, tools={"probe": dict(tool_entry()["probe"], environment=f"send Authorization: Bearer {token}")})
+            validate.write_tools(harness)
+            result, output = run_check(harness)
+            self.assertEqual(result, 1, output)
+            self.assertIn("harness.json:", output)
+            self.assertNotIn(token, output)
+
+    def test_a_credential_in_a_tool_fails_without_echoing_it(self):
         token = "eyJhbGciOiJIUzI1NiJ9abc123def456"
         cases = [
             f'HEADERS = {{"Authorization": "Bearer {token}"}}\n',
@@ -336,54 +359,49 @@ class SetupTest(unittest.TestCase):
             harness.mkdir()
             shutil.copy(REFERENCES / "rules.md", harness / "rules.md")
             lock_rules(harness)
-            (harness / "settings.md").write_text("# Settings\n\n## Setup\n\n- Status: incomplete\n")
-            (harness / "notes.md").write_text(setup_record(
-                harness.name,
-                blocker="operator login is unavailable",
-                next_action="user starts storefront with the documented login",
-                proof="not run because login is unavailable",
-            ))
+            write_manifest(harness, {"setup": {"status": "incomplete", "target": "storefront", "findings": "README.md:4", "looked_in": "README.md",
+                                               "blocker": "operator login is unavailable", "next": "user starts storefront with the documented login",
+                                               "doctor_proof": None}})
             result, output = run_check(harness)
             self.assertEqual(result, 2, output)
             self.assertIn("operator login is unavailable", output)
             self.assertIn("Next action: user starts storefront", output)
-            self.assertNotIn("no feature index", output)
+            self.assertNotIn("features folder", output)
 
     def test_ready_setup_requires_proof_and_allows_zero_coverage(self):
         with tempfile.TemporaryDirectory() as directory:
-            harness = make_harness(Path(directory))
-            (harness / "notes.md").write_text(setup_record(harness.name, proof="not run"))
+            harness = make_harness(Path(directory), setup={"doctor_proof": "not run"})
             result, output = run_check(harness)
             self.assertEqual(result, 1, output)
-            self.assertIn("ready setup needs doctor proof", output)
+            self.assertIn("ready setup needs doctor_proof", output)
 
-            (harness / "notes.md").write_text(setup_record(harness.name))
+            write_manifest(harness)
             result, output = run_check(harness)
             self.assertEqual(result, 0, output)
             self.assertIn("0 features, 0 sub-features", output)
 
-    def test_setup_rejects_missing_status_or_unusable_resume_record(self):
+    def test_setup_rejects_a_missing_manifest_or_an_unusable_resume_record(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = Path(directory) / "verify-app"
-            harness.mkdir()
-            settings = "## Setup\n\n- Status: incomplete\n"
+            (harness / "features").mkdir(parents=True)
+            shutil.copy(REFERENCES / "rules.md", harness / "rules.md")
+            lock_rules(harness)
+            incomplete = {"status": "incomplete", "target": "storefront", "findings": "f", "looked_in": "l", "blocker": "b", "next": "n"}
             cases = (
-                (None, None, "settings.md is missing"),
-                ("## Workflow\n", None, "Status must be incomplete or ready"),
-                (settings.replace("incomplete", "unknown"), None, "Status must be incomplete or ready"),
-                (settings, None, "the Setup record cannot be read"),
-                (settings, "# Results\n", "section for this harness"),
-                (settings, f"## Setup: {harness.name}\n\n- Target: storefront\n", "Setup needs a filled Next action line"),
-                (settings, f"## Setup: {harness.name}\n\n- Next action: none\n", "incomplete setup needs a Next action"),
+                (None, "harness.json is missing"),
+                ({"setup": "later"}, "setup must be an object"),
+                ({"setup": dict(incomplete, status="unknown")}, "setup.status must be incomplete or ready"),
+                ({"setup": {"status": "incomplete", "target": "storefront"}}, "harness.json setup: findings is missing"),
+                ({"setup": dict(incomplete, next=None)}, "incomplete setup needs a next"),
+                ({"setup": dict(incomplete, status="ready", blocker=None, next=None, doctor_proof="x")}, "harness.json commands: doctor is missing"),
             )
-            for settings_text, record, expected in cases:
+            for data, expected in cases:
                 with self.subTest(expected=expected):
-                    for name, text in (("settings.md", settings_text), ("notes.md", record)):
-                        path = harness / name
-                        if text is None:
-                            path.unlink(missing_ok=True)
-                        else:
-                            path.write_text(text)
+                    path = harness / "harness.json"
+                    if data is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        path.write_text(json.dumps({"app": "App", **data}))
                     result, output = run_check(harness)
                     self.assertEqual(result, 1, output)
                     self.assertIn(expected, output)
@@ -422,16 +440,7 @@ class HarnessLayoutTest(unittest.TestCase):
             harness = make_harness(Path(directory))
             (harness / "scripts").mkdir(exist_ok=True)
             (harness / "scripts" / "pay").write_text("# checkout check\n")
-            (harness / "features" / "README.md").write_text(
-                "# Map\n\n## Features\n\n- [Checkout](checkout.md)\n"
-            )
-            (harness / "features" / "checkout.md").write_text(
-                "# Checkout\n\n## Sub-features\n\n- checkout.pay: order is paid.\n\n"
-                "## How a user reaches it\n\n- Checkout button.\n\n"
-                "## How to prove it\n\n- checkout.pay: `.agents/skills/verify-app/scripts/pay`. "
-                "Reads the order row.\n\n"
-                "## Gotchas\n\nNone.\n"
-            )
+            write_feature(harness, "checkout", {"checkout.pay": {"words": "order is paid", "check": CHECK, "reads": "state"}})
             result, output = run_check(harness)
             self.assertEqual(result, 0, output)
             self.assertIn("no passing evidence for checkout.pay", output)
@@ -446,20 +455,16 @@ class ProjectRootTest(unittest.TestCase):
             harness = Path(directory) / "app" / ".agents" / "skills" / "verify-app"
             (harness / "scripts").mkdir(parents=True)
             (harness / "scripts" / "pay").write_text("# checkout check\n")
-            feature = Path(directory) / "checkout.md"
-            text = (
-                "# Checkout\n\n## Sub-features\n\n- checkout.pay: order is paid.\n\n"
-                "## How a user reaches it\n\n- Checkout button.\n\n"
-                "## How to prove it\n\n- checkout.pay: `{command}`. Not break-tested: new.\n"
-            )
+            feature = Path(directory) / "checkout.json"
             from_app = ".agents/skills/verify-app/scripts/pay"
             from_top = "app/" + from_app
             for command, expected in ((from_app, []),
-                                      (from_top, [f"checkout.md: checkout.pay names `{from_top}`, but {from_top} does not exist"])):
+                                      (from_top, [f"checkout.json: checkout.pay: check names `{from_top}`, but {from_top} does not exist"])):
                 with self.subTest(command=command):
-                    feature.write_text(text.format(command=command))
+                    feature.write_text(json.dumps({"name": "Checkout", "summary": "Pays.", "behaviors": {
+                        "checkout.pay": {"words": "order is paid", "check": command, "reads": "state", "not_break_tested": "new"}}}))
                     errors = []
-                    validate.check_feature(feature, validate.project_root(harness), {}, errors)
+                    validate.check_feature(feature, validate.project_root(harness), {"app": "."}, {}, errors)
                     self.assertEqual(errors, expected)
 
 
@@ -468,7 +473,7 @@ class VerifiedResultsTest(unittest.TestCase):
     LINE = ("- checkout.pay: Verified. checkout-pay, reads state, app a1b2c3d. Break-tested 2026-10-09: payment capture skipped. "
             "Evidence: evidence/checkout-pay/run.json")
 
-    READS = "Reads the order row (state)."
+    READS = {"check": CHECK, "reads": "state"}
     STEP = {"name": "checkout.pay: order is paid", "passed": True, "at": 21.4}
     CODE = {"ok/pay.py": "a" * 64, "ok/reads.py": "b" * 64}
     DOCTOR = {"exit_code": 0, "output": "verify: ready"}
@@ -477,13 +482,8 @@ class VerifiedResultsTest(unittest.TestCase):
         harness = make_harness(root)
         (harness / "scripts").mkdir(exist_ok=True)
         (harness / "scripts" / "pay").write_text("# checkout check\n")
-        (harness / "features" / "README.md").write_text("# Map\n\n## Features\n\n- [Checkout](checkout.md)\n")
-        (harness / "features" / "checkout.md").write_text(
-            "# Checkout\n\n## Sub-features\n\n- checkout.pay: order is paid.\n- checkout.refund: order is refunded.\n\n"
-            "## How a user reaches it\n\n- Checkout button.\n\n"
-            f"## How to prove it\n\n- checkout.pay: `.agents/skills/verify-app/scripts/pay`. {proof}\n- checkout.refund: No check yet.\n\n"
-            "## Gotchas\n\nNone.\n"
-        )
+        write_feature(harness, "checkout", {"checkout.pay": {"words": "order is paid", **proof},
+                                            "checkout.refund": {"words": "order is refunded"}}, gotchas=["None."])
         self.write_evidence(harness)
         if with_break:
             self.write_break(harness)
@@ -529,9 +529,9 @@ class VerifiedResultsTest(unittest.TestCase):
     def render(self, harness):
         """Write Latest results the way vf.py status does and return its result lines."""
         project = validate.project_root(harness)
-        _, seen_ids, proofs, errors = validate.read_map(harness, project)
+        repos = read_manifest(harness)["repos"]
+        _, seen_ids, proofs, errors = validate.read_map(harness, project, repos)
         self.assertEqual(errors, [])
-        repos = validate.parse_repos(validate.sections((harness / "settings.md").read_text())[1])[0]
         return validate.render_status(harness, validate.compute_verdicts(harness, seen_ids, proofs, repos))
 
     def test_status_renders_verified_from_passing_break_tested_evidence(self):
@@ -565,7 +565,7 @@ class VerifiedResultsTest(unittest.TestCase):
             (self.READS, True, failed, "- checkout.pay: Failed. Step 'checkout.pay: order is paid': status=pending. app a1b2c3d. Evidence: evidence/checkout-pay/run.json"),
             (self.READS, True, {"passed": None, "stopped": "browser crashed", "steps": []},
              "- checkout.pay: Not verified. Run stopped: Browser crashed. app a1b2c3d. Evidence: evidence/checkout-pay/run.json"),
-            ("Not break-tested: no scratch copy yet.", False, {},
+            (dict(self.READS, not_break_tested="no scratch copy yet."), False, {},
              "- checkout.pay: Not verified. Passed but not break-tested: no scratch copy yet. app a1b2c3d. Evidence: evidence/checkout-pay/run.json"),
             (self.READS, False, {},
              "- checkout.pay: Not verified. Passed but not break-tested: no planned break aimed at it has failed this check. app a1b2c3d. Evidence: evidence/checkout-pay/run.json"),
@@ -574,7 +574,7 @@ class VerifiedResultsTest(unittest.TestCase):
             (self.READS, True, {"sub_features": ["checkout.refund"], "steps": [dict(self.STEP, sub_features=["checkout.refund"])]},
              "- checkout.pay: Not verified. No accepted run on this machine."),
             (self.READS, True, {"accepted_by": None}, "- checkout.pay: Not verified. No accepted run on this machine."),
-            ("Not break-tested: no scratch copy yet.", True, {"accepted_by": None},
+            (dict(self.READS, not_break_tested="no scratch copy yet."), True, {"accepted_by": None},
              "- checkout.pay: Not verified. No accepted run on this machine. No scratch copy yet."),
         )
         for proof, with_break, evidence, expected in cases:
@@ -588,10 +588,9 @@ class VerifiedResultsTest(unittest.TestCase):
 
     def test_unreachable_and_failed_runs_render_their_reason(self):
         with tempfile.TemporaryDirectory() as directory:
-            harness = self.make_verified_harness(Path(directory), proof="Not break-tested: fails on current code (#12).")
-            feature = harness / "features" / "checkout.md"
-            feature.write_text(feature.read_text().replace("- checkout.refund: No check yet.",
-                                                           "- checkout.refund: Unreachable: no declining test card. Tried card 4000"))
+            harness = self.make_verified_harness(Path(directory), proof=dict(self.READS, not_break_tested="fails on current code (#12)."))
+            edit_feature(harness, "checkout", lambda d: d["behaviors"]["checkout.refund"].update(
+                unreachable={"blocker": "no declining test card", "tried": "card 4000"}))
             self.write_evidence(harness, passed=False, steps=[dict(self.STEP, passed=False)])
             (harness / "evidence" / "checkout-pay" / "run").mkdir()
             (harness / "evidence" / "checkout-pay" / "run" / "replay.html").write_text("<html>")
@@ -617,7 +616,7 @@ class VerifiedResultsTest(unittest.TestCase):
             ({"passed": None, "steps": []}, None, None, "its latest run evidence/checkout-pay/run.json stopped"),
             ({"sub_features": ["checkout.refund"], "steps": [dict(self.STEP, sub_features=["checkout.refund"])]}, None, None, "no accepted run covers it"),
             ({"code": {"app": {"commit": "ffffffffffffffff", "dirty": False}}}, None, None, "the line is not what vf.py status writes now"),
-            ({}, "Not break-tested: no scratch copy yet.", None, "its check is not break-tested"),
+            ({}, dict(self.READS, not_break_tested="no scratch copy yet."), None, "its check is not break-tested"),
             ({}, None, self.LINE.replace("checkout.pay", "checkout.refund", 1), "the map has no check for it"),
             ({}, None, self.LINE.replace(" Evidence: evidence/checkout-pay/run.json", ""), "the line is not what vf.py status writes now"),
             ({}, None, self.LINE.replace("evidence/checkout-pay/run.json", "evidence/pay.json"), "the line is not what vf.py status writes now"),
@@ -681,8 +680,7 @@ class VerifiedResultsTest(unittest.TestCase):
         for filename in ("run.json", "break.json"):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as directory:
                 harness = self.make_verified_harness(Path(directory))
-                settings = harness / "settings.md"
-                settings.write_text(settings.read_text().replace("- app: .", "- app: .\n- worker: ../worker"))
+                edit_manifest(harness, lambda d: d["repos"].update(worker="../worker"))
                 for name in ("run.json", "break.json"):
                     path = harness / "evidence" / "checkout-pay" / name
                     record = json.loads(path.read_text())
@@ -715,13 +713,12 @@ class VerifiedResultsTest(unittest.TestCase):
 
     def two_repo_settings(self, harness):
         """List a second repo, api, that this machine does not have."""
-        settings = harness / "settings.md"
-        settings.write_text(settings.read_text().replace("- app: .\n", "- app: .\n- api: ../api\n"))
+        edit_manifest(harness, lambda d: d["repos"].update(api="../api"))
 
-    def test_a_proof_line_names_only_the_repos_its_check_runs(self):
-        # With the clause, records that hold only app prove the behavior although settings also list api.
+    def test_a_behavior_names_only_the_repos_its_check_runs(self):
+        # With repos named, records that hold only app prove the behavior although the manifest also lists api.
         with tempfile.TemporaryDirectory() as directory:
-            harness = self.make_verified_harness(Path(directory), proof=f"{self.READS} Repos: app.")
+            harness = self.make_verified_harness(Path(directory), proof=dict(self.READS, repos=["app"]))
             self.two_repo_settings(harness)
             self.write_results(harness, self.LINE)
             result, output = run_check(harness, "--require-evidence")
@@ -738,17 +735,17 @@ class VerifiedResultsTest(unittest.TestCase):
             self.assertIn("records no code version for api", output)
             self.assertTrue(self.render(harness)[0].startswith("- checkout.pay: Not verified. Pass not proven: records no code version for api"))
 
-    def test_a_proof_line_cannot_name_a_repo_settings_does_not_list(self):
+    def test_a_behavior_cannot_name_a_repo_the_manifest_does_not_list(self):
         with tempfile.TemporaryDirectory() as directory:
-            harness = self.make_verified_harness(Path(directory), proof=f"{self.READS} Repos: app, mailer.")
+            harness = self.make_verified_harness(Path(directory), proof=dict(self.READS, repos=["app", "mailer"]))
             self.write_results(harness, self.LINE)
             result, output = run_check(harness, "--require-evidence")
             self.assertEqual(result, 1, output)
-            self.assertIn("checkout.pay: its proof line names repo mailer, which is not under settings.md's '## Repos'", output)
+            self.assertIn("checkout.json: checkout.pay: repos names mailer, which is not a repo in harness.json", output)
 
     def test_a_break_in_a_repo_the_behavior_does_not_run_proves_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
-            harness = self.make_verified_harness(Path(directory), proof=f"{self.READS} Repos: app.")
+            harness = self.make_verified_harness(Path(directory), proof=dict(self.READS, repos=["app"]))
             self.two_repo_settings(harness)
             self.write_break(harness, planned_break={"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "api"},
                              code={"app": {"commit": self.COMMIT, "dirty": False}, "api": {"commit": self.COMMIT, "dirty": False}})
@@ -904,9 +901,7 @@ class VerifiedResultsTest(unittest.TestCase):
         for line, broken, expected in cases:
             with self.subTest(expected=expected), tempfile.TemporaryDirectory() as directory:
                 harness = self.make_verified_harness(Path(directory))
-                feature = harness / "features" / "checkout.md"
-                feature.write_text(feature.read_text().replace(
-                    "- checkout.refund: No check yet.", f"- checkout.refund: `.agents/skills/verify-app/scripts/pay`. {self.READS}"))
+                edit_feature(harness, "checkout", lambda d: d["behaviors"]["checkout.refund"].update(self.READS))
                 self.write_evidence(harness, sub_features=both, steps=[pay, refund])
                 self.write_break(harness, **{"sub_features": both, "steps": [dict(pay, passed=False), dict(refund, passed=False)],
                                              **broken})
@@ -944,13 +939,6 @@ class VerifiedResultsTest(unittest.TestCase):
                     result, output = run_check(harness, "--require-evidence")
                     self.assertEqual(result, 1, output)
                     self.assertIn(f"ERROR status.md: checkout.pay is Verified, but {expected}", output)
-
-    def test_a_break_tested_clause_in_the_map_is_an_error(self):
-        with tempfile.TemporaryDirectory() as directory:
-            harness = self.make_verified_harness(Path(directory), proof="Break-tested 2026-10-09: payment capture skipped.")
-            result, output = run_check(harness)
-            self.assertEqual(result, 1, output)
-            self.assertIn("checkout.pay says Break-tested, but nobody writes that: vf.py status computes it from the evidence", output)
 
     def test_missing_cited_evidence_warns_unless_required(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1021,14 +1009,14 @@ class HarnessFingerprintTest(unittest.TestCase):
             self.assertEqual(validate.harness_edited_since_run(harness, {"harness_code": before}),
                              [".agents/skills/verify-app/scripts/checks/pay.py changed since this run; rerun its check"])
 
-    def test_settings_are_part_of_the_fingerprint(self):
+    def test_the_manifest_is_part_of_the_fingerprint(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))
             before = validate.harness_code(harness)
-            self.assertIn(".agents/skills/verify-app/settings.md", before)
-            (harness / "settings.md").write_text(SETTINGS.replace("Doctor:", "Doctor: true #"))
+            self.assertIn(".agents/skills/verify-app/harness.json", before)
+            edit_manifest(harness, lambda d: d["commands"].update(doctor="true"))
             self.assertEqual(validate.harness_edited_since_run(harness, {"harness_code": before}),
-                             [".agents/skills/verify-app/settings.md changed since this run; rerun its check"])
+                             [".agents/skills/verify-app/harness.json changed since this run; rerun its check"])
 
 
 class MultiRepoTest(unittest.TestCase):
@@ -1044,16 +1032,9 @@ class MultiRepoTest(unittest.TestCase):
             (project / "local-dev" / ".env").write_text(f"WORKER={worker}\n")
             (harness / "scripts").mkdir(exist_ok=True)
             (harness / "scripts" / "checkout").write_text("# checkout check\n")
-            (harness / "features" / "README.md").write_text("# Features\n\n## Features\n\n- [Checkout](checkout.md)\n")
-            (harness / "features" / "checkout.md").write_text(
-                "# Checkout\n\n## Sub-features\n\n- checkout.pay: order is paid.\n\n"
-                "## How a user reaches it\n\n- Checkout button.\n\n"
-                "## How to prove it\n\n- checkout.pay: `.agents/skills/verify-app/scripts/checkout`. Reads the order row.\n\n"
-                "## Gotchas\n\nNone.\n"
-            )
-            (harness / "settings.md").write_text(SETTINGS.replace(
-                "- app: .\n", "- project: .\n- worker: env:local-dev/.env:WORKER\n"
-            ))
+            write_feature(harness, "checkout", {"checkout.pay": {"words": "order is paid", "check": ".agents/skills/verify-app/scripts/checkout", "reads": "state"}})
+            write_manifest(harness, repos={"project": ".", "worker": "env:local-dev/.env:WORKER"})
+            validate.write_tools(harness)
             for path in (project, worker):
                 (path / "version.txt").write_text("first\n")
                 subprocess.run(["git", "-C", str(path), "add", "version.txt"], check=True)
@@ -1102,11 +1083,11 @@ class MultiRepoTest(unittest.TestCase):
             (evidence / "checkout-pay" / "run.json").write_text(json.dumps({
                 "passed": True, "sub_features": ["checkout.pay", "checkout.refund"], "code": {"app": {"commit": "abc1234"}},
             }))
-            proofs = {"checkout.pay": "`./scripts/pay`", "checkout.refund": "`./scripts/refund`"}
+            proofs = {"checkout.pay": {"check": "./scripts/pay"}, "checkout.refund": {"check": "./scripts/refund"}}
             with patch.object(validate, "resolve_repo", return_value=None) as resolve:
                 warnings = validate.evidence_warnings(evidence, proofs, evidence, {"app": "."})
             self.assertEqual(resolve.call_count, 1)
-            self.assertEqual(warnings, ["app checkout cannot be found from settings.md for checkout.pay, checkout.refund"])
+            self.assertEqual(warnings, ["app checkout cannot be found from harness.json for checkout.pay, checkout.refund"])
 
     def test_uncommitted_code_ignores_the_harness_and_warns_once_per_repo(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1122,14 +1103,9 @@ class MultiRepoTest(unittest.TestCase):
             harness = make_harness(project)
             (harness / "scripts").mkdir(exist_ok=True)
             (harness / "scripts" / "checkout").write_text("# checkout check\n")
-            (harness / "features" / "README.md").write_text("# Features\n\n## Features\n\n- [Checkout](checkout.md)\n")
-            (harness / "features" / "checkout.md").write_text(
-                "# Checkout\n\n## Sub-features\n\n- checkout.pay: order is paid.\n- checkout.refund: order is refunded.\n\n"
-                "## How a user reaches it\n\n- Checkout button.\n\n"
-                "## How to prove it\n\n"
-                "- checkout.pay: `.agents/skills/verify-app/scripts/checkout`.\n"
-                "- checkout.refund: `.agents/skills/verify-app/scripts/checkout`.\n"
-            )
+            check = {"check": ".agents/skills/verify-app/scripts/checkout", "reads": "state"}
+            write_feature(harness, "checkout", {"checkout.pay": {"words": "order is paid", **check},
+                                                "checkout.refund": {"words": "order is refunded", **check}})
             (harness / "evidence" / "checkout-pay" / "run.json").write_text(json.dumps({
                 "passed": True,
                 "sub_features": ["checkout.pay", "checkout.refund"],

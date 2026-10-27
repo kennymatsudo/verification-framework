@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from harness_json import edit_feature, edit_manifest, write_feature, write_manifest  # noqa: E402
 from support import git
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
@@ -275,10 +276,8 @@ class HarnessCommands(unittest.TestCase):
         self.write_settings()
         (self.harness / "scripts" / "pay.py").write_text("# the check\n")
 
-    def write_settings(self, doctor="echo verify: ready", start="echo {checkout:app} > pointed.txt", reloads="no"):
-        (self.harness / "settings.md").write_text(
-            "# App verification settings\n\n## Repos\n\n- app: .\n\n## Commands\n\n"
-            f"- Start: {start}\n- Stop: none\n- Doctor: {doctor}\n- Reloads: {reloads}\n")
+    def write_settings(self, doctor="echo verify: ready", start="echo {checkout:app} > pointed.txt", reloads=False):
+        write_manifest(self.harness, commands={"start": start, "stop": "none", "doctor": doctor, "reloads": reloads})
 
     def run_check(self, env=None, named=(), **spec):
         command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--",
@@ -336,7 +335,7 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(record["code"]["app"]["commit"], git(self.project, "rev-parse", "HEAD"))
         self.assertEqual(record["doctor"], {"exit_code": 0, "output": "verify: ready"})
         self.assertEqual(list(record["harness_code"]),
-                         [".agents/skills/verify-app/scripts/pay.py", ".agents/skills/verify-app/settings.md", "e2e/pay.sh"])
+                         [".agents/skills/verify-app/harness.json", ".agents/skills/verify-app/scripts/pay.py", "e2e/pay.sh"])
         self.assertIsNone(record["planned_break"])
         self.assertIsNone(record["stopped"])
         self.assertLessEqual(record["started_at"], record["finished_at"])
@@ -390,13 +389,8 @@ class HarnessCommands(unittest.TestCase):
         stop = {"events": [{"event": "check", "name": "pay", "reads": "state"},
                            {"event": "stopped", "reason": "the daily budget is spent"}], "exit": 2}
         command = ["python3", ".agents/skills/verify-app/scripts/pay_check.py", json.dumps(stop)]
-        features = self.harness / "features"
-        features.mkdir(exist_ok=True)
-        (features / "README.md").write_text("# Map\n\n## Features\n\n- [Pay](pay.md)\n")
-        (features / "pay.md").write_text(
-            "# Pay\n\n## Sub-features\n\n- app.pay: the order is paid.\n- app.refund: the order is refunded.\n\n"
-            "## How a user reaches it\n\n- Pay button.\n\n"
-            f"## How to prove it\n\n- app.pay: `{shlex.join(command)}`.\n- app.refund: No check yet.\n")
+        write_feature(self.harness, "pay", {"app.pay": {"words": "the order is paid", "check": shlex.join(command), "reads": "state"},
+                                            "app.refund": {"words": "the order is refunded"}}, name="Pay")
         result = subprocess.run([sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--", *command],
                                 capture_output=True, text=True, cwd=self.project)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
@@ -416,13 +410,8 @@ class HarnessCommands(unittest.TestCase):
                            {"event": "stopped", "reason": "the sandbox listed no ticket"}], "exit": 2}
         command = ["python3", ".agents/skills/verify-app/scripts/pay_check.py", json.dumps(stop)]
         self.open_break_session()
-        features = self.harness / "features"
-        features.mkdir(exist_ok=True)
-        (features / "README.md").write_text("# Map\n\n## Features\n\n- [Pay](pay.md)\n")
-        (features / "pay.md").write_text(
-            "# Pay\n\n## Sub-features\n\n- app.login: the customer signs in.\n- app.pay: the order is paid.\n\n"
-            "## How a user reaches it\n\n- Pay button.\n\n"
-            f"## How to prove it\n\n- app.login: No check yet.\n- app.pay: `{shlex.join(command)}`.\n")
+        write_feature(self.harness, "pay", {"app.login": {"words": "the customer signs in"},
+                                            "app.pay": {"words": "the order is paid", "check": shlex.join(command), "reads": "state"}}, name="Pay")
         result = subprocess.run([sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--", *command],
                                 capture_output=True, text=True, cwd=self.project,
                                 env={**os.environ, "VERIFY_PLANNED_BREAK": "app.pay: payment skipped"})
@@ -453,10 +442,10 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("the doctor could not tell whether the app is ready (doctor exited 2)", result.stderr)
 
-        (self.harness / "settings.md").write_text("# App verification settings\n\n## Repos\n\n- app: .\n")
+        edit_manifest(self.harness, lambda d: d["commands"].pop("doctor"))
         result = self.run_check()
         self.assertEqual(result.returncode, 2)
-        self.assertIn("settings.md has no Doctor line", result.stderr)
+        self.assertIn("harness.json names no doctor command", result.stderr)
 
     def test_run_hands_each_repo_checkout_to_the_doctor_and_the_check(self):
         # The doctor and the check both get VERIFY_CHECKOUT_APP naming the checkout the run records.
@@ -474,7 +463,7 @@ class HarnessCommands(unittest.TestCase):
         (checks / "refund" / "steps.py").write_text("# refund steps\n")
         (self.harness / "scripts" / "reads.py").write_text("# shared reads\n")
         harness = ".agents/skills/verify-app"
-        shared = [f"{harness}/scripts/pay.py", f"{harness}/scripts/reads.py", f"{harness}/settings.md"]
+        shared = [f"{harness}/harness.json", f"{harness}/scripts/pay.py", f"{harness}/scripts/reads.py"]
 
         def manifest(*named):
             return sorted(validate.harness_code(self.harness, [sys.executable, "-c", CHECK, "{}", *named]))
@@ -503,8 +492,7 @@ class HarnessCommands(unittest.TestCase):
         (self.project / "mailer" / "app.txt").write_text("first\n")
         git(self.project, "add", "mailer")
         git(self.project, "commit", "-qm", "mailer")
-        settings = self.harness / "settings.md"
-        settings.write_text(settings.read_text().replace("- app: .\n", "- app: .\n- mailer: mailer\n"))
+        edit_manifest(self.harness, lambda d: d["repos"].update(mailer="mailer"))
         self.open_break_session()
         scratch = Path((self.project / "pointed.txt").read_text().strip())
         (scratch / "mailer" / "app.txt").write_text("broken\n")
@@ -525,7 +513,7 @@ class HarnessCommands(unittest.TestCase):
         (service / "app.txt").write_text("first\n")
         git(service, "add", ".")
         git(service, "commit", "-qm", "first")
-        settings.write_text(settings.read_text().replace("- mailer: mailer\n", f"- mailer: mailer\n- service: {service}\n"))
+        edit_manifest(self.harness, lambda d: d["repos"].update(service=os.path.relpath(service, self.project)))
         framework_vf = str(self.harness / "scripts/framework/vf.py")
         started = subprocess.run([sys.executable, framework_vf, "break", "start", "service"], capture_output=True, text=True)
         self.assertEqual(started.returncode, 0, started.stdout + started.stderr)
@@ -593,7 +581,7 @@ class HarnessCommands(unittest.TestCase):
         logged = json.loads((self.harness / "evidence" / "breaks.jsonl").read_text().splitlines()[0])
         self.assertEqual((logged["sub_feature"], logged["check"], logged["what"], logged["step"], logged["evidence"]),
                          ("app.pay", "pay", "payment skipped", "order is paid", f"evidence/pay/{path.name}"))
-        self.assertEqual((self.harness / "features" / "app.md").read_text(), self.feature_text())
+        self.assertEqual((self.harness / "features" / "app.json").read_text(), self.feature_text())
         self.assertIn("- app.pay: Not verified. No accepted run on this machine. No scratch copy yet.", (self.harness / "status.md").read_text())
 
         framework_command("break", "end", "app")
@@ -608,15 +596,17 @@ class HarnessCommands(unittest.TestCase):
         self.assertIn("vf.py run works from a harness's scripts/framework/", result.stderr)
 
     def feature_text(self, command="true"):
-        return ("# App\n\n## Sub-features\n\n- app.pay: order is paid.\n- app.refund: order is refunded.\n\n"
-                "## How a user reaches it\n\n- Pay button.\n\n"
-                f"## How to prove it\n\n- app.pay: `{command}`. Not break-tested: no scratch copy yet.\n- app.refund: No check yet.\n")
+        return json.dumps(self.feature_data(command), indent=2) + "\n"
+
+    def feature_data(self, command="true"):
+        return {"name": "App", "summary": "The app.", "reach": ["Pay button."], "behaviors": {
+            "app.pay": {"words": "order is paid", "check": command, "reads": "state", "not_break_tested": "no scratch copy yet."},
+            "app.refund": {"words": "order is refunded"}}}
 
     def write_map(self, command="true"):
         features = self.harness / "features"
         features.mkdir(exist_ok=True)
-        (features / "README.md").write_text("# Map\n\n## Features\n\n- [App](app.md)\n")
-        (features / "app.md").write_text(self.feature_text(command))
+        (features / "app.json").write_text(self.feature_text(command))
         (self.harness / "notes.md").write_text("# Verification notes\n\n## Untested cases\n\n- Two payments at once.\n")
 
     def check_command(self, **spec):
@@ -626,27 +616,24 @@ class HarnessCommands(unittest.TestCase):
         return " ".join(shlex.quote(part) for part in (sys.executable, "e2e/check.py", json.dumps(spec)))
 
     def test_run_records_only_the_repos_the_behavior_names_and_tolerates_a_missing_other(self):
-        settings = self.harness / "settings.md"
-        settings.write_text(settings.read_text().replace("- app: .\n", "- app: .\n- api: ../nowhere\n"))
+        edit_manifest(self.harness, lambda d: d["repos"].update(api="../nowhere"))
         command = self.check_command(name="pay")
-        features = self.harness / "features"
-        features.mkdir(exist_ok=True)
-        (features / "README.md").write_text("# Map\n\n## Features\n\n- [App](app.md)\n")
-        feature = features / "app.md"
         (self.harness / "notes.md").write_text("# Verification notes\n")
 
-        def proof(clause):
-            feature.write_text("# App\n\n## Sub-features\n\n- app.pay: order is paid.\n\n## How a user reaches it\n\n- Pay button.\n\n"
-                               f"## How to prove it\n\n- app.pay: `{command}`. Reads the row (state).{clause}\n")
+        def proof(repos):
+            entry = {"words": "order is paid", "check": command, "reads": "state"}
+            if repos:
+                entry["repos"] = repos
+            write_feature(self.harness, "app", {"app.pay": entry}, name="App")
 
-        # Without a clause the run needs every settings repo, and api is not on this machine.
-        proof("")
+        # Without repos named the run needs every manifest repo, and api is not on this machine.
+        proof(None)
         result = self.framework("run", "--", *shlex.split(command))
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("api: no Git checkout at ../nowhere", result.stderr)
 
         # Naming app alone lets the run record app only, and the check gets only app's checkout.
-        proof(" Repos: app.")
+        proof(["app"])
         result = self.framework("run", "--", *shlex.split(command))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(list(self.record()["code"]), ["app"])
@@ -654,8 +641,7 @@ class HarnessCommands(unittest.TestCase):
 
     def test_verify_runs_each_named_behaviors_check_once_and_reports_its_result(self):
         self.write_map(self.check_command(name="pay"))
-        feature = self.harness / "features" / "app.md"
-        feature.write_text(feature.read_text().replace("- app.refund: No check yet.", f"- app.refund: `{self.check_command(name='pay')}`."))
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.refund"].update(check=self.check_command(name="pay"), reads="state"))
         result = self.framework("verify", "app.pay", "app.refund", "app.pay")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count("Running `"), 1)
@@ -711,7 +697,7 @@ class HarnessCommands(unittest.TestCase):
             with self.subTest(command=args[0]):
                 result = self.framework(*args)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-                self.assertIn("has no feature index at features/README.md", result.stdout + result.stderr)
+                self.assertIn("has no features folder", result.stdout + result.stderr)
 
     def test_status_writes_latest_results_and_prints_them(self):
         self.write_map()
@@ -721,18 +707,16 @@ class HarnessCommands(unittest.TestCase):
                                                       "- app.refund: Not verified. No check yet."])
         self.assertIn("- app.pay: Not verified. No accepted run on this machine.", (self.harness / "status.md").read_text())
 
-        (self.harness / "features" / "app.md").write_text("# App\n\n## Sub-features\n\n- app.pay: order is paid.\n")
+        (self.harness / "features" / "app.json").write_text("[]")
         before = (self.harness / "status.md").read_text()
         result = self.framework("status")
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("status.md not written: fix the feature map first", result.stdout)
         self.assertEqual((self.harness / "status.md").read_text(), before)
 
-    def test_status_creates_the_first_status_md_the_index_links(self):
-        # Setup writes the index, which links ../status.md, and then runs status to create that file.
+    def test_status_creates_the_first_status_md(self):
+        # Setup runs status to create the file the harness README links.
         self.write_map()
-        (self.harness / "features" / "README.md").write_text(
-            "# App feature map\n\nRead [the latest results](../status.md).\n\n## Features\n\n- [App](app.md): pay and refund.\n")
         (self.harness / "status.md").unlink(missing_ok=True)
         result = self.framework("status")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

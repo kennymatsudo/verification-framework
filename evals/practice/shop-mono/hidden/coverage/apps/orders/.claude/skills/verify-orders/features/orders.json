@@ -1,0 +1,24 @@
+{
+  "name": "Orders",
+  "summary": "A customer's order is stored and queued for a confirmation email.",
+  "reach": [
+    "`POST /orders` from the storefront."
+  ],
+  "sources": [
+    "REQUIREMENTS.md SR-1 and SR-2."
+  ],
+  "behaviors": {
+    "orders.create": {
+      "words": "placing an order stores it with the customer's email, its lines, and a total of price times quantity",
+      "plan": "place an order through the API; read the stored row and compare lines, email, and total with what was sent, using the prices SR-1 fixes. Reads the order row.",
+      "check": "python3 .claude/skills/verify-orders/scripts/checks/orders.py",
+      "reads": "state"
+    },
+    "orders.enqueue": {
+      "words": "each stored order puts exactly one job in the shared outbox naming the order ID and the customer's email",
+      "plan": "read the shared outbox file and count the jobs naming the order. Reads the outbox file.",
+      "check": "python3 .claude/skills/verify-orders/scripts/checks/orders.py",
+      "reads": "state"
+    }
+  }
+}

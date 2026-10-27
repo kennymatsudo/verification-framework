@@ -8,6 +8,7 @@ import time
 import unittest
 from pathlib import Path
 
+from harness_json import write_manifest  # noqa: E402
 from support import git
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
@@ -55,8 +56,7 @@ class Launch(unittest.TestCase):
         framework.mkdir(parents=True)
         for name in ("launch.py", "code_state.py", "validate.py"):
             shutil.copy(SCRIPTS / name, framework / name)
-        (self.harness / "settings.md").write_text(
-            "# App verification settings\n\n## Repos\n\n- app: .\n\n## Commands\n\n- Ready line: verify: ready\n")
+        write_manifest(self.harness, commands={"ready_line": "verify: ready"})
         self.addCleanup(self.launch, "stop")
 
     def launch(self, *args):
@@ -165,7 +165,7 @@ class Launch(unittest.TestCase):
     def test_stops_outside_a_harness(self):
         result = subprocess.run([sys.executable, str(SCRIPT), "status"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("has no settings.md", result.stderr)
+        self.assertIn("has no harness.json", result.stderr)
 
     def test_vf_passes_the_command_name_through(self):
         shutil.copy(SCRIPTS / "vf.py", self.harness / "scripts" / "framework" / "vf.py")

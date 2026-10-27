@@ -600,41 +600,30 @@ def first_sentence(paragraph):
 
 
 def feature_metadata(harness_dir):
-    """Each readable feature file as (title, what it does, {sub-feature ID: wording}, proof text), in file order.
-
-    What it does is the first sentence of the paragraph under the title, the feature's one-line summary.
-    """
+    """Each features/<slug>.json as (title, first sentence of its summary, {id: wording}, the check commands it names)."""
     found = []
-    for path in sorted((harness_dir / "features").glob("*.md")):
-        if path.name == "README.md":
-            continue
+    for path in sorted((harness_dir / "features").glob("*.json")):
         try:
-            text = path.read_text()
-        except OSError:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
             continue
-        title = next((line[2:].strip() for line in text.splitlines() if line.startswith("# ")), path.stem)
-        wording, proofs, section, summary = {}, [], None, []
-        for line in text.splitlines():
-            if line.startswith("# "):
-                section = "Title"
-            elif line.startswith("## "):
-                section = line[3:].strip()
-            elif section == "Title" and (line.strip() or summary):
-                if not line.strip():
-                    section = None
-                else:
-                    summary.append(line.strip())
-            elif section == "Sub-features" and (match := SUB_FEATURE_LINE.match(line)):
-                words = match.group(2).strip()
-                wording[match.group(1)] = words[:1].upper() + words[1:]
-            elif section == "How to prove it" and line.startswith("- "):
-                proofs.append(line)
-        found.append((title, first_sentence(" ".join(summary)), wording, "\n".join(proofs)))
+        if not isinstance(data, dict):
+            continue
+        behaviors = data.get("behaviors") if isinstance(data.get("behaviors"), dict) else {}
+        wording = {}
+        checks = []
+        for sub_id, entry in behaviors.items():
+            words = str((entry or {}).get("words", "")) if isinstance(entry, dict) else ""
+            wording[sub_id] = words[:1].upper() + words[1:]
+            if isinstance(entry, dict) and entry.get("check"):
+                checks.append(str(entry["check"]))
+        summary = " ".join(str(data.get("summary") or "").split())
+        found.append((str(data.get("name") or path.stem), first_sentence(summary), wording, "\n".join(checks)))
     return found
 
 
 def check_feature(check, features):
-    """(Title, what it does) of the feature file whose proof lines run this check most often, or (None, "")."""
+    """(Title, what it does) of the feature file whose checks run this check most often, or (None, "")."""
     pattern = re.compile(rf"(?<![\w-]){re.escape(check)}(?![\w-])")
     counts = [(len(pattern.findall(proofs)), index) for index, (_, _, _, proofs) in enumerate(features)]
     best = max(counts, default=(0, None))
