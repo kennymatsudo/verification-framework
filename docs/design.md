@@ -12,7 +12,9 @@ A reference project can reveal a missing shared rule or an integration gap, but 
 
 An independent review agreed with the content and reversed the order: contract changes first (Start takes the checkout), the skill merge last, and the merge's one risk tested beforehand by making vf agent-invocable on a branch and running the eval case `verify-bare-offers-setup`.
 
-**What settles it:** that case and the smoke tier passing with vf agent-invocable, then a decision to take the first contract step.
+That case and the smoke tier passed with vf agent-invocable (evals/README.md, "Fourth run"), with one limit: the agent picked vf-verify both times, so the merged skill's description is tested only by the merge itself.
+
+**What settles it:** a decision to take the first contract step, Start taking the checkout, as its own ADR.
 
 ### Add independent judges where an agent grades its own work
 

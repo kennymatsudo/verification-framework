@@ -165,6 +165,18 @@ After `origin/main` was merged in (its source-revision tracking and behind-HEAD 
 
 The verify-pr run did the job well and the graders did not know its workflow: verify-pr runs the checks in a worktree of the harness repo and leaves the evidence there, uncommitted, for the developer, and it put the drafted review comment in a file rather than in the reply. Three graders learned that: `status_verdict` can read the harness's `status.md` in the repo's other worktrees (`in_worktrees`), `report_names` can read files the agent wrote (`scope: any`), and `product_code_clean` can allow kept worktrees (`allow_worktrees`). The draft itself named the order regression, the base build it passed on, and the known LEDGER-41 failure as tracked elsewhere.
 
+### Fourth run: vf agent-invocable
+
+An experiment for the redesign proposal ([docs/redesign-proposal.md](../docs/redesign-proposal.md)), on a branch: vf's `disable-model-invocation` removed and its `openai.yaml` allowing implicit invocation, so an agent may pick vf on its own, plus one new case. `verify-bare-offers-setup` asks an agent to prove a behavior on the real app in a repo with no harness and no skill named; it passes only when the agent asks before setting anything up, builds nothing after the developer declines, and leaves no harness folder, commit, or process (2026-10-27, Opus 5.5, $15.57 in all):
+
+| Case | Score | Cost | Notes |
+| --- | --- | --- | --- |
+| verify-bare-offers-setup, first run alone | 0.69 | $0.43 | built nothing and offered setup, but the ask was "Which do you want?" under two option bullets, so `ask_is_last_line` and `asked_about` both read no question; the same ask-placement miss the first baseline found |
+| verify-bare-offers-setup, in the smoke tier | 1.00 | $0.37 | the ask was `Needs you: shall I run vf to set up the ledger harness and then verify LR-5?` |
+| the six smoke cases | 1.00 each | $14.77 | all hidden breaks caught in add-checks-ledger; no change from the third run |
+
+What it says: with vf agent-invocable, no run across eight started setup, an audit, or PR verification unasked, and the person-only cases still behaved when the slash command was not the only way in. What it does not say: in both runs of the new case the agent chose vf-verify, never vf, because vf-verify's description matches a verify request better. So the flag is safe to flip, but the risk the proposal's one-skill step carries, a merged description that an agent picks for "verify my change" and whose body must then refuse to run setup, is tested only once the merge exists. The case is in place for that run.
+
 ## Adding a practice repo or a case
 
 A practice repo needs: `repo/` with a README that says how to run it and a `REQUIREMENTS.md` with IDs, one item left open and, where it fits, one the code contradicts; `practice.json` (copy `ledger`'s); `hidden/answers.json` in the developer's voice, never revealing a break; `hidden/breaks/*.patch` made with `git diff` against `repo/`, one behavior each, each a bug a response could hide; `hidden/harness/` as a ready reference harness at zero coverage and `hidden/coverage/` with its checks, both following `rules.md`, so the fixture test proves the breaks are real and the harness is a worked example; and `tests/test_practice_<name>.py` (copy one). Keep it under 200 lines of app code and starting in a second.
