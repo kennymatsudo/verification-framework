@@ -48,12 +48,6 @@ The cost is a longer window on scratch code, during which the developer can't us
 - **Several repos in one session.** Decided: repos in one Git checkout share one session, named for the repo `break start` was given; a break run with sessions open on two separate checkouts still stops, since a break names one repo.
 - **An app that starts per check.** Settled by [ADR 0010](adr/0010-start-takes-the-checkout.md): `per check` is now `Start: none`, and a check that starts the app reads its checkout from `VERIFY_CHECKOUT_<REPO>`, which `vf.py run` sets to the scratch copy during a planned break. The relay practice repo's pointer file is gone; its checks and doctor read that variable.
 
-### Require only the repos a run uses
-
-`code_state.py` stops when any repo in `settings.md` can't be found. That's right for a check that runs the repo's code and wrong for one that doesn't. In the first converted app, a teammate without the frontend repo can't run even the backend-only checks.
-
-**Options:** each check names the repos it runs; a repo line is marked as needed only by some checks; or the run records a missing repo as absent. Whatever lands, a Verified line must still name every repo the check ran.
-
 ### Let an `env:` repository location fall back to the project's default
 
 An `env:` repository location in `settings.md` reads a checkout path from a project settings file and finds nothing when the key is absent, even though the startup script defaults it. Setup then stops until someone writes the default into their settings file.
@@ -112,6 +106,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0008: Fingerprint what a check could load, not the whole harness](adr/0008-fingerprint-what-a-check-could-load.md)
 - [0009: A planned break names its repo, and its edit travels with the record](adr/0009-a-break-names-its-repo-and-its-edit-travels-with-the-record.md)
 - [0010: Start takes the checkout, so one command points the app at the code under test](adr/0010-start-takes-the-checkout.md)
+- [0011: A behavior names the repos its check runs](adr/0011-a-behavior-names-the-repos-its-check-runs.md)
 
 ## Parked ideas
 

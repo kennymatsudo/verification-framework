@@ -611,6 +611,33 @@ class HarnessCommands(unittest.TestCase):
         (self.project / "e2e" / "check.py").write_text(CHECK)
         return " ".join(shlex.quote(part) for part in (sys.executable, "e2e/check.py", json.dumps(spec)))
 
+    def test_run_records_only_the_repos_the_behavior_names_and_tolerates_a_missing_other(self):
+        settings = self.harness / "settings.md"
+        settings.write_text(settings.read_text().replace("- app: .\n", "- app: .\n- api: ../nowhere\n"))
+        command = self.check_command(name="pay")
+        features = self.harness / "features"
+        features.mkdir(exist_ok=True)
+        (features / "README.md").write_text("# Map\n\n## Features\n\n- [App](app.md)\n")
+        feature = features / "app.md"
+        (self.harness / "notes.md").write_text("# Verification notes\n")
+
+        def proof(clause):
+            feature.write_text("# App\n\n## Sub-features\n\n- app.pay: order is paid.\n\n## How a user reaches it\n\n- Pay button.\n\n"
+                               f"## How to prove it\n\n- app.pay: `{command}`. Reads the row (state).{clause}\n")
+
+        # Without a clause the run needs every settings repo, and api is not on this machine.
+        proof("")
+        result = self.framework("run", "--", *shlex.split(command))
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("api: no Git checkout at ../nowhere", result.stderr)
+
+        # Naming app alone lets the run record app only, and the check gets only app's checkout.
+        proof(" Repos: app.")
+        result = self.framework("run", "--", *shlex.split(command))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(list(self.record()["code"]), ["app"])
+        self.assertIn("- app.pay: Not verified. Passed but not break-tested", (self.harness / "status.md").read_text())
+
     def test_verify_runs_each_named_behaviors_check_once_and_reports_its_result(self):
         self.write_map(self.check_command(name="pay"))
         feature = self.harness / "features" / "app.md"

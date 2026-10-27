@@ -52,6 +52,8 @@ SUB_FEATURE = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): \S")
 PROOF = re.compile(r"^- ([a-z0-9][a-z0-9._-]*): (.+)$")
 INDEX_LINK = re.compile(r"\]\(([^)#]+\.md)\)")
 BACKTICK = re.compile(r"`([^`]+)`")
+# A proof line may name the repos its check runs; a behavior with no clause runs every repo in settings.
+REPOS_CLAUSE = re.compile(r"\bRepos: ([a-z0-9][a-z0-9_-]*(?:, ?[a-z0-9][a-z0-9_-]*)*)\.")
 REQUIRED = ["Sub-features", "How a user reaches it", "How to prove it"]
 OPTIONAL = ["Request flow", "Verification plan", "Gotchas"]
 SETTING = re.compile(r"^- ([A-Z][A-Za-z ]*): (.*)$")
@@ -147,7 +149,7 @@ def fill_checkouts(command, checkouts):
     def fill(match):
         name = match.group(1)
         if name not in checkouts:
-            raise ValueError(f"{{checkout:{name}}} names a repo settings.md does not list")
+            raise ValueError(f"{{checkout:{name}}}: no checkout for {name} here, or settings.md does not list it")
         return shlex.quote(str(checkouts[name]))
     return CHECKOUT_PLACEHOLDER.sub(fill, command)
 
@@ -282,6 +284,26 @@ def check_feature(path, project, seen_ids, errors):
 def command_proofs(proofs):
     """The proof lines that name a check."""
     return {sub_id: proof for sub_id, proof in proofs.items() if proof_kind(proof) == "command"}
+
+
+def proof_repos(proof):
+    """The repos a proof line's `Repos: a, b.` clause names, in order, or None when it names none."""
+    match = REPOS_CLAUSE.search(proof or "")
+    return [name.strip() for name in match.group(1).split(",")] if match else None
+
+
+def behavior_repos(proof, repos):
+    """The repos a behavior's check runs, which its records must cover: the proof line's clause, else every settings repo."""
+    named = proof_repos(proof)
+    return named if named is not None else list(repos)
+
+
+def check_proof_repos(proofs, repos, errors):
+    """An error for each proof line whose Repos clause names a repo settings.md does not list."""
+    for sub_id, proof in proofs.items():
+        for name in proof_repos(proof) or []:
+            if name not in repos:
+                errors.append(f"{sub_id}: its proof line names repo {name}, which is not under settings.md's '## Repos'")
 
 
 def read_map(harness_dir, project):
@@ -648,7 +670,10 @@ def evidence_warnings(evidence_dir, check_proofs, project, repos):
             subs_by_message.setdefault("no passing evidence", []).append(sub_id)
             continue
         code = record.get("code") if isinstance(record.get("code"), dict) else {}
-        for name, locator in repos.items():
+        for name in behavior_repos(check_proofs[sub_id], repos):
+            locator = repos.get(name)
+            if locator is None:
+                continue
             source = code.get(name) if isinstance(code.get(name), dict) else {}
             commit = source.get("commit") if isinstance(source.get("commit"), str) else None
             if name not in checkouts:
@@ -736,7 +761,7 @@ def record_problems(record, repos):
         elif not isinstance(targets, list) or not targets or not all(isinstance(item, str) and item in ids for item in targets):
             problems.append("has a planned_break whose sub_features are not among the run's")
         elif planned.get("repo") not in repos:
-            problems.append("has a planned_break that does not name the repo it edited among the settings' repos")
+            problems.append("has a planned_break whose repo is not one the behavior's check runs")
     steps = record.get("steps")
     if not isinstance(steps, list) or (not steps and record.get("passed") is True):
         problems.append("has no check steps")
@@ -947,7 +972,8 @@ def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
     if record.get("passed") is not True:
         return verdict("Not verified", f"Run stopped: {capitalized(str(record.get('stopped') or 'no verdict'))} {code}. Evidence: {cite}",
                        [f"its latest run {cite} stopped"], cite)
-    problems = accepted_run_problems(record, repos) + harness_edited_since_run(harness_dir, record)
+    required = behavior_repos(proof, repos)
+    problems = accepted_run_problems(record, required) + harness_edited_since_run(harness_dir, record)
     if not steps_judging(record, sub_id):
         problems.append(f"no step in {cite} judges it")
     absent_video = []
@@ -958,7 +984,7 @@ def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
         return verdict("Not verified", f"Passed but not break-tested: {sentence(note)} {code}. Evidence: {cite}",
                        ["its check is not break-tested"], cite)
     if not problems:
-        check_break(harness_dir, sub_id, record, broken, repos, problems)
+        check_break(harness_dir, sub_id, record, broken, required, problems)
     if problems:
         return verdict("Not verified", f"Pass not proven: {sentence(problems[0])} {code}. Evidence: {cite}", problems, cite,
                        absent_video=absent_video)
@@ -1187,6 +1213,7 @@ def main():
         return 2
     files, seen_ids, proofs, map_errors = mapped
     errors.extend(map_errors)
+    check_proof_repos(proofs, repos, errors)
     check_proofs = command_proofs(proofs)
 
     result_warnings = []

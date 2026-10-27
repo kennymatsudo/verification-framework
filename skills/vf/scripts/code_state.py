@@ -250,15 +250,30 @@ def break_session_repo(harness_dir):
     return next(iter(found.values()))
 
 
-def recorded_checkouts(harness_dir, overrides):
-    """The checkout a run records for every repo settings.md lists, by name, with overrides naming another checkout for a repo."""
+def recorded_checkouts(harness_dir, overrides, only=None, missing="error"):
+    """The checkout a run records for each repo settings.md lists, by name, with overrides naming another checkout
+    for a repo. `only` keeps the named repos (every repo when None); with missing="skip", a repo whose checkout
+    cannot be found is left out instead of stopping, unless an override names it."""
     harness_dir = harness_dir.resolve()
     repos = listed_repos(harness_dir)
     unknown = sorted(set(overrides) - set(repos))
     if unknown:
         raise StateError(f"--checkout names {', '.join(unknown)}, which settings.md does not list")
+    if only is not None:
+        absent = sorted(set(only) - set(repos))
+        if absent:
+            raise StateError(f"settings.md does not list {', '.join(absent)}")
+        repos = {name: repos[name] for name in repos if name in only}
     project = validate.project_root(harness_dir)
-    return {name: recorded_checkout(name, locator, overrides.get(name), project, harness_dir) for name, locator in repos.items()}
+    checkouts = {}
+    for name, locator in repos.items():
+        try:
+            checkouts[name] = recorded_checkout(name, locator, overrides.get(name), project, harness_dir)
+        except StateError as error:
+            if missing == "skip" and name not in overrides and "no Git checkout" in str(error):
+                continue
+            raise
+    return checkouts
 
 
 def env_name(repo):
@@ -271,10 +286,10 @@ def checkout_env(checkouts):
     return {env_name(name): str(path) for name, path in checkouts.items()}
 
 
-def code_state(harness_dir, overrides):
-    """The code entry for every repo settings.md lists, with overrides naming another checkout for a repo."""
+def code_state(harness_dir, overrides, only=None):
+    """The code entry for every repo settings.md lists (or the `only` ones), with overrides naming another checkout for a repo."""
     harness_dir = harness_dir.resolve()
-    checkouts = recorded_checkouts(harness_dir, overrides)
+    checkouts = recorded_checkouts(harness_dir, overrides, only)
     # Repos are read side by side, since each takes seconds in a large checkout; results and the first error
     # reported follow the settings order, so a run reads the same however the reads finish.
     with ThreadPoolExecutor() as pool:

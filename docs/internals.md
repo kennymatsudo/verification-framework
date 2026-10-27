@@ -163,7 +163,7 @@ Each feature file has exactly these `##` headings, in order: `Sub-features`, `Ho
 | --- | --- | --- |
 | `No check yet.` | Nobody has written a check | No |
 | `Unreachable: <blocker>. Tried <route>.` | Something outside the harness stopped a check from being written, such as a missing test account | No |
-| `` `<command>`. <what it reads, in plain words> `` | A check exists. May end with `Not break-tested: <reason>.` while nobody has shown it can fail | Yes, once the evidence holds a break it failed on |
+| `` `<command>`. <what it reads, in plain words> `` | A check exists. May name the repos the check runs as `Repos: api, web.` (every settings repo when absent), and may end with `Not break-tested: <reason>.` while nobody has shown it can fail | Yes, once the evidence holds a break it failed on |
 
 Whether a check was break-tested is never written in the map. `vf.py status` finds the break in the evidence, and `validate.py` fails a proof line that says `Break-tested`.
 
@@ -176,7 +176,7 @@ An evidence file is the record of one check run: `evidence/<check>/<time>.json`.
 Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id>...`, which runs each named behavior's check that way and prints its result lines. `vf.py run`:
 
 1. Runs the doctor from `settings.md` and stops with exit 2 unless it exits 0.
-2. Records each repository's code with `code_state.py` and fingerprints the harness's own code.
+2. Records the code of each repository the run needs with `code_state.py` (those the proof lines of the behaviors this command proves name, else every repository; one of those missing from the machine stops the run) and fingerprints the harness's own code.
 3. Creates the run folder and report file, sets the two variables, and runs the check from the project root.
 4. Builds the record from the events the check reported, adds the times, code, fingerprint, doctor result, `planned_break` from `VERIFY_PLANNED_BREAK`, and the verdict from the exit code (0 passed, 1 a step failed, anything else stopped).
 5. Accepts or refuses the record.
@@ -198,7 +198,7 @@ Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id
 - the run names no behaviors, its steps don't either, and no proof line is its exact command;
 - a line isn't JSON or names no known event, or a required field is missing;
 - the exit code and the steps disagree: exit 0 after a failed step, exit 1 with no failed step, or `stopped` with exit 0;
-- a step's `sub_features` or the break's targets aren't among the run's;
+- a step's `sub_features` or the break's targets aren't among the run's, or a repository a claimed behavior's proof line names was not recorded;
 - a recording or snapshot names a file not in the run folder;
 - the code, or the harness's own code, changed while the check ran.
 
@@ -272,7 +272,7 @@ A passing run is **proven** when all of these hold:
 1. The break is the newest accepted planned break of the same check aimed at this behavior. The newest decides, so a replayed break that didn't fail withdraws the proof.
 2. The break's record failed, didn't stop, and failed a step that judges this behavior.
 3. Every step that judged this behavior and failed during the break is still in the passing run, judging this behavior.
-4. Both records record every repository in settings with a valid commit, a `dirty_hash` for dirty code and none for clean, a `harness_code` fingerprint, a ready doctor, and `accepted_by`.
+4. Both records record every repository the behavior's proof line names (every one in settings when it names none) with a valid commit, a `dirty_hash` for dirty code and none for clean, a `harness_code` fingerprint, a ready doctor, and `accepted_by`; the break's `planned_break.repo` is one of them.
 5. Every file in the break's `harness_code` is in the passing run's with the same hash. A file added since needs no new break. A changed or removed one does: `<file> changed since its planned break; replay the break with vf.py break replay`.
 6. Every file in the passing run's `harness_code` still on disk has the same hash it had during the run, so an edited check can't keep an earlier pass: `<file> changed since this run; rerun its check`. Hashes ignore line endings, so a clone that rewrites them changes nothing.
 7. The passing run has well-formed steps, one that judges this behavior, no stopped reason, and a valid recording if it names one.

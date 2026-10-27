@@ -40,7 +40,7 @@ The decisions are numbered in the order to do them.
 
 `vf run` also exports `VERIFY_CHECKOUT_<REPO>` for every repo, so a check or doctor that starts the app itself reads the checkout from its environment. That dissolves `per check` and the relay practice repo's pointer file.
 
-Each behavior names the `repos` its check runs. A run records and requires those; a Verified line still names every repo the check ran. A teammate without the frontend checkout can run and trust the backend checks. That settles "require only the repos a run uses." Where that list lives before the manifest exists (decision 3) is open: a clause on the proof line adds grammar the manifest then migrates, so this part may wait for the manifest while the Start change goes first.
+Each behavior names the `repos` its check runs. A run records and requires those; a Verified line still names every repo the check ran. A teammate without the frontend checkout can run and trust the backend checks. That settles "require only the repos a run uses." Done as [ADR 0011](adr/0011-a-behavior-names-the-repos-its-check-runs.md): the list is a `Repos: a, b.` clause on the proof line, which the manifest step migrates with the rest of the line.
 
 The session lock stays: while a break is open, `vf run` without `VERIFY_PLANNED_BREAK` refuses, so nothing passes quietly on scratch code. The skill keeps the session open across a feature's breaks, which `break_session.py` already supports and the add-checks mode does not use; that is most of the answer to "several breaks per session." Batching several breaks into one run stays open.
 
@@ -96,7 +96,7 @@ If we did nothing: the open questions get answered one at a time inside the curr
 Sequence, each step its own ADR and its own smoke run, so a regression is caught where it was made:
 
 0. **The invocation experiment, without merging.** On a branch, make vf agent-invocable and add the `verify-bare-offers-setup` case. Run the smoke tier. This settles the one open question about decision 4 in a day.
-1. Decision 1 (Start takes the checkout, `Reloads`, `VERIFY_CHECKOUT_<REPO>`). Per-behavior repos may wait for the manifest.
+1. Decision 1 (Start takes the checkout, `Reloads`, `VERIFY_CHECKOUT_<REPO>`): done as ADR 0010 and ADR 0011.
 2. Decision 2 (vendor only what bears trust), with the viewer decided explicitly.
 3. Decision 3 (the manifest, per feature), with per-behavior repos.
 4. Decision 4 (one skill), then 5 if wanted.

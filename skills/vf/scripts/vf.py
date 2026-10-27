@@ -26,8 +26,9 @@ names the check if the run is killed. A check that reports no sub_features cover
 name, plus, when it judged none or stopped, the ones the feature map proves with this exact command,
 so a run that stops before judging what it was run for is recorded as stopped rather than refused.
 
-vf.py run records started_at and finished_at, the code code_state.py reports, which must not change
-while the check runs, VERIFY_PLANNED_BREAK as planned_break with the repo of the break session this
+vf.py run records started_at and finished_at and the code code_state.py reports for the repos the run needs
+(those the proof lines of the behaviors this command proves name with `Repos: a, b.`, else every repo in
+settings.md), which must not change while the check runs, VERIFY_PLANNED_BREAK as planned_break with the repo of the break session this
 harness has open (the repo `break start` named, when several repos share its Git checkout), and the
 verdict from the exit code: 0 passed, 1 a step failed, anything else stopped.
 With VERIFY_PLANNED_BREAK set and no session open, or sessions open on several checkouts, it stops before
@@ -128,12 +129,52 @@ class Stopped(Exception):
     """A command cannot run; the message says why."""
 
 
-def checkout_env(harness, validate, code_state):
-    """The environment a doctor or check runs in: this process's, plus VERIFY_CHECKOUT_<REPO> for every repo."""
+def checkout_env(harness, validate, code_state, only=None, missing="error"):
+    """The environment a doctor or check runs in: this process's, plus VERIFY_CHECKOUT_<REPO> for each repo the run
+    records (the `only` ones, else every repo); with missing="skip", a repo with no checkout here is left out."""
     try:
-        return {**os.environ, **code_state.checkout_env(code_state.recorded_checkouts(harness, {}))}
+        checkouts = code_state.recorded_checkouts(harness, {}, only, missing)
     except code_state.StateError as error:
         raise Stopped(str(error)) from error
+    return {**os.environ, **code_state.checkout_env(checkouts)}
+
+
+def needed_repos(harness, validate, command):
+    """The repos the behaviors this exact command proves run, from their proof lines' Repos clauses, or None when
+    the map does not prove any behavior with this command (every repo is recorded then) or a proof line names none."""
+    try:
+        _, proofs, _ = feature_map(harness, validate)
+    except Stopped:
+        return None
+    ids = mapped_to_command(harness, validate, command)
+    if not ids:
+        return None
+    repos = settings_repos(harness, validate)
+    needed = []
+    for sub_id in ids:
+        if validate.proof_repos(proofs.get(sub_id)) is None:
+            return None
+        needed += [name for name in validate.behavior_repos(proofs[sub_id], repos) if name not in needed]
+    return needed
+
+
+def uncovered_repo_problems(harness, validate, record):
+    """A problem for each repo a claimed behavior's proof line names that the record did not record."""
+    try:
+        _, proofs, _ = feature_map(harness, validate)
+    except Stopped:
+        return []
+    repos = settings_repos(harness, validate)
+    code = record.get("code") if isinstance(record.get("code"), dict) else {}
+    problems = []
+    for sub_id in record.get("sub_features") or []:
+        proof = proofs.get(sub_id)
+        if proof is None or validate.proof_kind(proof) != "command":
+            continue
+        for name in validate.behavior_repos(proof, repos):
+            if name not in code:
+                problems.append(f"records no code version for {name}, which {sub_id} runs")
+    return problems
 
 
 def run_doctor(harness, validate, env):
@@ -354,12 +395,13 @@ def run_check(command):
         broken_repo = code_state.break_session_repo(harness) if planned else None
     except code_state.StateError as error:
         raise Stopped(str(error)) from error
-    env = checkout_env(harness, validate, code_state)
+    needed = needed_repos(harness, validate, command)
+    env = checkout_env(harness, validate, code_state, needed)
     doctor = run_doctor(harness, validate, env)
     if not ready(doctor):
         raise Stopped(not_ready_message(doctor))
     try:
-        code_before = code_state.code_state(harness, {})
+        code_before = code_state.code_state(harness, {}, needed)
     except code_state.StateError as error:
         raise Stopped(str(error)) from error
     harness_before = validate.harness_code(harness, command)
@@ -391,11 +433,12 @@ def run_check(command):
     shown = path.relative_to(harness)
     if name:
         try:
-            code_after = code_state.code_state(harness, {})
+            code_after = code_state.code_state(harness, {}, needed)
         except code_state.StateError as error:
             problems.append(f"could not be matched to the code after the run: {error}")
         else:
             problems += validate.run_problems(record, code_before, code_after, validate.harness_code(harness, command))
+            problems += uncovered_repo_problems(harness, validate, record)
     if problems:
         refused = path.with_name(path.name + ".refused")
         refused.write_text(json.dumps(record, indent=2) + "\n")
@@ -422,6 +465,7 @@ def feature_map(harness, validate):
     if mapped is None:
         raise Stopped(f"{harness} has no feature index at features/README.md")
     _, seen_ids, proofs, errors = mapped
+    validate.check_proof_repos(proofs, settings_repos(harness, validate), errors)
     return seen_ids, proofs, errors
 
 
@@ -491,7 +535,7 @@ def start_app(harness, validate, code_state, env):
     if command.lower() == validate.START_NONE:
         raise Stopped("settings.md says there is nothing to start (Start: none), yet the doctor reports not ready")
     try:
-        command = validate.fill_checkouts(command, code_state.recorded_checkouts(harness, {}))
+        command = validate.fill_checkouts(command, code_state.recorded_checkouts(harness, {}, None, "skip"))
     except (ValueError, code_state.StateError) as error:
         raise Stopped(f"settings.md: {error}") from error
     lines = [f"Starting the app: {command}"]
@@ -514,7 +558,7 @@ def verify(harness, ids, start):
     commands, uncovered = proof_commands(harness, validate, ids)
     lines = []
     if commands and start:
-        env = checkout_env(harness, validate, code_state)
+        env = checkout_env(harness, validate, code_state, None, "skip")
         if not ready(run_doctor(harness, validate, env)):
             lines += start_app(harness, validate, code_state, env)
     for command in commands:

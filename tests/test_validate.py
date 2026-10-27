@@ -701,7 +701,7 @@ class VerifiedResultsTest(unittest.TestCase):
                                            ({"doctor": "skipped"}, "ran without the doctor reporting the app ready", "Pass not proven: "),
                                            ({"planned_break": {"sub_features": ["checkout.pay"]}}, "does not say what was broken", "Pass not proven: "),
                                            ({"planned_break": {"what": "x", "sub_features": ["checkout.pay"]}},
-                                            "does not name the repo it edited", "Pass not proven: "),
+                                            "whose repo is not one the behavior's check runs", "Pass not proven: "),
                                            ({"check": "other"}, "its check is not break-tested", "Passed but not break-tested: ")):
             with self.subTest(broken=broken), tempfile.TemporaryDirectory() as directory:
                 harness = self.make_verified_harness(Path(directory))
@@ -712,6 +712,50 @@ class VerifiedResultsTest(unittest.TestCase):
                 self.assertIn(expected, output)
                 lines = self.render(harness)
                 self.assertTrue(lines[0].startswith("- checkout.pay: Not verified. " + rendered), lines[0])
+
+    def two_repo_settings(self, harness):
+        """List a second repo, api, that this machine does not have."""
+        settings = harness / "settings.md"
+        settings.write_text(settings.read_text().replace("- app: .\n", "- app: .\n- api: ../api\n"))
+
+    def test_a_proof_line_names_only_the_repos_its_check_runs(self):
+        # With the clause, records that hold only app prove the behavior although settings also list api.
+        with tempfile.TemporaryDirectory() as directory:
+            harness = self.make_verified_harness(Path(directory), proof=f"{self.READS} Repos: app.")
+            self.two_repo_settings(harness)
+            self.write_results(harness, self.LINE)
+            result, output = run_check(harness, "--require-evidence")
+            self.assertEqual(result, 0, output)
+            self.assertNotIn("api checkout cannot be found", output)
+            self.assertEqual(self.render(harness)[0], self.LINE)
+        # Without it, every settings repo must be in both records.
+        with tempfile.TemporaryDirectory() as directory:
+            harness = self.make_verified_harness(Path(directory))
+            self.two_repo_settings(harness)
+            self.write_results(harness, self.LINE)
+            result, output = run_check(harness, "--require-evidence")
+            self.assertEqual(result, 1, output)
+            self.assertIn("records no code version for api", output)
+            self.assertTrue(self.render(harness)[0].startswith("- checkout.pay: Not verified. Pass not proven: records no code version for api"))
+
+    def test_a_proof_line_cannot_name_a_repo_settings_does_not_list(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = self.make_verified_harness(Path(directory), proof=f"{self.READS} Repos: app, mailer.")
+            self.write_results(harness, self.LINE)
+            result, output = run_check(harness, "--require-evidence")
+            self.assertEqual(result, 1, output)
+            self.assertIn("checkout.pay: its proof line names repo mailer, which is not under settings.md's '## Repos'", output)
+
+    def test_a_break_in_a_repo_the_behavior_does_not_run_proves_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = self.make_verified_harness(Path(directory), proof=f"{self.READS} Repos: app.")
+            self.two_repo_settings(harness)
+            self.write_break(harness, planned_break={"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "api"},
+                             code={"app": {"commit": self.COMMIT, "dirty": False}, "api": {"commit": self.COMMIT, "dirty": False}})
+            self.write_results(harness, self.LINE)
+            result, output = run_check(harness, "--require-evidence")
+            self.assertEqual(result, 1, output)
+            self.assertIn("has a planned_break whose repo is not one the behavior's check runs", output)
 
     def test_a_not_verified_record_stands_until_a_later_run_or_break(self):
         with tempfile.TemporaryDirectory() as directory:

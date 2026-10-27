@@ -116,7 +116,8 @@ def session_checkouts(harness, session, scratch):
     for name, locator in code_state.listed_repos(harness).items():
         located = validate.resolve_repo(locator, project)
         if not located:
-            raise StateError(f"{name}: no Git checkout at {locator}")
+            # A repo this machine lacks; Start naming its {checkout:<repo>} fails when filled, and a check that runs it stops.
+            continue
         located = located.resolve()
         if scratch and located.is_relative_to(top):
             located = worktree / located.relative_to(top)
