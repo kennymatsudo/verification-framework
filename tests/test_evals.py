@@ -54,6 +54,14 @@ class SimulatedDeveloper(unittest.TestCase):
         self.assertEqual(agent.answer_from_rules(self.SHEET, "Which port?", "")[0], "Go ahead.")
 
 
+class AgentCommand(unittest.TestCase):
+    def test_the_case_loads_only_the_plugin_under_test(self):
+        command = agent.claude_command("hi")
+        self.assertEqual(command[command.index("--setting-sources") + 1], "project,local")
+        self.assertEqual(command[command.index("--plugin-dir") + 1], str(agent.FRAMEWORK))
+        self.assertEqual(command[command.index("--permission-mode") + 1], "bypassPermissions")
+
+
 class TranscriptParser(unittest.TestCase):
     def test_reads_session_tools_and_result_from_stream_json(self):
         lines = [
