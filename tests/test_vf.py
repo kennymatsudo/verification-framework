@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from harness_json import edit_feature, edit_manifest, write_feature, write_manifest  # noqa: E402
-from support import git
+from support import git, start_break_runner, wait_until_gone
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
 
@@ -323,6 +323,22 @@ class BreakStop(unittest.TestCase):
                 signal.signal(signal.SIGINT, previous)
             self.assertEqual(ended, {"reason": "judged", "killed": False})
             self.assertTrue(cleaned.exists())
+
+
+class BreakCheckGroup(unittest.TestCase):
+    def test_a_hangup_reaches_the_check_and_the_group_file_lasts_only_while_it_runs(self):
+        # A closed terminal or an agent's timeout signals vf.py run's process group, which the check is not in.
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            group_file = folder / "check-group"
+            runner, check = start_break_runner(SCRIPT, folder, group_file)
+            self.assertEqual(group_file.read_text(), str(check))
+
+            os.killpg(runner.pid, signal.SIGHUP)
+
+            self.assertTrue(wait_until_gone(check), "the check kept running after vf.py run got SIGHUP")
+            runner.wait(10)
+            self.assertFalse(group_file.exists())
 
 
 class HarnessCommands(unittest.TestCase):

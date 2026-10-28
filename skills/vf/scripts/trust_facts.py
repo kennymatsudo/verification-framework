@@ -191,9 +191,8 @@ def latest_results(validate, harness_dir, checkouts):
 def gather(harness_dir):
     """Everything this script prints: each mapped behavior's proof and latest result, the notes.md lists, and the tally."""
     validate = load_validator(harness_dir)
-    project = validate.project_root(harness_dir)
     repos = (validate.manifest(harness_dir) or {}).get("repos") or {}
-    checkouts = {name: validate.resolve_repo(locator, project) for name, locator in repos.items() if isinstance(locator, str)}
+    checkouts = {name: validate.repo_checkout(harness_dir, name, locator) for name, locator in repos.items() if isinstance(locator, str)}
     results, bullets = latest_results(validate, harness_dir, checkouts)
     records = validate.accepted_records(harness_dir / "evidence")
 

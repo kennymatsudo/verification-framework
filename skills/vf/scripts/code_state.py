@@ -22,7 +22,8 @@ doctor, the checks, and validate.py agree on what each field means.
 A locator that names a folder inside a checkout, such as the app's own folder in
 a monorepo, scopes dirty and dirty_hash to that folder; commit, branch, and
 on_main stay the checkout's. Locators resolve from the project root, the folder
-holding the skills directory the harness sits in.
+holding the skills directory the harness sits in. A worktree `vf.py break worktree`
+recorded for a repo replaces its locator, with a line on stderr naming it.
 
 --checkout points one repo at another checkout, such as a scratch worktree
 holding a planned break. This reports the checkout on disk, not what a running
@@ -155,6 +156,11 @@ def checkout_state(checkout, harness_dir):
     }
 
 
+# In an open session's folder while a planned break's check runs: the check's process group ID, so a later
+# `vf.py break` command can stop a check that outlived a killed `vf.py run`.
+CHECK_GROUP = "check-group"
+
+
 def session_folder(checkout):
     """Where break_session.py keeps a repo's planned break session: inside the repo's shared Git folder,
     which every worktree of it sees and nothing commits. None when the checkout is not a Git repo."""
@@ -209,10 +215,10 @@ def session_checkout(name, session, harness_dir, located=None):
     )
 
 
-def recorded_checkout(name, locator, override, project, harness_dir):
+def recorded_checkout(name, locator, override, harness_dir):
     """The checkout whose state this run records for one repo: the locator's, the --checkout override's, or,
     while a planned break session is open on either, the checkout the session allows. StateError when there is none."""
-    checkout = validate.resolve_repo(locator, project)
+    checkout = validate.repo_checkout(harness_dir, name, locator)
     session = open_session(checkout) if checkout else None
     located = checkout.resolve() if session else None
     if override is not None:
@@ -230,25 +236,30 @@ def recorded_checkout(name, locator, override, project, harness_dir):
     return checkout
 
 
-def break_session_repo(harness_dir):
+def open_break_session(harness_dir):
     """The repo whose planned break session this harness has open on its scratch copy, which is the repo a
-    planned break run edited. Repos in one Git checkout share its session, which names the repo `break start`
-    was given. StateError unless exactly one session is open, so a break can't be recorded outside a session."""
+    planned break run edited, and the session's folder. Repos in one Git checkout share its session, which
+    names the repo `break start` was given. StateError unless exactly one session is open, so a break can't
+    be recorded outside a session."""
     harness_dir = harness_dir.resolve()
-    project = validate.project_root(harness_dir)
     found = {}
-    for locator in listed_repos(harness_dir).values():
-        checkout = validate.resolve_repo(locator, project)
+    for name, locator in listed_repos(harness_dir).items():
+        checkout = validate.repo_checkout(harness_dir, name, locator)
         session = open_session(checkout) if checkout else None
         if session and Path(session["harness"]) == harness_dir and not session["ending"]:
-            found[session["worktree"]] = session["repo"]
+            found[session["worktree"]] = (session["repo"], session_folder(checkout))
     if not found:
         raise StateError("VERIFY_PLANNED_BREAK is set but this harness has no break session open; "
                          "run the break through `vf.py break run`")
     if len(found) > 1:
-        raise StateError(f"break sessions are open on {', '.join(found.values())}, so this break can't name the repo it edited; "
-                         f"end all but the one holding the break")
+        raise StateError(f"break sessions are open on {', '.join(repo for repo, _ in found.values())}, so this break can't "
+                         f"name the repo it edited; end all but the one holding the break")
     return next(iter(found.values()))
+
+
+def break_session_repo(harness_dir):
+    """The repo of the one planned break session this harness has open; StateError as open_break_session says."""
+    return open_break_session(harness_dir)[0]
 
 
 def recorded_checkouts(harness_dir, overrides, only=None, missing="error"):
@@ -265,11 +276,10 @@ def recorded_checkouts(harness_dir, overrides, only=None, missing="error"):
         if absent:
             raise StateError(f"harness.json does not list {', '.join(absent)}")
         repos = {name: repos[name] for name in repos if name in only}
-    project = validate.project_root(harness_dir)
     checkouts = {}
     for name, locator in repos.items():
         try:
-            checkouts[name] = recorded_checkout(name, locator, overrides.get(name), project, harness_dir)
+            checkouts[name] = recorded_checkout(name, locator, overrides.get(name), harness_dir)
         except StateError as error:
             if missing == "skip" and name not in overrides and "no Git checkout" in str(error):
                 continue

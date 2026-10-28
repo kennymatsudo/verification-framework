@@ -664,6 +664,63 @@ def resolve_repo(locator, project):
     return path if git(path, "rev-parse", "--show-toplevel") else None
 
 
+# The worktree `vf.py break worktree` made for a harness's repo, by harness path, in the project's private Git
+# folder: a run that tests a pull request finds every repo's worktree from the harness copy it runs, though a
+# relative locator there still reaches the developer's checkout and an env: locator's file isn't in a fresh
+# worktree. It stays out of the working tree and harness.json, so no check's fingerprint moves.
+WORKTREES_FILE = "verify-worktrees.json"
+# Shared by every copy of this module one process loads, since each script loads its siblings by path,
+# so a command announces each recorded worktree once.
+ANNOUNCED_WORKTREES = sys.__dict__.setdefault("_verify_announced_worktrees", set())
+
+
+def worktrees_file(harness_dir):
+    """Where the harness's recorded worktrees live: the project's private Git folder, or None outside Git."""
+    private = git(project_root(harness_dir), "rev-parse", "--absolute-git-dir")
+    return Path(private) / WORKTREES_FILE if private else None
+
+
+def recorded_worktrees(harness_dir):
+    """Every harness's recorded worktrees in this project, {harness path: {repo: path}}; empty when none are recorded."""
+    path = worktrees_file(harness_dir)
+    try:
+        data = json.loads(path.read_text()) if path else {}
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read the worktrees `vf.py break worktree` recorded at {path}: {error}; remove the file") from error
+    return data if isinstance(data, dict) else {}
+
+
+def recorded_worktree(harness_dir, name):
+    """The worktree `vf.py break worktree` recorded as the harness's checkout for repo name, or None."""
+    try:
+        entry = recorded_worktrees(harness_dir).get(str(Path(harness_dir).resolve()))
+    except ValueError as error:
+        print(f"WARNING: {error}", file=sys.stderr)
+        return None
+    value = entry.get(name) if isinstance(entry, dict) else None
+    return Path(value) if isinstance(value, str) else None
+
+
+def repo_checkout(harness_dir, name, locator):
+    """The checkout for harness.json's repo name: the worktree `vf.py break worktree` recorded for it, else
+    the locator's (resolve_repo); None when there is no Git checkout there.
+
+    A recorded worktree is announced on stderr, once per command, so no run uses it unseen."""
+    recorded = recorded_worktree(harness_dir, name)
+    if recorded is None:
+        return resolve_repo(locator, project_root(harness_dir))
+    found = bool(git(recorded, "rev-parse", "--show-toplevel"))
+    key = (str(Path(harness_dir).resolve()), name, str(recorded))
+    if key not in ANNOUNCED_WORKTREES:
+        ANNOUNCED_WORKTREES.add(key)
+        gone = "" if found else ", which is no longer a Git checkout"
+        print(f"{name}: using {recorded}, the worktree `vf.py break worktree` recorded{gone}; "
+              f"`vf.py break worktree --clear {name}` goes back to harness.json's locator", file=sys.stderr)
+    return recorded if found else None
+
+
 def read_record(path):
     """The JSON object in an evidence file, or None when it cannot be read or holds something else."""
     try:
@@ -712,7 +769,7 @@ def stale_commit_warning(name, checkout, commit):
     return f"{name} last pass is {behind} commit{'' if behind == '1' else 's'} behind HEAD"
 
 
-def evidence_warnings(evidence_dir, check_proofs, project, repos):
+def evidence_warnings(evidence_dir, check_proofs, repos):
     """Warnings about each checked sub-feature's latest passing evidence, and about checkouts with uncommitted code now."""
     latest = latest_passing_records(evidence_dir)
     # Group by message so a stale repo prints once with every sub-feature it affects.
@@ -731,7 +788,7 @@ def evidence_warnings(evidence_dir, check_proofs, project, repos):
             source = code.get(name) if isinstance(code.get(name), dict) else {}
             commit = source.get("commit") if isinstance(source.get("commit"), str) else None
             if name not in checkouts:
-                checkouts[name] = resolve_repo(locator, project)
+                checkouts[name] = repo_checkout(evidence_dir.parent, name, locator)
             checkout = checkouts[name]
             if not checkout:
                 subs_by_message.setdefault(f"{name} checkout cannot be found from harness.json", []).append(sub_id)
@@ -798,23 +855,21 @@ def steps_judging(record, sub_id):
 
 def break_catch(record, sub_id):
     """How a planned break run caught sub_id: the names of the failed steps judging it, and the first step
-    before the earliest of them that failed without judging any target of the break, or None.
+    before the earliest of them that failed without judging sub_id, or None.
 
-    The break earns sub_id credit only when it was caught and no such step failed first: a judging step
-    that failed only because setup failed proves nothing about the check. An earlier step judging any
-    target may fail, since the break was aimed at it; a break that also breaks an earlier behavior names
-    it as a target.
+    The break earns sub_id credit only when it was caught and no such step failed first. A step judging
+    sub_id that failed only because an earlier step failed proves nothing, even when that earlier step
+    judges another target: skip the order insert, and the payment step fails only because no order
+    exists. So one break credits the behavior whose step failed first, and any other behavior that same
+    step judges.
     """
-    planned = record.get("planned_break") if isinstance(record.get("planned_break"), dict) else {}
-    targets = set(planned.get("sub_features") or [])
     caught, spoiled_by = [], None
     for step in record.get("steps") or []:
         if not isinstance(step, dict) or step.get("passed") is not False:
             continue
-        judged = judged_by(step, record)
-        if sub_id in judged:
+        if sub_id in judged_by(step, record):
             caught.append(step.get("name"))
-        elif not caught and spoiled_by is None and not targets & set(judged):
+        elif not caught and spoiled_by is None:
             spoiled_by = step.get("name")
     return caught, spoiled_by
 
@@ -1186,8 +1241,7 @@ def check_status(harness_dir, verdicts, require_evidence, errors, warnings):
 
 def check_break(harness_dir, sub_id, record, break_run, repos, errors):
     """A planned break proves a sub-feature only when it was aimed at that sub-feature, a step judging
-    it failed, and every step before the first of those passed or judges a target of the break, as
-    break_catch decides. Those steps must still be in the Verified run, judging the same sub-feature,
+    it failed, and every step that failed before the first of those also judges it, as break_catch decides. Those steps must still be in the Verified run, judging the same sub-feature,
     and every harness file the break ran must be unchanged in the pass. Steps added since only make
     the check stricter. A step that failed only because an earlier one did, such as a receipt step
     after a payment break, earns its own sub-feature nothing."""
@@ -1205,7 +1259,7 @@ def check_break(harness_dir, sub_id, record, break_run, repos, errors):
         errors.append(f"no step judging it failed in {where}")
     elif spoiled_by is not None:
         errors.append(f"step '{spoiled_by}' failed before any step judging it in {where}, so the break did not reach it cleanly; "
-                      "run the break again, naming what that step judges as a target if the break broke it too")
+                      "plan a break of its own that the earlier steps pass through")
     judging = {step["name"] for step in steps_judging(record, sub_id)}
     for name in caught:
         if name not in judging:
@@ -1306,7 +1360,7 @@ def main():
         print(f"WARN {warning}")
     evidence_dir = args.harness_dir / "evidence"
     if evidence_dir.is_dir():
-        for warning in evidence_warnings(evidence_dir, check_proofs, project, repos):
+        for warning in evidence_warnings(evidence_dir, check_proofs, repos):
             print(f"WARN {warning}")
     else:
         print(f"WARN no evidence directory at {evidence_dir}")

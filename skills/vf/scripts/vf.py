@@ -36,7 +36,9 @@ running the check. In a planned break it runs the check in its own process group
 it goes, and ends the run once every target has a failed step judging it, or once the step that last
 judged a target in the check's latest accepted pass of the same harness code has passed: SIGINT to the
 group, as Ctrl-C would, so the check's cleanup runs (a Python check's finally blocks run on SIGINT, not
-on SIGTERM), then SIGKILL after BREAK_STOP_GRACE seconds. That record carries
+on SIGTERM), then SIGKILL after BREAK_STOP_GRACE seconds. A SIGINT, SIGTERM, or SIGHUP sent to vf.py run
+reaches the group too, and while the check runs the session's folder holds its process group ID, so the
+next `vf.py break start`, `run`, or `end` stops a check that outlived a vf.py run killed outright. That record carries
 ended_early ({"reason", "killed"}), takes its verdict from its steps rather than its exit code or a stop
 it reported while cleaning up, and counts like a finished run; a break that missed exits 0. It also records `harness_code`, a SHA-256 (line endings
 normalized) of harness.json, of every file under the harness's scripts/ apart from scripts/framework/ and
@@ -371,16 +373,20 @@ def break_end_reason(events, targets, mapped, last_step, validate):
     return None
 
 
-def run_break_check(command, cwd, env, report, decide):
+def run_break_check(command, cwd, env, report, decide, group_file=None):
     """Run a planned break's check in its own process group, reading its report as it writes it, and end it
     once decide(events) gives a reason: SIGINT to the group, as Ctrl-C would, so its cleanup runs, then
-    SIGKILL after BREAK_STOP_GRACE seconds. A SIGINT or SIGTERM sent to vf.py run is passed on to the group.
+    SIGKILL after BREAK_STOP_GRACE seconds. A SIGINT, SIGTERM, or SIGHUP sent to vf.py run is passed on to
+    the group. While the check runs, group_file holds its process group ID, so a later `vf.py break` command
+    can stop a check that outlived a vf.py run killed outright, which nothing can pass on.
 
     Returns the check's exit code and, when vf.py run ended it, {"reason", "killed"}, else None."""
     # A shell that starts vf.py run in the background ignores SIGINT, and the check would inherit that;
     # restoring the default lets the early stop's SIGINT reach the check's cleanup.
     process = subprocess.Popen(command, cwd=cwd, env=env, start_new_session=True,
                                preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+    if group_file is not None:
+        group_file.write_text(str(process.pid))
 
     def pass_on(signum, _frame):
         try:
@@ -388,7 +394,7 @@ def run_break_check(command, cwd, env, report, decide):
         except ProcessLookupError:
             pass
 
-    previous = {sig: signal.signal(sig, pass_on) for sig in (signal.SIGINT, signal.SIGTERM)}
+    previous = {sig: signal.signal(sig, pass_on) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
         events, partial, reason = [], "", None
         with report.open() as handle:
@@ -423,6 +429,8 @@ def run_break_check(command, cwd, env, report, decide):
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
+        if group_file is not None and process.poll() is not None:
+            group_file.unlink(missing_ok=True)
 
 
 def judged_by_steps(steps):
@@ -500,7 +508,7 @@ def run_check(command):
     validate, code_state = sibling("validate"), sibling("code_state")
     planned = os.environ.get("VERIFY_PLANNED_BREAK")
     try:
-        broken_repo = code_state.break_session_repo(harness) if planned else None
+        broken_repo, session_folder = code_state.open_break_session(harness) if planned else (None, None)
     except code_state.StateError as error:
         raise Stopped(str(error)) from error
     needed = needed_repos(harness, validate, command)
@@ -533,7 +541,8 @@ def run_check(command):
                 prior[check] = last_target_step(harness, validate, check, targets, harness_before, list(code_before))
             return break_end_reason(events, targets, mapped, prior.get(check), validate)
 
-        exit_code, ended_early = run_break_check(command, validate.project_root(harness), check_env, report, decide)
+        exit_code, ended_early = run_break_check(command, validate.project_root(harness), check_env, report, decide,
+                                                 session_folder / code_state.CHECK_GROUP)
     else:
         exit_code = subprocess.run(command, cwd=validate.project_root(harness), env=check_env).returncode
 
@@ -615,8 +624,7 @@ def evidence_warnings(harness, validate):
     if not evidence.is_dir():
         return []
     _, proofs, _ = feature_map(harness, validate)
-    return validate.evidence_warnings(evidence, validate.command_proofs(proofs), validate.project_root(harness),
-                                      settings_repos(harness, validate))
+    return validate.evidence_warnings(evidence, validate.command_proofs(proofs), settings_repos(harness, validate))
 
 
 def refresh_status(harness, validate):

@@ -3,6 +3,7 @@
 
 Usage:
   break_session.py worktree REPO PATH COMMIT [--branch NAME]
+  break_session.py worktree --clear REPO
   break_session.py start REPO
   break_session.py run REPO "IDS: WHAT WAS BROKEN" -- CHECK COMMAND...
   break_session.py replay EVIDENCE_FILE -- CHECK COMMAND...
@@ -12,12 +13,17 @@ Usage:
 --harness DIR picks the harness; it defaults to the one this script sits in, at scripts/framework/.
 
 worktree makes a new linked git worktree of REPO at PATH, detached at COMMIT or on a new branch NAME, for a
-run that tests other code than the developer's, such as a pull request, and points nothing at it. It
-refuses a PATH that already exists, so it only ever marks a worktree it made. The ownership marker names
-this harness, REPO, and COMMIT, and lives in the worktree's private Git folder, outside its files, so
-`git worktree remove` deletes it with the worktree.
+run that tests other code than the developer's, such as a pull request. It refuses a PATH that already
+exists, so it only ever marks a worktree it made. The ownership marker names this harness, REPO, and
+COMMIT, and lives in the worktree's private Git folder, outside its files, so `git worktree remove` deletes
+it with the worktree. Unless REPO's checkout holds the harness, whose copy in the new worktree then runs,
+it also records PATH (with the locator's folder inside it) as this harness's checkout for REPO, in
+verify-worktrees.json in the project's private Git folder: every command that finds REPO's checkout reads
+it before harness.json's locator and prints a line naming it, and no fingerprint covers it. `worktree
+--clear REPO` forgets it, and is refused while a break session is open there; run it before removing the
+worktree.
 
-start opens a session in one of two modes and prints which it took. When REPO's locator resolves to a
+start opens a session in one of two modes and prints which it took. When REPO's checkout resolves to a
 worktree carrying a marker for this harness and REPO, the break happens in place: that worktree is the
 copy, no new worktree is made, and Stop and Start don't run, since the app already runs that worktree;
 start runs harness.json's doctor first and refuses unless it reports the app ready. In place needs no
@@ -71,7 +77,9 @@ VERIFY_CHECKOUT_<REPO> set for every repo, and with VERIFY_BREAK_SESSION set so 
 calls are not refused.
 
 The commands must establish which code the app loaded through its doctor. Restoring files does not
-restart an app or undo data changes. An interrupted session stays open until end succeeds.
+restart an app or undo data changes. An interrupted session stays open until end succeeds. A check whose
+vf.py run was killed outright keeps running in its own process group; start, run, and end stop it first,
+SIGINT and then SIGKILL, from the group ID vf.py run left in the session's folder, and say so.
 
 Exits 0 when the step finished, whatever the check's own outcome; 1 when a guard found a problem,
 such as a session already open, a marked worktree that can't be used in place, no edit to run, the
@@ -85,9 +93,11 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -141,11 +151,10 @@ def reloads(harness):
 def session_checkouts(harness, session, scratch):
     """Every settings repo's checkout as the app should see it: inside the scratch worktree for the repos in the
     session's Git checkout when scratch is set, else the developer's."""
-    project = validate.project_root(harness)
     top, worktree = Path(session["top"]), Path(session["worktree"])
     checkouts = {}
     for name, locator in code_state.listed_repos(harness).items():
-        located = validate.resolve_repo(locator, project)
+        located = validate.repo_checkout(harness, name, locator)
         if not located:
             # A repo this machine lacks; Start naming its {checkout:<repo>} fails when filled, and a check that runs it stops.
             continue
@@ -188,9 +197,9 @@ def locate(harness, repo):
     repos = code_state.listed_repos(harness)
     if repo not in repos:
         raise StateError(f"harness.json lists no repo named {repo}")
-    checkout = validate.resolve_repo(repos[repo], validate.project_root(harness))
+    checkout = validate.repo_checkout(harness, repo, repos[repo])
     if not checkout:
-        raise StateError(f"{repo}: no Git checkout at {repos[repo]}")
+        raise StateError(f"{repo}: no Git checkout at {validate.recorded_worktree(harness, repo) or repos[repo]}")
     return checkout.resolve(), Path(validate.git(checkout, "rev-parse", "--show-toplevel")).resolve()
 
 
@@ -313,8 +322,9 @@ def git_dirs(top):
 
 
 def make_worktree(harness, repo, path, commit, branch):
-    """Make a new linked worktree of the repo for this harness's run and mark it as made by the framework."""
-    _, top = locate(harness, repo)
+    """Make a new linked worktree of the repo for this harness's run, mark it as made by the framework, and, unless
+    the repo holds the harness, record it as the harness's checkout for the repo."""
+    located, top = locate(harness, repo)
     path = path.resolve()
     if path.exists() or path.is_symlink():
         raise GuardError(f"{path} already exists; `vf.py break worktree` marks only a worktree it adds itself, "
@@ -323,8 +333,63 @@ def make_worktree(harness, repo, path, commit, branch):
     git_output(top, "worktree", "add", "-q", *(["-b", branch] if branch else ["--detach"]), str(path), commit)
     marker = {"harness": harness_identity(harness), "repo": repo, "commit": commit}
     (git_dirs(path)[0] / OWNER_MARKER).write_text(json.dumps(marker, indent=2))
-    print(f"Worktree for {repo} at {path}, on {branch or 'a detached HEAD'} at {commit[:12]}. Point {repo}'s locator "
-          f"and the app at it; `vf.py break start {repo}` then breaks it in place.")
+    print(f"Worktree for {repo} at {path}, on {branch or 'a detached HEAD'} at {commit[:12]}.")
+    project_top = validate.git(validate.project_root(harness), "rev-parse", "--show-toplevel")
+    if project_top and Path(project_top).resolve() == top:
+        # The harness has a copy in the new worktree, and a run of that copy finds its own repo there.
+        print(f"{repo} holds this harness, so run the harness copy in {path}, and make the other repos' worktrees "
+              f"from it; `vf.py break start {repo}` there breaks it in place.")
+        return 0
+    checkout = path / located.relative_to(top)
+    record_worktree(harness, repo, checkout)
+    print(f"This harness now uses {checkout} as {repo}'s checkout, in place of harness.json's locator; point the app "
+          f"at it, and `vf.py break start {repo}` then breaks it in place. `vf.py break worktree --clear {repo}` "
+          f"goes back to the locator; run it before removing the worktree.")
+    return 0
+
+
+def write_worktrees(harness, update):
+    """Apply update to the harness's {repo: path} entry in the project's recorded worktrees and save the file in one step."""
+    path = validate.worktrees_file(harness)
+    if path is None:
+        raise StateError(f"{validate.project_root(harness)} is not in a Git checkout, so no worktree can be recorded for it")
+    try:
+        data = validate.recorded_worktrees(harness)
+    except ValueError as error:
+        raise StateError(str(error)) from error
+    key = str(harness.resolve())
+    entry = data.get(key) if isinstance(data.get(key), dict) else {}
+    update(entry)
+    if entry:
+        data[key] = entry
+    else:
+        data.pop(key, None)
+    if data:
+        path.with_suffix(".tmp").write_text(json.dumps(data, indent=2) + "\n")
+        path.with_suffix(".tmp").replace(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def record_worktree(harness, repo, checkout):
+    """Record checkout as this harness's checkout for repo, read before harness.json's locator."""
+    write_worktrees(harness, lambda entry: entry.update({repo: str(checkout)}))
+
+
+def clear_worktree(harness, repo):
+    """Forget the worktree `worktree` recorded for repo, so the harness uses harness.json's locator again."""
+    if code_state.listed_repos(harness).get(repo) is None:
+        raise StateError(f"harness.json lists no repo named {repo}")
+    recorded = validate.recorded_worktree(harness, repo)
+    if recorded is None:
+        print(f"No worktree is recorded for {repo}; the harness uses harness.json's locator.")
+        return 0
+    checkout = recorded if validate.git(recorded, "rev-parse", "--show-toplevel") else None
+    session = code_state.open_session(checkout) if checkout else None
+    if session and not session["ending"]:
+        raise GuardError(f"a break session is open on {recorded}; close it with `vf.py break end {session['repo']}` first")
+    write_worktrees(harness, lambda entry: entry.pop(repo, None))
+    print(f"{repo}: no longer uses {recorded}; the harness uses harness.json's locator again. The worktree itself is untouched.")
     return 0
 
 
@@ -378,6 +443,45 @@ def require_app_ready(harness, repo, top):
                          f"`vf.py break start {repo}` again")
 
 
+def group_alive(group):
+    """Whether any process is left in the process group."""
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def stop_leftover_check(folder):
+    """Stop a planned break's check that outlived the `vf.py run` that started it, such as one killed by a timeout:
+    SIGINT to the process group the session folder records, as Ctrl-C would, then SIGKILL once the grace runs out."""
+    path = folder / code_state.CHECK_GROUP
+    try:
+        group = int(path.read_text())
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError):
+        path.unlink(missing_ok=True)
+        return
+    if group > 1 and group_alive(group):
+        grace = _load("harness_vf", "vf.py").BREAK_STOP_GRACE
+        how = "SIGINT"
+        os.killpg(group, signal.SIGINT)
+        deadline = time.monotonic() + grace
+        while group_alive(group) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if group_alive(group):
+            how = "SIGINT, then SIGKILL"
+            try:
+                os.killpg(group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        print(f"Stopped the check a killed `vf.py run` left running (process group {group}, with {how}) before going on.", flush=True)
+    path.unlink(missing_ok=True)
+
+
 def start(harness, repo):
     """Open a break session, in place in a marked worktree or in a new scratch worktree."""
     checkout, top = locate(harness, repo)
@@ -385,6 +489,7 @@ def start(harness, repo):
     if session:
         code_state.require_session_owner(session, harness)
         require_session_repo(session, repo)
+        stop_leftover_check(code_state.session_folder(checkout))
         raise GuardError(f"a break session is already open for {repo}; see `vf.py break status`, or close it with `vf.py break end {repo}`")
     start_command = command_setting(harness, "start")
     reloads(harness)
@@ -467,6 +572,7 @@ def run_break(harness, repo, planned, command, patch=None):
         raise StateError(f"expected \"<sub-feature IDs>: <what was broken>\", got {planned!r}")
     located, _ = locate(harness, repo)
     session, folder = load_session(located, repo, harness)
+    stop_leftover_check(folder)
     if session["ending"]:
         raise GuardError(f"the session for {repo} is ending; finish it with `vf.py break end {repo}`")
     if session["held"]:
@@ -513,9 +619,12 @@ def run_break(harness, repo, planned, command, patch=None):
             for path in held:
                 path.rename(path.with_suffix(".held"))
             if held:
-                # vf.py run already wrote status.md from that evidence; recompute it without it.
-                for line in _load("harness_vf", "vf.py").refresh_status(harness, validate):
+                # vf.py run already wrote status.md and recordings.html from that evidence; rebuild both without it.
+                vf = _load("harness_vf", "vf.py")
+                for line in vf.refresh_status(harness, validate):
                     print(line, file=sys.stderr)
+                if failure := vf.build_pages("--recordings", str(harness)):
+                    print(f"recordings.html was not rebuilt: {failure}", file=sys.stderr)
             session["held"] = (f"{', '.join(moved[:5])} changed in {worktree} while the app restarted or the check ran, "
                                f"so the copy was left as it is. Save anything there you need, then run `vf.py break end {repo}`, "
                                f"which resets the copy's product code")
@@ -566,7 +675,7 @@ def record_breaks(harness, evidence):
             continue
         if spoiled_by is not None:
             lines.append(f"{sub_id}: step '{spoiled_by}' failed before any step judging it, so the break proves nothing for it; "
-                         "run it again, naming what that step judges as a target if the break broke it too")
+                         "plan a break of its own that the earlier steps pass through")
             continue
         entries.append({"at": at, "sub_feature": sub_id, "check": record["check"], "what": what, "step": failed_steps[0], "evidence": cite})
         lines.append(f"Break recorded for {sub_id}: step '{failed_steps[0]}' caught it")
@@ -595,9 +704,8 @@ def replay(harness, evidence, command):
 
 def status(harness):
     """Print one line per repo saying whether a break session is open on it and what state the copy is in."""
-    project = validate.project_root(harness)
     for repo, locator in code_state.listed_repos(harness).items():
-        checkout = validate.resolve_repo(locator, project)
+        checkout = validate.repo_checkout(harness, repo, locator)
         session = code_state.open_session(checkout) if checkout else None
         if not session:
             print(f"{repo}: no break session")
@@ -633,6 +741,7 @@ def end(harness, repo):
     code_state.require_session_owner(session, harness)
     require_session_repo(session, repo)
     folder = code_state.session_folder(located)
+    stop_leftover_check(folder)
     checkout, top = Path(session["checkout"]), Path(session["top"])
     worktree = Path(session["worktree"])
     if not session["in_place"] and worktree.resolve() == top:
@@ -687,9 +796,11 @@ def main():
     actions = parser.add_subparsers(dest="action", required=True)
     worktree = actions.add_parser("worktree")
     worktree.add_argument("repo")
-    worktree.add_argument("path", type=Path)
-    worktree.add_argument("commit")
+    worktree.add_argument("path", type=Path, nargs="?")
+    worktree.add_argument("commit", nargs="?")
     worktree.add_argument("--branch", help="make the worktree on this new branch instead of a detached HEAD")
+    worktree.add_argument("--clear", action="store_true",
+                          help="forget the worktree recorded for REPO, so the harness uses harness.json's locator again")
     actions.add_parser("start").add_argument("repo")
     run = actions.add_parser("run")
     run.add_argument("repo")
@@ -700,8 +811,13 @@ def main():
     args = parser.parse_args(argv)
     if args.action in ("run", "replay") and not command:
         parser.error(f"{args.action} needs the check command after --")
+    if args.action == "worktree" and (args.clear != (args.path is None) or args.clear != (args.commit is None)
+                                      or (args.clear and args.branch)):
+        parser.error("worktree takes REPO PATH COMMIT [--branch NAME], or --clear REPO")
     harness = args.harness.resolve()
     try:
+        if args.action == "worktree" and args.clear:
+            return clear_worktree(harness, args.repo)
         if args.action == "worktree":
             return make_worktree(harness, args.repo, args.path, args.commit, args.branch)
         if args.action == "start":

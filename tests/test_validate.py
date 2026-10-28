@@ -914,26 +914,31 @@ class VerifiedResultsTest(unittest.TestCase):
                     self.assertEqual(result, 1, output)
                     self.assertIn(expected, output)
 
-    def test_a_break_earns_credit_only_when_every_earlier_step_passed_or_judges_a_target(self):
-        """A payment step that failed because sign-in failed first proves nothing about the payment check."""
+    def test_a_break_earns_credit_only_when_every_earlier_failed_step_judges_the_same_behavior(self):
+        """A payment step that failed because sign-in failed first proves nothing about the payment check, and a
+        refund step that failed because the payment failed first proves nothing about refunds, even when the
+        break names refunds as a target too."""
         signin = {"name": "customer signs in", "passed": False, "at": 5.0, "sub_features": []}
         pay = dict(self.STEP, sub_features=["checkout.pay"])
         refund = {"name": "checkout.refund: order is refunded", "passed": False, "at": 30.0, "sub_features": ["checkout.refund"]}
         both = ["checkout.pay", "checkout.refund"]
+        pay_and_refund = {"name": "order is paid and refundable", "passed": False, "at": 10.0, "sub_features": both}
         refund_line = self.LINE.replace("checkout.pay", "checkout.refund")
         spoiled = "step 'customer signs in' failed before any step judging it in its planned break in evidence/checkout-pay/break.json"
+        knock_on = "step 'checkout.pay: order is paid' failed before any step judging it in its planned break"
         cases = (
             ("setup fails first", self.LINE, ["checkout.pay"], [signin, dict(pay, passed=False)], spoiled),
             ("setup fails after the catch", self.LINE, ["checkout.pay"], [dict(pay, passed=False), signin], None),
-            ("an earlier target's step fails", refund_line, both, [dict(pay, passed=False), refund], None),
-            ("an earlier non-target step fails", refund_line, ["checkout.refund"], [dict(pay, passed=False), refund],
-             "step 'checkout.pay: order is paid' failed before any step judging it in its planned break"),
+            ("an earlier target's step fails", refund_line, both, [dict(pay, passed=False), refund], knock_on),
+            ("an earlier non-target step fails", refund_line, ["checkout.refund"], [dict(pay, passed=False), refund], knock_on),
+            ("the first failed step judges both targets", refund_line, both, [pay_and_refund, refund], None),
+            ("the first failed step judges both targets, pay", self.LINE, both, [pay_and_refund, refund], None),
         )
         for label, line, targets, steps, expected in cases:
             with self.subTest(label), tempfile.TemporaryDirectory() as directory:
                 harness = self.make_verified_harness(Path(directory))
                 edit_feature(harness, "checkout", lambda d: d["behaviors"]["checkout.refund"].update(self.READS))
-                self.write_evidence(harness, sub_features=both, steps=[pay, dict(refund, passed=True)])
+                self.write_evidence(harness, sub_features=both, steps=[dict(pay_and_refund, passed=True), pay, dict(refund, passed=True)])
                 self.write_break(harness, sub_features=both, steps=steps,
                                  planned_break={"what": "payment capture skipped", "sub_features": targets, "repo": "app"})
                 self.write_results(harness, line)
@@ -1031,6 +1036,31 @@ class VerifiedResultsTest(unittest.TestCase):
             self.assertNotIn("recording", output)
 
 
+class BreakCatchTest(unittest.TestCase):
+    """A break credits only the behavior whose step failed first, plus any other behavior that same step judges."""
+
+    def record(self, targets, steps):
+        return {"sub_features": ["shop.order", "shop.pay"],
+                "planned_break": {"what": "order insert skipped", "sub_features": targets, "repo": "app"}, "steps": steps}
+
+    def test_a_knock_on_failure_earns_nothing_even_when_its_setup_is_named_as_a_target(self):
+        # The payment step failed only because skipping the order insert left nothing to pay for.
+        steps = [{"name": "order is placed", "passed": False, "sub_features": ["shop.order"]},
+                 {"name": "payment is saved", "passed": False, "sub_features": ["shop.pay"]}]
+        for targets in (["shop.order", "shop.pay"], ["shop.pay"]):
+            with self.subTest(targets=targets):
+                record = self.record(targets, steps)
+                self.assertEqual(validate.break_catch(record, "shop.pay"), (["payment is saved"], "order is placed"))
+                self.assertEqual(validate.break_catch(record, "shop.order"), (["order is placed"], None))
+
+    def test_a_first_failed_step_judging_two_targets_credits_both(self):
+        steps = [{"name": "order is placed and paid", "passed": False, "sub_features": ["shop.order", "shop.pay"]},
+                 {"name": "payment is saved", "passed": False, "sub_features": ["shop.pay"]}]
+        record = self.record(["shop.order", "shop.pay"], steps)
+        self.assertEqual(validate.break_catch(record, "shop.order"), (["order is placed and paid"], None))
+        self.assertEqual(validate.break_catch(record, "shop.pay"), (["order is placed and paid", "payment is saved"], None))
+
+
 class HarnessFingerprintTest(unittest.TestCase):
     def test_a_line_ending_rewrite_is_not_a_harness_edit(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1122,7 +1152,7 @@ class MultiRepoTest(unittest.TestCase):
             }))
             proofs = {"checkout.pay": {"check": "./scripts/pay"}, "checkout.refund": {"check": "./scripts/refund"}}
             with patch.object(validate, "resolve_repo", return_value=None) as resolve:
-                warnings = validate.evidence_warnings(evidence, proofs, evidence, {"app": "."})
+                warnings = validate.evidence_warnings(evidence, proofs, {"app": "."})
             self.assertEqual(resolve.call_count, 1)
             self.assertEqual(warnings, ["app checkout cannot be found from harness.json for checkout.pay, checkout.refund"])
 
