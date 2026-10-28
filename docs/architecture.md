@@ -51,7 +51,7 @@ Setup copies eight Python scripts unchanged into each harness's `scripts/framewo
 | `vf.py` | The command-line entry point. `run` runs the doctor, then one check, and writes its evidence. `status` computes every verdict and writes `status.md`. `sync` creates and updates a harness's framework copies ([ADR 0006](adr/0006-one-versioned-tool-writes-every-record.md)) |
 | `validate.py` | The machine-readable side of the contract: checks the manifest, the feature map, the setup gate, and that every Verified line is one it would write now ([ADR 0004](adr/0004-judge-from-outside-and-compute-verdicts-from-evidence.md)) |
 | `code_state.py` | Reports each repo's commit, branch, and uncommitted changes, so every record means the same thing by "version" |
-| `break_session.py` | Runs a planned break in a scratch copy of the code and restores it afterward ([ADR 0005](adr/0005-credit-a-planned-break-only-to-what-it-broke.md)) |
+| `break_session.py` | Runs planned breaks in a scratch copy of the code, or in place in a worktree the run made for a pull request, and restores the product code afterward ([ADR 0005](adr/0005-credit-a-planned-break-only-to-what-it-broke.md), [ADR 0015](adr/0015-break-in-the-runs-own-copy-and-credit-only-a-clean-catch.md)) |
 | `launch.py` | An optional launcher and doctor for an app that runs straight from its checkout |
 | `replay.py`, `clip.py` | Turn a run's evidence and video into a replay page, the recordings page, and clips |
 

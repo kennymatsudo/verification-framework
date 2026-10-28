@@ -2,6 +2,7 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -9,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from harness_json import edit_feature, edit_manifest, write_feature, write_manifest  # noqa: E402
-from support import git
+from support import git, start_break_runner, wait_until_gone
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
 
@@ -267,10 +268,77 @@ if not spec.get("no_report"):
 sys.exit(spec.get("exit", 0))
 """
 
+# A check that reports its steps as it goes, then waits, cleaning up in a finally block as a plain Python
+# check would; it installs no signal handler, so only a signal Python turns into an exception runs it.
+WAITING_CHECK = """
+import json, os, sys, time
+from pathlib import Path
+spec = json.loads(sys.argv[1])
+report = open(os.environ["VERIFY_REPORT"], "a")
+def report_event(event):
+    report.write(json.dumps(event) + "\\n")
+    report.flush()
+try:
+    report_event({"event": "check", "name": "pay", "sub_features": spec.get("sub_features", ["app.pay"]), "reads": "state"})
+    for step in spec["steps"]:
+        report_event(step)
+    time.sleep(spec["wait"])
+    Path(spec["finished"]).write_text("ran to the end\\n")
+except KeyboardInterrupt:
+    report_event({"event": "stopped", "reason": "interrupted"})
+    sys.exit(3)
+finally:
+    Path(spec["cleaned"]).write_text("cleaned up\\n")
+sys.exit(spec.get("exit", 0))
+"""
+
 CHECK_EVENT = {"event": "check", "name": "pay", "sub_features": ["app.pay"], "reads": "state"}
 PASSED_STEP = {"event": "step", "name": "order is paid", "passed": True, "at": 1.0}
 FAILED_STEP = [{"event": "step", "name": "order is paid", "passed": False, "at": 1.0, "detail": "status=pending"}]
 
+
+
+class BreakStop(unittest.TestCase):
+    def test_the_stop_reaches_cleanup_when_vf_run_was_started_ignoring_sigint(self):
+        # A shell's background job starts with SIGINT ignored, and a child inherits that across exec.
+        child = (
+            "import json, os, sys, time\n"
+            "from pathlib import Path\n"
+            "try:\n"
+            "    open(os.environ['VERIFY_REPORT'], 'a').write(json.dumps({'event': 'step', 'name': 's', 'passed': False}) + '\\n')\n"
+            "    time.sleep(60)\n"
+            "finally:\n"
+            "    Path(sys.argv[1]).write_text('cleaned up')\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            report, cleaned = folder / "report.jsonl", folder / "cleaned"
+            report.write_text("")
+            previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+            try:
+                _, ended = vf.run_break_check([sys.executable, "-c", child, str(cleaned)], folder,
+                                              {**os.environ, "VERIFY_REPORT": str(report)}, report,
+                                              lambda events: "judged" if events else None)
+            finally:
+                signal.signal(signal.SIGINT, previous)
+            self.assertEqual(ended, {"reason": "judged", "killed": False})
+            self.assertTrue(cleaned.exists())
+
+
+class BreakCheckGroup(unittest.TestCase):
+    def test_a_hangup_reaches_the_check_and_the_group_file_lasts_only_while_it_runs(self):
+        # A closed terminal or an agent's timeout signals vf.py run's process group, which the check is not in.
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            group_file = folder / "check-group"
+            runner, check = start_break_runner(SCRIPT, folder, group_file)
+            self.assertEqual(group_file.read_text(), str(check))
+
+            os.killpg(runner.pid, signal.SIGHUP)
+
+            self.assertTrue(wait_until_gone(check), "the check kept running after vf.py run got SIGHUP")
+            runner.wait(10)
+            self.assertFalse(group_file.exists())
 
 
 class HarnessCommands(unittest.TestCase):
@@ -497,6 +565,59 @@ class HarnessCommands(unittest.TestCase):
         result = self.run_check(env=env, exit=1, steps=FAILED_STEP)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(self.record()["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"})
+
+    def run_waiting_break(self, steps, wait, exit):
+        """Run WAITING_CHECK as a planned break aimed at app.pay. Returns the result, the break's record, and
+        whether the check's cleanup ran and whether it ran to its end."""
+        marks = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, marks)
+        spec = {"steps": steps, "wait": wait, "exit": exit, "cleaned": str(marks / "cleaned"), "finished": str(marks / "finished")}
+        result = subprocess.run([sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--",
+                                 sys.executable, "-c", WAITING_CHECK, json.dumps(spec)],
+                                capture_output=True, text=True, timeout=60,
+                                env={**os.environ, "VERIFY_PLANNED_BREAK": "app.pay: payment skipped"})
+        records = [json.loads(path.read_text()) for path in (self.harness / "evidence" / "pay").glob("*.json")]
+        broken = [record for record in records if record["planned_break"]]
+        self.assertEqual(len(broken), 1, result.stdout + result.stderr)
+        return result, broken[0], (marks / "cleaned").exists(), (marks / "finished").exists()
+
+    def test_a_break_run_ends_once_every_target_failed_and_lets_the_check_clean_up(self):
+        self.open_break_session()
+        result, record, cleaned, finished = self.run_waiting_break(FAILED_STEP, wait=30, exit=1)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual((cleaned, finished), (True, False))
+        self.assertEqual(record["ended_early"], {"reason": "every target failed a step judging it", "killed": False})
+        # The stop the check reported while cleaning up is not the run's verdict, so the break still counts.
+        self.assertEqual((record["passed"], record["stopped"]), (False, None))
+        self.assertEqual(vf.sibling("break_session").record_breaks(self.harness, self.evidence()),
+                         ["Break recorded for app.pay: step 'order is paid' caught it"])
+
+    def test_a_missed_break_ends_after_the_last_step_that_judged_a_target_in_the_latest_pass_and_exits_0(self):
+        self.assertEqual(self.run_check().returncode, 0)
+        self.open_break_session()
+        result, record, cleaned, finished = self.run_waiting_break([PASSED_STEP], wait=30, exit=0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((cleaned, finished), (True, False))
+        self.assertRegex(record["ended_early"]["reason"],
+                         r"^step 'order is paid' passed, the last step to judge a target in evidence/pay/[^ ]+\.json$")
+        self.assertEqual((record["passed"], record["stopped"]), (True, None))
+        self.assertIn("Accepted evidence/pay/", result.stdout)
+
+    def test_a_break_with_no_earlier_pass_runs_to_the_end(self):
+        self.open_break_session()
+        result, record, cleaned, finished = self.run_waiting_break([PASSED_STEP], wait=1, exit=0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((cleaned, finished), (True, True))
+        self.assertNotIn("ended_early", record)
+
+    def test_a_pass_of_other_harness_code_cannot_end_a_missed_break(self):
+        self.assertEqual(self.run_check().returncode, 0)
+        (self.harness / "scripts" / "pay.py").write_text("# the check, edited since its pass\n")
+        self.open_break_session()
+        result, record, cleaned, finished = self.run_waiting_break([PASSED_STEP], wait=1, exit=0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((cleaned, finished), (True, True))
+        self.assertNotIn("ended_early", record)
 
     def test_a_planned_break_in_a_checkout_two_repos_share_names_the_repo_its_session_was_started_for(self):
         (self.project / "mailer").mkdir()

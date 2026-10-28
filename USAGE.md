@@ -72,7 +72,7 @@ Each behavior is named the way a user would describe it. Its short ID, such as `
 The agent writes the check. A second agent, which never sees the first one's reasoning, compares the check with the agreed preview, and looks again at any later change to it. Then the agent calibrates it by proving it can fail:
 
 ```text
-Planned break: skip saving the payment record in billing/charge.py.
+Planned break: skip saving the payment record in billing/charge.py, caught by "payment is saved", passing through "order is placed".
 ```
 
 It makes that change in a throwaway copy of the repository, runs the check there, confirms it fails, and deletes the copy. The final report says how many behaviors are now Verified and what was broken to calibrate each check.
@@ -229,9 +229,9 @@ A check can start in the browser or at the app's web API, the addresses the page
 
 ### Calibration: planned breaks
 
-A check is calibrated by a planned break. Before each one, the agent tells you `Planned break: <the change>`. A framework script copies your code, uncommitted edits included, into a throwaway copy, points the app at it, saves the change beside the run's record, and puts everything back afterward. While that copy is in use, ordinary verification waits.
+A check is calibrated by a planned break. Before running any, the agent lists every break for the change in one message, each as `Planned break: <the change>, caught by <step>, passing through <earlier steps>`, and asks once for their shared side effects only when they have any. A framework script copies your code, uncommitted edits included, into a throwaway copy and points the app at it, or uses the copy a pull request run already made and the app already runs, runs the breaks one after another, saves each change beside its run's record, and puts the code back afterward. Each calibrated check then passes once more on the restored code. While that copy is in use, ordinary verification waits.
 
-A break calibrates only the behavior it was aimed at, and only when a step checking that behavior failed. Breaking payment can make a later receipt step fail too, but that proves nothing about the receipt. [Prove a check with a planned break](docs/internals.md#prove-a-check-with-a-planned-break) has the mechanics.
+A break calibrates only the behavior it was aimed at, and only when a step checking that behavior failed with nothing unplanned failing before it. Breaking payment can make a later receipt step fail too, but that proves nothing about the receipt, even when the break names the receipt as a target; the receipt needs a break of its own that payment passes through. The framework ends a break's run once it has caught or missed, so a check must clean up when interrupted and act the same in a break as in a pass. [Prove a check with a planned break](docs/internals.md#prove-a-check-with-a-planned-break) has the mechanics.
 
 ### What the report says
 
@@ -303,7 +303,7 @@ vf's verify-pr mode tests a pull request on the real app, or several across repo
 
 You approve the list.
 
-It checks out each PR in a git worktree of its own, so your checkouts stay as they are, builds the approved checks on a branch named `vf-pr/<number>-checks`, and runs them with every PR's code loaded together. It drafts a comment and posts it only when you say so. When a check showed the changed behavior on screen, the draft comes with a short demo video, reviewed for anything that shouldn't be public.
+It checks out each PR in a git worktree of its own, so your checkouts stay as they are and planned breaks happen in that copy, builds the approved checks on a branch named `vf-pr/<number>-checks`, and runs them with every PR's code loaded together. It drafts a comment and posts it only when you say so. When a check showed the changed behavior on screen, the draft comes with a short demo video, reviewed for anything that shouldn't be public.
 
 At the end it offers to open a pull request for the new checks, so they merge with the code they test.
 

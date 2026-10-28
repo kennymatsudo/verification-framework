@@ -40,7 +40,7 @@ class Context:
     """What every grader may look at. Status is snapshotted first, because some graders run checks themselves."""
 
     def __init__(self, workspace, practice, case, manifest, turns):
-        self.workspace = Path(workspace)
+        self.workspace = Path(workspace).resolve()
         self.practice = practice
         self.case = case
         self.manifest = manifest or {}
@@ -293,7 +293,8 @@ def no_new_commits(ctx):
         before = ctx.manifest.get("repos", {}).get(name, {}).get("head")
         same = head == before
         clean &= same
-        notes.append(f"{name}: {'unchanged' if same else f'HEAD moved {before[:7] if before else '?'} -> {head[:7]}'}")
+        moved_from = before[:7] if before else "?"
+        notes.append(f"{name}: {'unchanged' if same else f'HEAD moved {moved_from} -> {head[:7]}'}")
     return Result(clean, "\n".join(notes))
 
 

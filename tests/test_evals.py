@@ -54,6 +54,14 @@ class SimulatedDeveloper(unittest.TestCase):
         self.assertEqual(agent.answer_from_rules(self.SHEET, "Which port?", "")[0], "Go ahead.")
 
 
+class AgentCommand(unittest.TestCase):
+    def test_the_case_loads_only_the_plugin_under_test(self):
+        command = agent.claude_command("hi")
+        self.assertEqual(command[command.index("--setting-sources") + 1], "project,local")
+        self.assertEqual(command[command.index("--plugin-dir") + 1], str(agent.FRAMEWORK))
+        self.assertEqual(command[command.index("--permission-mode") + 1], "bypassPermissions")
+
+
 class TranscriptParser(unittest.TestCase):
     def test_reads_session_tools_and_result_from_stream_json(self):
         lines = [
@@ -78,6 +86,23 @@ class Graders(unittest.TestCase):
         for name, function in graders.GRADERS.items():
             with self.subTest(grader=name):
                 self.assertTrue((function.__doc__ or "").strip(), f"{name} has no docstring")
+
+    def test_project_root_grader_reads_a_workspace_reached_through_a_symlink(self):
+        # macOS hands out temp folders under /var, a symlink to /private/var.
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            real = pathlib.Path(directory).resolve()
+            link = real.parent / (real.name + "-link")
+            link.symlink_to(real)
+            try:
+                harness = real / ".claude" / "skills" / "verify-x"
+                harness.mkdir(parents=True)
+                (harness / "rules.md").write_text("")
+                practice = {"project_root": ".", "harness": ".claude/skills/verify-x"}
+                ctx = graders.Context(link, practice, {}, {}, [])
+                self.assertTrue(graders.GRADERS["harness_in_project_root"](ctx).passed)
+            finally:
+                link.unlink()
 
     def test_status_lines_parse(self):
         ctx = graders.Context.__new__(graders.Context)

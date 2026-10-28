@@ -24,14 +24,6 @@ One planned break per behavior means at least two runs per behavior. That's chea
 
 **What settles it:** the converted app's break testing done with batching, with the runs spent and the masking rate recorded, plus a practice repo with hidden breaks where every credited behavior's hidden break is also caught.
 
-### Run several planned breaks per session
-
-`break_session.py` already accepts several `run`s between `start` and `end`, but the add-checks mode uses one break per session. On a slow app, switching is most of each break's cost: in the first converted app, a 13-behavior feature takes about an hour with a fresh worktree per break, and would take 15 to 20 minutes with one worktree for the whole series.
-
-The cost is a longer window on scratch code, during which the developer can't use the stack. This fits with batching above: one cuts the number of runs, the other the cost of each switch.
-
-**What settles it:** one 13-behavior feature run as one session, timed, with every run's evidence naming its own saved patch and fingerprint.
-
 ### Support more break-session setups
 
 - **A person-only switch.** Where only a person can point the app at another checkout, `start` and `end` could print the step for the person to do and exit, and a second command could record that it was done. Agents have no terminal to wait on, so the script can't simply pause.
@@ -100,6 +92,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0012: Vendor only what bears trust](adr/0012-vendor-only-what-bears-trust.md)
 - [0013: One manifest for everything a script reads; prose stays prose](adr/0013-one-manifest-for-what-scripts-read.md)
 - [0014: One skill, with a mode for each job](adr/0014-one-skill.md)
+- [0015: Break in the run's own copy, and credit only a clean catch](adr/0015-break-in-the-runs-own-copy-and-credit-only-a-clean-catch.md) (proposed)
 
 ## Parked ideas
 

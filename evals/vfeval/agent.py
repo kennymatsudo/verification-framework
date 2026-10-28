@@ -72,8 +72,13 @@ def parse_stream(lines, turn):
 
 
 def claude_command(prompt, model=None, resume=None, max_turns=60, framework=FRAMEWORK, extra=()):
-    command = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--plugin-dir", str(framework),
-               "--add-dir", str(framework), "--permission-mode", "acceptEdits", "--allowedTools", *ALLOWED_TOOLS,
+    # User settings are left out so the skills under test are the plugin's: a person's own installed vf skills
+    # (in ~/.claude/skills) would otherwise shadow them, and their hooks would run inside the case.
+    # The workspace is a throwaway copy, and a harness lives under .claude/skills/, which Claude Code
+    # refuses to write in acceptEdits mode even with allow rules, so the case skips permission prompts.
+    command = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--setting-sources", "project,local",
+               "--plugin-dir", str(framework),
+               "--add-dir", str(framework), "--permission-mode", "bypassPermissions", "--allowedTools", *ALLOWED_TOOLS,
                "--disallowedTools", "AskUserQuestion", "--max-turns", str(max_turns)]
     if model:
         command += ["--model", model]

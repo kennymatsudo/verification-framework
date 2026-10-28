@@ -8,9 +8,11 @@ Each hit is a lead, not a verdict: the agent reads the code and decides. Kinds:
   self-compare   an assertion comparing an expression with itself, or asserting a constant
   skip           a skip or xfail; each one hides a test until someone removes it
   swallow        a broad except in harness code that neither re-raises nor records a failure
+  break-aware    a harness script, in any language, that reads VERIFY_PLANNED_BREAK or VERIFY_BREAK_SESSION
 
 Understands unittest (self.assert*, self.fail, skipTest) and pytest (assert, pytest.raises,
-pytest.fail, pytest.skip, @pytest.mark.skip/skipif/xfail). Run from the project root.
+pytest.fail, pytest.skip, @pytest.mark.skip/skipif/xfail). break-aware looks at every file under
+a scripts/ folder apart from scripts/framework/, the framework's own copies. Run from the project root.
 Exits 1 when there are hits, 2 when a file cannot be parsed, with the reason on a STOPPED: line.
 """
 
@@ -24,6 +26,8 @@ import sys
 EXISTENCE_ONLY = {"assertIsNotNone", "assertTrue", "assertIsInstance"}
 SKIPS = {"skip", "skipIf", "skipUnless", "expectedFailure", "skipTest", "skipif", "xfail"}
 FAILURE_WORDS = ("fail", "problem", "violation", "error", "raise")
+# A check that can tell it is in a planned break can take a different path there than in a pass.
+BREAK_VARIABLES = ("VERIFY_PLANNED_BREAK", "VERIFY_BREAK_SESSION")
 
 
 def is_test_file(path: Path) -> bool:
@@ -144,17 +148,41 @@ def scan_harness_file(path: Path) -> list[str]:
     return hits
 
 
+def is_harness_script(path: Path, root: Path) -> bool:
+    """Whether a file under the scanned root sits in a scripts/ folder, outside scripts/framework/, whose
+    copies read the break variables themselves. Folders above the root don't count."""
+    folders = [root.resolve().name, *path.relative_to(root).parts[:-1]]
+    if "scripts" not in folders or "__pycache__" in folders:
+        return False
+    below = folders[len(folders) - folders[::-1].index("scripts"):]
+    return not below or below[0] != "framework"
+
+
+def scan_break_aware(path: Path) -> list[str]:
+    """The break-aware hits in one harness script: each line naming a variable that says a planned break is on."""
+    try:
+        text = path.read_text()
+    except UnicodeDecodeError:
+        return []
+    return [f"break-aware {path}:{number} reads {name}; vf.py run ends a planned break's run, so a check must do the same "
+            "in a break as in a pass"
+            for number, line in enumerate(text.splitlines(), 1) for name in BREAK_VARIABLES if name in line]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("paths", nargs="*", type=Path, default=[Path("harness")], help="directories to scan (default harness)")
     args = parser.parse_args()
     hits = []
     for root in args.paths:
-        for path in sorted(root.rglob("*.py")):
-            if "node_modules" in path.parts:
+        for path in sorted(root.rglob("*")):
+            if "node_modules" in path.parts or not path.is_file():
                 continue
             try:
-                hits += scan_test_file(path) if is_test_file(path) else scan_harness_file(path)
+                if is_harness_script(path, root):
+                    hits += scan_break_aware(path)
+                if path.suffix == ".py":
+                    hits += scan_test_file(path) if is_test_file(path) else scan_harness_file(path)
             except (SyntaxError, UnicodeDecodeError, OSError) as error:
                 print(f"STOPPED: cannot parse {path}: {error}", file=sys.stderr)
                 return 2

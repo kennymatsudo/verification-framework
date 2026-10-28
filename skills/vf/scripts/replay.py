@@ -1002,12 +1002,15 @@ def recordings_page(harness_dir):
             *(str(step.get("name", "")) for step in record["steps"]),
             *(" ".join([started(run), *outcome(run)[:3], versions(run)]) for _, run in runs),
         ])
+        purpose_html = f'<p class="purpose">{html.escape(purpose)}</p>' if purpose else ""
+        lead_html = f'<span class="muted">{lead}</span>' if lead else ""
+        code_html = f'<p class="code">{html.escape(code)}</p>' if code else ""
         blocks.append(
             f'<article class="check" id="{anchor}" data-result="{key}" data-search="{html.escape(searchable.lower())}">'
             f'<div class="row"><span class="badge {key}">{html.escape(status)}</span>'
-            f'<div class="main"><h2>{heading}</h2>{f'<p class="purpose">{html.escape(purpose)}</p>' if purpose else ""}<p class="what">{f'<span class="muted">{lead}</span>' if lead else ""}{html.escape(headline)}</p>'
+            f'<div class="main"><h2>{heading}</h2>{purpose_html}<p class="what">{lead_html}{html.escape(headline)}</p>'
             f'<p class="note">{html.escape(note) + " · " if note else ""}{time_html(record)}</p>'
-            f'{f'<p class="code">{html.escape(code)}</p>' if code else ""}</div>'
+            f'{code_html}</div>'
             f'<div class="actions">{actions}<button class="toggle" type="button" aria-expanded="false" aria-controls="{anchor}-details">Details</button></div></div>'
             f'<div class="details" id="{anchor}-details" hidden>{details_html(check, path, record, runs[1:], features, evidence_dir)}</div>'
             "</article>"
