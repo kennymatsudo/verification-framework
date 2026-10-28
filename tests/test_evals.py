@@ -87,6 +87,23 @@ class Graders(unittest.TestCase):
             with self.subTest(grader=name):
                 self.assertTrue((function.__doc__ or "").strip(), f"{name} has no docstring")
 
+    def test_project_root_grader_reads_a_workspace_reached_through_a_symlink(self):
+        # macOS hands out temp folders under /var, a symlink to /private/var.
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            real = pathlib.Path(directory).resolve()
+            link = real.parent / (real.name + "-link")
+            link.symlink_to(real)
+            try:
+                harness = real / ".claude" / "skills" / "verify-x"
+                harness.mkdir(parents=True)
+                (harness / "rules.md").write_text("")
+                practice = {"project_root": ".", "harness": ".claude/skills/verify-x"}
+                ctx = graders.Context(link, practice, {}, {}, [])
+                self.assertTrue(graders.GRADERS["harness_in_project_root"](ctx).passed)
+            finally:
+                link.unlink()
+
     def test_status_lines_parse(self):
         ctx = graders.Context.__new__(graders.Context)
         ctx.status_snapshot = "- a.b: Verified. x\n- c.d: Not verified. No check yet.\n- e.f: Failed. Step 'x'.\n"

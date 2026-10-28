@@ -40,7 +40,7 @@ class Context:
     """What every grader may look at. Status is snapshotted first, because some graders run checks themselves."""
 
     def __init__(self, workspace, practice, case, manifest, turns):
-        self.workspace = Path(workspace)
+        self.workspace = Path(workspace).resolve()
         self.practice = practice
         self.case = case
         self.manifest = manifest or {}
