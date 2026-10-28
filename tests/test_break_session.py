@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from harness_json import write_manifest  # noqa: E402
+from harness_json import edit_manifest, write_manifest  # noqa: E402
 from support import git
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
@@ -409,6 +409,322 @@ sys.exit(0 if record["passed"] else 1)
             (harness / "harness.json").write_text(json.dumps({"commands": {"stop": "none"}}))
             with self.assertRaisesRegex(code_state.StateError, "names no start command"):
                 break_session.command_setting(harness, "start")
+
+
+def make_pr_worktree(directory, reloads=False):
+    """A project with its harness committed, and a marked worktree of it whose harness copy is the one that runs,
+    as verify-pr sets one up. The app already runs the worktree, as pointed.txt says; every Start also appends
+    the checkout it got to starts.txt, and the doctor is ready only while the app runs the checkout under test."""
+    project, harness = make_project(directory, start="echo {checkout:app} > pointed.txt && echo {checkout:app} >> starts.txt",
+                                    reloads="yes" if reloads else "no")
+    edit_manifest(harness, lambda data: data["commands"].update(doctor='test "$(cat pointed.txt)" = "$VERIFY_CHECKOUT_APP"'))
+    (project / ".gitignore").write_text("pointed.txt\nstarts.txt\n")
+    git(project, "add", ".")
+    git(project, "commit", "-qm", "harness")
+    pr = Path(directory) / "pr"
+    result, _, errors = run(harness, "worktree", "app", str(pr), "HEAD", "--branch", "vf-pr/1-checks")
+    assert result == 0, errors
+    pr = pr.resolve()
+    (pr / "pointed.txt").write_text(f"{pr}\n")
+    return project, pr, pr / harness.relative_to(project)
+
+
+def marker_path(checkout):
+    return break_session.git_dirs(checkout)[0] / break_session.OWNER_MARKER
+
+
+def starts(project):
+    """The checkouts Start was given, in order; empty when it never ran."""
+    path = project / "starts.txt"
+    return path.read_text().split() if path.exists() else []
+
+
+def write_check(path):
+    """A check command that writes path, a file in the copy, and nothing else."""
+    return ["--", sys.executable, "-c", "import sys; open(sys.argv[1], 'w').write('made by the check')", str(path)]
+
+
+class InPlaceSessionTest(unittest.TestCase):
+    def test_worktree_refuses_a_path_that_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, harness = make_project(directory)
+            existing = Path(directory) / "existing"
+            existing.mkdir()
+
+            result, _, errors = run(harness, "worktree", "app", str(existing), "HEAD")
+
+            self.assertEqual(result, 1)
+            self.assertIn("already exists", errors)
+            self.assertEqual(len(git(project, "worktree", "list").splitlines()), 1)
+            self.assertEqual(list(existing.iterdir()), [])
+
+    def test_start_breaks_in_place_in_a_marked_worktree_without_restarting_the_app(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
+            project, pr, harness = make_pr_worktree(directory)
+            # A commit of harness files alone keeps the product code the marker names.
+            (harness / "notes.md").write_text("checks being built\n")
+            git(pr, "add", ".")
+            git(pr, "commit", "-qm", "checks")
+
+            result, output, errors = run(harness, "start", "app")
+            cleanup.callback(run, harness, "end", "app")
+
+            self.assertEqual(result, 0, errors)
+            self.assertIn(f"in place: {pr}", output)
+            self.assertEqual(starts(pr), [])
+            self.assertEqual(len(git(project, "worktree", "list").splitlines()), 2)
+            with self.assertRaisesRegex(code_state.StateError, "break session is open"):
+                ordinary_state(harness, {})
+            with self.assertRaisesRegex(code_state.StateError, "belongs to"):
+                ordinary_state(project / harness.relative_to(pr), {})
+            planned = ordinary_state(harness, {"VERIFY_PLANNED_BREAK": "app.pay: skipped"})
+            self.assertEqual(planned["app"], code_state.checkout_state(pr, harness))
+            self.assertIn(f"app: break session open in place on {pr}, at its starting state", run(harness, "status")[1])
+
+    def test_start_in_place_refuses_when_the_doctor_says_the_app_runs_other_code(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, pr, harness = make_pr_worktree(directory)
+            (pr / "pointed.txt").write_text(f"{project}\n")
+
+            result, _, errors = run(harness, "start", "app")
+
+            self.assertEqual(result, 1, errors)
+            self.assertIn("the app is not ready", errors)
+            self.assertIsNone(code_state.open_session(pr))
+            self.assertEqual(starts(pr), [])
+
+    def test_start_copies_an_unmarked_checkout_as_before(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, _, _ = make_pr_worktree(directory)
+            mine = Path(directory) / "mine"
+            git(project, "worktree", "add", "-q", str(mine), "HEAD")
+            for name, checkout in (("the main worktree", project), ("a developer's worktree", mine.resolve())):
+                with self.subTest(name):
+                    harness = checkout / ".agents" / "skills" / "verify-app"
+                    result, output, errors = run(harness, "start", "app")
+                    self.assertEqual(result, 0, errors)
+                    self.assertIn("in a new scratch worktree", output)
+                    scratch = Path((checkout / "pointed.txt").read_text().strip())
+                    self.assertNotEqual(scratch, checkout)
+                    self.assertEqual(run(harness, "end", "app")[0], 0)
+                    self.assertFalse(scratch.exists())
+
+    def test_start_refuses_a_marked_worktree_that_fails_a_precondition(self):
+        def uncommitted(project, pr, harness):
+            (pr / "app.txt").write_text("someone's edit\n")
+            return "uncommitted product code"
+
+        def product_commit(project, pr, harness):
+            (pr / "app.txt").write_text("new code\n")
+            git(pr, "commit", "-qam", "new code")
+            return "no longer matches"
+
+        def other_repo(project, pr, harness):
+            marker = json.loads(marker_path(pr).read_text())
+            marker_path(pr).write_text(json.dumps({**marker, "repo": "other"}))
+            return "another harness or repo"
+
+        def unreadable(project, pr, harness):
+            marker_path(pr).write_text("{not json")
+            return "can't be read"
+
+        def main_worktree(project, pr, harness):
+            marker_path(project).write_text(marker_path(pr).read_text())
+            return "main worktree"
+
+        for case in (uncommitted, product_commit, other_repo, unreadable, main_worktree):
+            with self.subTest(case.__name__), tempfile.TemporaryDirectory() as directory:
+                project, pr, harness = make_pr_worktree(directory)
+                reason = case(project, pr, harness)
+                if case is main_worktree:
+                    harness = project / harness.relative_to(pr)
+
+                result, _, errors = run(harness, "start", "app")
+
+                self.assertEqual(result, 1, errors)
+                self.assertIn(reason, errors)
+                self.assertIsNone(code_state.open_session(project))
+                self.assertEqual(len(git(project, "worktree", "list").splitlines()), 2)
+                self.assertEqual(starts(harness.parents[2]), [])
+
+    def test_run_restores_product_code_and_keeps_the_harness_work(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
+            project, pr, harness = make_pr_worktree(directory)
+            new_check = harness / "scripts" / "checks" / "pay.py"
+            new_check.parent.mkdir(parents=True)
+            new_check.write_text("# a check being built\n")
+            (harness / "notes.md").write_text("staged\n")
+            git(pr, "add", str(harness / "notes.md"))
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            cleanup.callback(run, harness, "end", "app")
+            (pr / "app.txt").write_text("broken\n")
+            (pr / "added.txt").write_text("a file the break added\n")
+            new_check.write_text("# a check edited during the session\n")
+
+            result, output, errors = run(harness, "run", "app", "app.pay: payment skipped", *check_command(pr, harness))
+
+            self.assertEqual(result, 0, errors)
+            self.assertIn("Check exited 1", output)
+            patch_text = (harness / "evidence" / "pay" / "run-0.patch").read_text()
+            self.assertIn("+broken", patch_text)
+            self.assertNotIn("pay.py", patch_text)
+            self.assertEqual((pr / "app.txt").read_text(), "first\n")
+            self.assertFalse((pr / "added.txt").exists())
+            self.assertEqual(new_check.read_text(), "# a check edited during the session\n")
+            self.assertEqual(git(pr, "diff", "--cached", "--name-only"), str(harness.relative_to(pr) / "notes.md"))
+            self.assertEqual(break_session.validate.uncommitted_files(pr, harness), [])
+            self.assertEqual(starts(pr), [str(pr)])
+            self.assertEqual(run(harness, "replay", str(harness / "evidence" / "pay" / "run-0.json"),
+                                 *check_command(pr, harness))[0], 0)
+            self.assertFalse(json.loads((harness / "evidence" / "pay" / "run-1.json").read_text())["passed"])
+            self.assertEqual((pr / "app.txt").read_text(), "first\n")
+
+    def test_a_session_in_place_restarts_once_per_break_and_once_at_end_unless_the_app_reloads(self):
+        for reloads, expected in ((False, 3), (True, 0)):
+            with self.subTest(reloads=reloads), tempfile.TemporaryDirectory() as directory:
+                _, pr, harness = make_pr_worktree(directory, reloads=reloads)
+                self.assertEqual(run(harness, "start", "app")[0], 0)
+                for number in range(2):
+                    (pr / "app.txt").write_text("broken\n")
+                    result, _, errors = run(harness, "run", "app", f"app.pay: break {number}", *check_command(pr, harness))
+                    self.assertEqual(result, 0, errors)
+
+                self.assertEqual(run(harness, "end", "app")[0], 0)
+
+                self.assertEqual(starts(pr), [str(pr)] * expected)
+
+    def test_a_file_changed_during_the_check_holds_the_session_in_either_mode(self):
+        def in_place(directory):
+            _, pr, harness = make_pr_worktree(directory)
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            return harness, pr
+
+        def scratch_copy(directory):
+            project, harness = make_project(directory)
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            return harness, Path((project / "pointed.txt").read_text().strip())
+
+        for setup in (in_place, scratch_copy):
+            with self.subTest(setup.__name__), tempfile.TemporaryDirectory() as directory:
+                harness, copy = setup(directory)
+                (copy / "app.txt").write_text("broken\n")
+
+                result, _, errors = run(harness, "run", "app", "app.pay: skipped", *write_check(copy / "generated.txt"))
+
+                self.assertEqual(result, 1, errors)
+                self.assertIn("generated.txt changed", errors)
+                self.assertEqual((copy / "app.txt").read_text(), "broken\n")
+                self.assertTrue((copy / "generated.txt").exists())
+                self.assertIn("held: generated.txt changed", run(harness, "status")[1])
+                result, _, errors = run(harness, "run", "app", "app.pay: skipped", *check_command(copy, harness))
+                self.assertEqual(result, 1)
+                self.assertIn("is held", errors)
+                self.assertFalse((harness / "evidence").exists())
+                with self.assertRaisesRegex(code_state.StateError, "break session is open"):
+                    ordinary_state(harness, {})
+                self.assertEqual(run(harness, "end", "app")[0], 0)
+                self.assertIsNone(code_state.open_session(harness))
+
+    def test_a_held_run_leaves_no_evidence_that_could_count_as_a_break(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
+            _, pr, harness = make_pr_worktree(directory)
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            cleanup.callback(run, harness, "end", "app")
+            (pr / "app.txt").write_text("broken\n")
+            # The check writes its evidence, then something else in the copy changes before restore.
+            both = ("import subprocess, sys; subprocess.run([sys.executable, '-c', sys.argv[1], *sys.argv[2:4]]); "
+                    "open(sys.argv[4], 'w').write('made during the check')")
+            command = ["--", sys.executable, "-c", both, CHECK, str(pr / "pointed.txt"), str(harness), str(pr / "generated.txt")]
+
+            # vf.py run writes status.md from the break before it is held, so status.md is recomputed after.
+            refreshed = []
+            real_load = break_session._load
+            def load(name, filename):
+                module = real_load(name, filename)
+                if filename == "vf.py":
+                    module.refresh_status = lambda harness, validate: refreshed.append(break_session.evidence_files(harness)) or []
+                return module
+            with patch.object(break_session, "_load", load):
+                result, _, errors = run(harness, "run", "app", "app.pay: skipped", *command)
+
+            self.assertEqual(result, 1, errors)
+            self.assertIn("generated.txt changed", errors)
+            self.assertEqual(break_session.evidence_files(harness), set())
+            self.assertTrue(list((harness / "evidence").glob("*/*.held")))
+            self.assertEqual(refreshed, [set()])
+
+    def test_a_restore_that_misses_holds_the_session(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
+            _, pr, harness = make_pr_worktree(directory)
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            cleanup.callback(run, harness, "end", "app")
+            (pr / "app.txt").write_text("broken\n")
+
+            with patch.object(break_session, "restore", lambda *args: None):
+                result, _, errors = run(harness, "run", "app", "app.pay: skipped", *check_command(pr, harness))
+
+            self.assertEqual(result, 1)
+            self.assertIn("didn't return to its starting state (app.txt)", errors)
+            self.assertIn("held", run(harness, "status")[1])
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+            self.assertEqual((pr / "app.txt").read_text(), "first\n")
+
+    def test_end_refuses_while_head_moved_and_keeps_the_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, pr, harness = make_pr_worktree(directory)
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            (pr / "app.txt").write_text("a break, committed\n")
+            git(pr, "commit", "-qam", "break")
+
+            result, _, errors = run(harness, "end", "app")
+
+            self.assertEqual(result, 1)
+            self.assertIn("HEAD moved", errors)
+            session = code_state.open_session(pr)
+            self.assertIsNotNone(session)
+            self.assertFalse(session["ending"])
+            self.assertEqual((pr / "app.txt").read_text(), "a break, committed\n")
+            self.assertEqual(starts(pr), [])
+            git(pr, "reset", "-q", "--hard", "HEAD~1")
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+
+    def test_the_ending_field_ends_planned_break_recording(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
+            project, harness = make_project(directory)
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            cleanup.callback(run, harness, "end", "app")
+            scratch = Path((project / "pointed.txt").read_text().strip())
+            (scratch / "app.txt").write_text("broken\n")
+            session = code_state.open_session(project)
+            break_session.save_session(code_state.session_folder(project), {**session, "ending": True})
+
+            with self.assertRaisesRegex(code_state.StateError, "break session is open"):
+                ordinary_state(harness, {"VERIFY_PLANNED_BREAK": "app.pay: skipped"})
+            with self.assertRaisesRegex(code_state.StateError, "no break session open"):
+                code_state.break_session_repo(harness)
+            pointing_back = ordinary_state(harness, {"VERIFY_BREAK_SESSION": "app"})
+            self.assertEqual(pointing_back["app"], code_state.checkout_state(project, harness))
+            result, _, errors = run(harness, "run", "app", "app.pay: skipped", *check_command(project, harness))
+            self.assertEqual(result, 1)
+            self.assertIn("is ending", errors)
+            self.assertIn("ending; run end again", run(harness, "status")[1])
+
+    def test_end_restores_restarts_and_keeps_the_worktree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, pr, harness = make_pr_worktree(directory)
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            (pr / "app.txt").write_text("broken, never run\n")
+
+            result, output, errors = run(harness, "end", "app")
+
+            self.assertEqual(result, 0, errors)
+            self.assertIn("stays in place", output)
+            self.assertEqual((pr / "app.txt").read_text(), "first\n")
+            self.assertEqual(starts(pr), [str(pr)])
+            self.assertIn(str(pr), git(project, "worktree", "list"))
+            self.assertTrue(marker_path(pr).exists())
+            self.assertIsNone(code_state.open_session(pr))
+            self.assertIsNotNone(ordinary_state(harness, {})["app"])
 
 
 if __name__ == "__main__":

@@ -32,7 +32,13 @@ harness.json), which must not change while the check runs, VERIFY_PLANNED_BREAK 
 harness has open (the repo `break start` named, when several repos share its Git checkout), and the
 verdict from the exit code: 0 passed, 1 a step failed, anything else stopped.
 With VERIFY_PLANNED_BREAK set and no session open, or sessions open on several checkouts, it stops before
-running the check. It also records `harness_code`, a SHA-256 (line endings
+running the check. In a planned break it runs the check in its own process group and reads its report as
+it goes, and ends the run once every target has a failed step judging it, or once the step that last
+judged a target in the check's latest accepted pass of the same harness code has passed: SIGINT to the
+group, as Ctrl-C would, so the check's cleanup runs (a Python check's finally blocks run on SIGINT, not
+on SIGTERM), then SIGKILL after BREAK_STOP_GRACE seconds. That record carries
+ended_early ({"reason", "killed"}), takes its verdict from its steps rather than its exit code or a stop
+it reported while cleaning up, and counts like a finished run; a break that missed exits 0. It also records `harness_code`, a SHA-256 (line endings
 normalized) of harness.json, of every file under the harness's scripts/ apart from scripts/framework/ and
 other checks' entries under scripts/checks/, and of any file the check command names, so a planned break
 and a later pass can be shown to have run the same check. It accepts the record under
@@ -93,6 +99,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -130,6 +137,10 @@ PENDING = ".pending"
 RULES_VERSION_LINE = re.compile(r"^Rules version: (\S+)$", re.MULTILINE)
 DOCTOR_TIMEOUT = 120
 START_TIMEOUT = 180
+# How long a planned break's check has to finish its cleanup once vf.py run ends it, before it is killed.
+BREAK_STOP_GRACE = 30
+# How often vf.py run reads a planned break's report while its check runs.
+WATCH_INTERVAL = 0.2
 
 
 class Stopped(Exception):
@@ -324,6 +335,96 @@ def assemble(events, exit_code, run_dir, problems):
     return record, kept
 
 
+def last_target_step(harness, validate, check, targets, harness_code, repos):
+    """The name of the last step that judged any of the targets in the check's latest accepted pass
+    of this same harness code, with that record's path, or None when there is no such pass.
+
+    A pass of other harness code may order or name its steps differently, so it can't say where a
+    break run of this code stops being able to catch anything."""
+    for path, record in reversed(validate.accepted_records(harness / "evidence")):
+        if (record.get("check") != check or record.get("passed") is not True or record.get("planned_break") is not None
+                or record.get("harness_code") != harness_code or validate.accepted_run_problems(record, repos)):
+            continue
+        judging = [step["name"] for step in record["steps"] if set(validate.judged_by(step, record)) & set(targets)]
+        return (judging[-1], path.relative_to(harness).as_posix()) if judging else None
+    return None
+
+
+def break_end_reason(events, targets, mapped, last_step, validate):
+    """Why vf.py run may end a planned break's check now, from the events it has reported so far, or None.
+
+    A break run can end once every target has a failed step judging it, or once the step that last
+    judged a target in the check's latest pass (last_step, its name and record, or None) has passed,
+    since no later step judged one there. A check that reported it stopped ends on its own."""
+    if any(event.get("event") == "stopped" for event in events):
+        return None
+    check = next((event for event in events if event.get("event") == "check"), {})
+    steps = [event for event in events if event.get("event") == "step"]
+    # The sub-features the record will cover, worked out as run_check does once the check exits.
+    covered = check.get("sub_features") or judged_by_steps(steps) or mapped
+    run = {"sub_features": covered, "steps": steps}
+    failed = {sub_id for step in steps if step.get("passed") is False for sub_id in validate.judged_by(step, run)}
+    if set(targets) <= failed:
+        return "every target failed a step judging it"
+    if last_step and any(step.get("name") == last_step[0] and step.get("passed") is True for step in steps):
+        return f"step '{last_step[0]}' passed, the last step to judge a target in {last_step[1]}"
+    return None
+
+
+def run_break_check(command, cwd, env, report, decide):
+    """Run a planned break's check in its own process group, reading its report as it writes it, and end it
+    once decide(events) gives a reason: SIGINT to the group, as Ctrl-C would, so its cleanup runs, then
+    SIGKILL after BREAK_STOP_GRACE seconds. A SIGINT or SIGTERM sent to vf.py run is passed on to the group.
+
+    Returns the check's exit code and, when vf.py run ended it, {"reason", "killed"}, else None."""
+    # A shell that starts vf.py run in the background ignores SIGINT, and the check would inherit that;
+    # restoring the default lets the early stop's SIGINT reach the check's cleanup.
+    process = subprocess.Popen(command, cwd=cwd, env=env, start_new_session=True,
+                               preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+
+    def pass_on(signum, _frame):
+        try:
+            os.killpg(process.pid, signum)
+        except ProcessLookupError:
+            pass
+
+    previous = {sig: signal.signal(sig, pass_on) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        events, partial, reason = [], "", None
+        with report.open() as handle:
+            while reason is None and process.poll() is None:
+                partial += handle.read()
+                *lines, partial = partial.split("\n")
+                for line in lines:
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(event, dict):
+                        events.append(event)
+                reason = decide(events)
+                if reason is None:
+                    time.sleep(WATCH_INTERVAL)
+        if reason is None or process.poll() is not None:
+            return process.wait(), None
+        killed = False
+        try:
+            os.killpg(process.pid, signal.SIGINT)
+            process.wait(BREAK_STOP_GRACE)
+        except ProcessLookupError:
+            pass
+        except subprocess.TimeoutExpired:
+            killed = True
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        return process.wait(), {"reason": reason, "killed": killed}
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
 def judged_by_steps(steps):
     """The sub-features a run's steps name, in the order they first appear."""
     judged = []
@@ -420,11 +521,29 @@ def run_check(command):
     report = pending.with_suffix(".jsonl")
     report.write_text("")
 
-    exit_code = subprocess.run(command, cwd=validate.project_root(harness),
-                               env={**env, REPORT_VAR: str(report), RUN_DIR_VAR: str(pending)}).returncode
+    check_env = {**env, REPORT_VAR: str(report), RUN_DIR_VAR: str(pending)}
+    planned_break = parse_planned_break(planned, broken_repo)
+    ended_early = None
+    if planned_break:
+        targets, mapped, prior = planned_break["sub_features"], mapped_to_command(harness, validate, command), {}
+
+        def decide(events):
+            check = next((event.get("name") for event in events if event.get("event") == "check"), None)
+            if check is not None and check not in prior:
+                prior[check] = last_target_step(harness, validate, check, targets, harness_before, list(code_before))
+            return break_end_reason(events, targets, mapped, prior.get(check), validate)
+
+        exit_code, ended_early = run_break_check(command, validate.project_root(harness), check_env, report, decide)
+    else:
+        exit_code = subprocess.run(command, cwd=validate.project_root(harness), env=check_env).returncode
 
     finished = utc_now()
     events, problems = report_events(report)
+    if ended_early:
+        # vf.py run ended the check on purpose, so neither its exit code nor a stop it reported while cleaning
+        # up is its verdict: the steps it reported are.
+        events = [event for event in events if event["event"] != "stopped"]
+        exit_code = 1 if any(event["event"] == "step" and event.get("passed") is False for event in events) else 0
     record, kept = assemble(events, exit_code, pending, problems)
     if record["sub_features"] in (None, []):
         judged = judged_by_steps(record["steps"])
@@ -433,7 +552,9 @@ def run_check(command):
             judged += [sub_id for sub_id in mapped_to_command(harness, validate, command) if sub_id not in judged]
         record["sub_features"] = judged
     record.update(code=code_before, harness_code=harness_before, doctor=doctor, started_at=started.strftime(validate.TIME_FORMAT),
-                  finished_at=finished.strftime(validate.TIME_FORMAT), planned_break=parse_planned_break(planned, broken_repo))
+                  finished_at=finished.strftime(validate.TIME_FORMAT), planned_break=planned_break)
+    if ended_early:
+        record["ended_early"] = ended_early
     name = record["check"] if isinstance(record["check"], str) and CHECK_NAME.fullmatch(record["check"]) else None
     report.unlink()
     path = settle_run_folder(evidence, pending, stamp, name, kept)

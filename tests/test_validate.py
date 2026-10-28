@@ -893,7 +893,8 @@ class VerifiedResultsTest(unittest.TestCase):
             (self.LINE, {}, None),
             (refund_line, {}, "its check is not break-tested"),
             (refund_line.replace("payment capture skipped", "refund skipped"),
-             {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"}}, None),
+             {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"},
+              "steps": [pay, dict(refund, passed=False)]}, None),
             # Aimed at the refund, but only the payment step failed.
             (refund_line, {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"},
                            "steps": [dict(pay, passed=False), refund]}, "no step judging it failed in its planned break"),
@@ -912,6 +913,42 @@ class VerifiedResultsTest(unittest.TestCase):
                 else:
                     self.assertEqual(result, 1, output)
                     self.assertIn(expected, output)
+
+    def test_a_break_earns_credit_only_when_every_earlier_step_passed_or_judges_a_target(self):
+        """A payment step that failed because sign-in failed first proves nothing about the payment check."""
+        signin = {"name": "customer signs in", "passed": False, "at": 5.0, "sub_features": []}
+        pay = dict(self.STEP, sub_features=["checkout.pay"])
+        refund = {"name": "checkout.refund: order is refunded", "passed": False, "at": 30.0, "sub_features": ["checkout.refund"]}
+        both = ["checkout.pay", "checkout.refund"]
+        refund_line = self.LINE.replace("checkout.pay", "checkout.refund")
+        spoiled = "step 'customer signs in' failed before any step judging it in its planned break in evidence/checkout-pay/break.json"
+        cases = (
+            ("setup fails first", self.LINE, ["checkout.pay"], [signin, dict(pay, passed=False)], spoiled),
+            ("setup fails after the catch", self.LINE, ["checkout.pay"], [dict(pay, passed=False), signin], None),
+            ("an earlier target's step fails", refund_line, both, [dict(pay, passed=False), refund], None),
+            ("an earlier non-target step fails", refund_line, ["checkout.refund"], [dict(pay, passed=False), refund],
+             "step 'checkout.pay: order is paid' failed before any step judging it in its planned break"),
+        )
+        for label, line, targets, steps, expected in cases:
+            with self.subTest(label), tempfile.TemporaryDirectory() as directory:
+                harness = self.make_verified_harness(Path(directory))
+                edit_feature(harness, "checkout", lambda d: d["behaviors"]["checkout.refund"].update(self.READS))
+                self.write_evidence(harness, sub_features=both, steps=[pay, dict(refund, passed=True)])
+                self.write_break(harness, sub_features=both, steps=steps,
+                                 planned_break={"what": "payment capture skipped", "sub_features": targets, "repo": "app"})
+                self.write_results(harness, line)
+                result, output = run_check(harness, "--require-evidence")
+                if expected is None:
+                    self.assertEqual(result, 0, output)
+                else:
+                    self.assertEqual(result, 1, output)
+                    self.assertIn(expected, output)
+
+    def test_only_a_planned_break_may_be_ended_early(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = self.make_verified_harness(Path(directory))
+            self.write_evidence(harness, ended_early={"reason": "every target failed a step judging it", "killed": False})
+            self.assertIn("Pass not proven: was ended early by vf.py run but is not a planned break.", self.render(harness)[0])
 
     def test_a_run_covering_several_behaviors_needs_steps_that_name_them(self):
         with tempfile.TemporaryDirectory() as directory:

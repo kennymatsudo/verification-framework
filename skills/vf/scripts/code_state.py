@@ -34,8 +34,9 @@ recording refuses on every repo in that Git checkout, including --checkout overr
 Only the owning harness may record the scratch copy with VERIFY_PLANNED_BREAK set;
 another repo in the same checkout is then recorded from its own folder in the copy.
 Commands break_session.py runs from harness.json set VERIFY_BREAK_SESSION to the
-session's repo name and get the checkout the app is being pointed at. An override
-must name the folder the run would record.
+session's repo name and get the checkout the app is being pointed at: the copy until
+end marks the session ending, then the developer's checkout, which for a break in
+place is the copy itself. An override must name the folder the run would record.
 
 vf.py run, and the Start and Stop commands break_session.py runs, hand every
 repo's recorded checkout to the command as VERIFY_CHECKOUT_<REPO> (the repo name
@@ -191,13 +192,16 @@ def session_checkout(name, session, harness_dir, located=None):
     The session copies the whole Git checkout, so a repo located anywhere in it, the session's own repo or
     another one, is recorded from its folder in whichever copy the app is pointed at."""
     require_session_owner(session, harness_dir)
-    on_scratch = session["app_checkout"] == session["scratch"]
-    if os.environ.get("VERIFY_BREAK_SESSION") == session["repo"] or (on_scratch and os.environ.get("VERIFY_PLANNED_BREAK")):
-        copy = Path(session["worktree"] if on_scratch else session["top"])
-        for top in (Path(session["top"]), Path(session["worktree"])):
+    # Once end marks the session ending, the app is being pointed back at the developer's checkout, which for a
+    # break in place is the copy itself, and planned break runs are over.
+    ending = session["ending"]
+    if os.environ.get("VERIFY_BREAK_SESSION") == session["repo"] or (not ending and os.environ.get("VERIFY_PLANNED_BREAK")):
+        copy = Path(session["top"] if ending else session["worktree"])
+        # The copy first, in case it sits inside the developer's checkout.
+        for top in (Path(session["worktree"]), Path(session["top"])):
             if located is not None and located.is_relative_to(top):
                 return copy / located.relative_to(top)
-        return Path(session["app_checkout"])
+        return Path(session["checkout"] if ending else session["scratch"])
     raise StateError(
         f"{name}: a planned break session is open for {session['repo']}, so the app may be running the scratch copy at "
         f"{session['scratch']}. Only planned break runs may record code until "
@@ -236,7 +240,7 @@ def break_session_repo(harness_dir):
     for locator in listed_repos(harness_dir).values():
         checkout = validate.resolve_repo(locator, project)
         session = open_session(checkout) if checkout else None
-        if session and Path(session["harness"]) == harness_dir and session["app_checkout"] == session["scratch"]:
+        if session and Path(session["harness"]) == harness_dir and not session["ending"]:
             found[session["worktree"]] = session["repo"]
     if not found:
         raise StateError("VERIFY_PLANNED_BREAK is set but this harness has no break session open; "

@@ -14,8 +14,8 @@ commands, tools) and one features/<slug>.json per feature (its behaviors, each w
 there is none). notes.md is free prose. status.md is written by `vf.py status` and tools.md by `vf.py tools`,
 never by hand: a Verified line that `status` would not write now, or a tools.md that `tools` would not write
 now, is an error. A behavior is Verified only when its latest accepted run passed against a ready app, an
-accepted planned break of the same check aimed at it failed a step judging it, every step that caught the
-break still judges it in the passing run, every harness file the break ran is unchanged in the pass, and no
+accepted planned break of the same check aimed at it failed a step judging it after every earlier failed
+step judged one of its targets, every step that caught the break still judges it in the passing run, every harness file the break ran is unchanged in the pass, and no
 `vf.py not-verified` record written after that run stands. A cited file that is absent is a warning, since a
 fresh checkout may not carry evidence; pass --require-evidence right after recording results to make it an
 error. An incomplete setup exits 2 with its recorded blocker and next action. --run-help runs each tool's
@@ -796,6 +796,29 @@ def steps_judging(record, sub_id):
     return [step for step in record.get("steps") or [] if isinstance(step, dict) and sub_id in judged_by(step, record)]
 
 
+def break_catch(record, sub_id):
+    """How a planned break run caught sub_id: the names of the failed steps judging it, and the first step
+    before the earliest of them that failed without judging any target of the break, or None.
+
+    The break earns sub_id credit only when it was caught and no such step failed first: a judging step
+    that failed only because setup failed proves nothing about the check. An earlier step judging any
+    target may fail, since the break was aimed at it; a break that also breaks an earlier behavior names
+    it as a target.
+    """
+    planned = record.get("planned_break") if isinstance(record.get("planned_break"), dict) else {}
+    targets = set(planned.get("sub_features") or [])
+    caught, spoiled_by = [], None
+    for step in record.get("steps") or []:
+        if not isinstance(step, dict) or step.get("passed") is not False:
+            continue
+        judged = judged_by(step, record)
+        if sub_id in judged:
+            caught.append(step.get("name"))
+        elif not caught and spoiled_by is None and not targets & set(judged):
+            spoiled_by = step.get("name")
+    return caught, spoiled_by
+
+
 def record_problems(record, repos):
     """Format problems in any run's record: the fields that tie it to its check, its steps, and its code."""
     problems = []
@@ -816,6 +839,8 @@ def record_problems(record, repos):
             problems.append("has a planned_break whose sub_features are not among the run's")
         elif planned.get("repo") not in repos:
             problems.append("has a planned_break whose repo is not one the behavior's check runs")
+    if "ended_early" in record and planned is None:
+        problems.append("was ended early by vf.py run but is not a planned break")
     steps = record.get("steps")
     if not isinstance(steps, list) or (not steps and record.get("passed") is True):
         problems.append("has no check steps")
@@ -982,8 +1007,8 @@ def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
     """A behavior's verdict from its entry, the accepted evidence, and the Not verified records.
 
     Verified needs the latest accepted run of a check covering the behavior to have passed against a
-    ready app, the newest accepted planned break of that check aimed at it to have failed a step judging
-    it, those steps to still judge it in the passing run, every harness file the break ran to be unchanged,
+    ready app, the newest accepted planned break of that check aimed at it to have cleanly failed a step
+    judging it (break_catch), those steps to still judge it in the passing run, every harness file the break ran to be unchanged,
     every harness file the passing run ran to be unchanged on disk, and no standing Not verified record
     written after the run. Anything less is Failed, when the latest
     run failed, or Not verified with the reason.
@@ -1160,8 +1185,9 @@ def check_status(harness_dir, verdicts, require_evidence, errors, warnings):
 
 
 def check_break(harness_dir, sub_id, record, break_run, repos, errors):
-    """A planned break proves a sub-feature only when it was aimed at that sub-feature and a step
-    judging it failed. Those steps must still be in the Verified run, judging the same sub-feature,
+    """A planned break proves a sub-feature only when it was aimed at that sub-feature, a step judging
+    it failed, and every step before the first of those passed or judges a target of the break, as
+    break_catch decides. Those steps must still be in the Verified run, judging the same sub-feature,
     and every harness file the break ran must be unchanged in the pass. Steps added since only make
     the check stricter. A step that failed only because an earlier one did, such as a receipt step
     after a payment break, earns its own sub-feature nothing."""
@@ -1174,9 +1200,12 @@ def check_break(harness_dir, sub_id, record, break_run, repos, errors):
     if problems:
         errors.extend(f"{where} {problem}" for problem in problems)
         return
-    caught = [step["name"] for step in steps_judging(broken, sub_id) if step["passed"] is False]
+    caught, spoiled_by = break_catch(broken, sub_id)
     if not caught:
         errors.append(f"no step judging it failed in {where}")
+    elif spoiled_by is not None:
+        errors.append(f"step '{spoiled_by}' failed before any step judging it in {where}, so the break did not reach it cleanly; "
+                      "run the break again, naming what that step judges as a target if the break broke it too")
     judging = {step["name"] for step in steps_judging(record, sub_id)}
     for name in caught:
         if name not in judging:

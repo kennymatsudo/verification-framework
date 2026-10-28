@@ -34,7 +34,7 @@ Follow one behavior, "paying for an order marks it paid", with the ID `checkout.
 | The record says it tested `checkout.pay` | Citing a record of some other check |
 | The record ran on the commit the line names | A pass on older or different code |
 | The doctor reported the app ready before the check ran | A pass against a half-started app or one running other code |
-| The newest planned break of this check aimed at `checkout.pay` failed, on a step that judges `checkout.pay` | A check nobody showed could fail, or credit from a step that failed only because an earlier one did |
+| The newest planned break of this check aimed at `checkout.pay` failed, on a step that judges `checkout.pay`, and every step that failed before it judges one of the break's targets | A check nobody showed could fail, or credit from a step that failed only because an earlier one did |
 | Every step that caught the break still appears in the passing run and still judges `checkout.pay` | A check weakened after it was proven |
 | Every harness file the break fingerprinted has the same fingerprint in the passing run | A check edited after it was proven |
 | Nobody has since recorded, with `vf.py not-verified`, that the result can't be trusted | A pass kept after the agent found a reason not to trust it |
@@ -179,8 +179,8 @@ Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id
 
 1. Runs the doctor from `harness.json` and stops with exit 2 unless it exits 0.
 2. Records the code of each repository the run needs with `code_state.py` (those the entries of the behaviors this command proves name in `repos`, else every repository; one of those missing from the machine stops the run) and fingerprints the harness's own code.
-3. Creates the run folder and report file, sets the two variables, and runs the check from the project root.
-4. Builds the record from the events the check reported, adds the times, code, fingerprint, doctor result, `planned_break` from `VERIFY_PLANNED_BREAK`, and the verdict from the exit code (0 passed, 1 a step failed, anything else stopped).
+3. Creates the run folder and report file, sets the two variables, and runs the check from the project root. On a planned break it runs the check in its own process group, reads the report as it goes, and ends the run once every target has a failed step judging it, or once the last step that judged a target in the check's latest accepted pass of the same harness code has passed: SIGINT, as Ctrl-C would, so the check's cleanup runs, then SIGKILL after 30 seconds.
+4. Builds the record from the events the check reported, adds the times, code, fingerprint, doctor result, `planned_break` from `VERIFY_PLANNED_BREAK`, and the verdict from the exit code (0 passed, 1 a step failed, anything else stopped). On a run it ended, the verdict comes from the steps instead, a `stopped` event reported during cleanup is dropped, and a break that missed exits 0.
 5. Accepts or refuses the record.
 
 **Events a check reports:**
@@ -202,7 +202,8 @@ Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id
 - the exit code and the steps disagree: exit 0 after a failed step, exit 1 with no failed step, or `stopped` with exit 0;
 - a step's `sub_features` or the break's targets aren't among the run's, or a repository a claimed behavior's entry names was not recorded;
 - a recording or snapshot names a file not in the run folder;
-- the code, or the harness's own code, changed while the check ran.
+- the code, or the harness's own code, changed while the check ran;
+- it carries `ended_early` but no `planned_break`.
 
 A refused record is written as `<time>.json.refused`, so nothing can cite it but a person can still read it. Each reason prints on a `REFUSED:` line and the run exits 2. An accepted file gets `"accepted_by": "vf.py run"`, its replay page is built, and `vf.py run` exits with the check's own code. See the [evidence format in rules.md](../skills/vf/references/rules.md#evidence) for a complete example.
 
@@ -214,6 +215,7 @@ A refused record is written as `<time>.json.refused`, so nothing can cite it but
 | `sub_features` | The behavior IDs this run claims to prove. Filled from the `check` event, else from the steps, plus the behaviors whose `check` matches when the steps name none or the run stopped | A Verified result and its break must both list the ID |
 | `planned_break` | On a break run, `{"what": ..., "sub_features": [...], "repo": ...}`: what and which IDs from `VERIFY_PLANNED_BREAK`, and the repository of the break session open for this harness. `null` otherwise | A Verified result can't cite a run that has one; a break that names no manifest repository proves nothing; `break replay` applies the patch to that repository |
 | `passed` | `true`, `false`, or `null` when the run stopped early | Verified needs `true`; its break needs `false` |
+| `ended_early` | Only on a break run `vf.py run` ended: `{"reason": ..., "killed": ...}`, why it ended and whether the check had to be killed after SIGINT | Counts like a finished run; refused without a `planned_break` |
 | `reads` | `"state"` when the check reads stored data; otherwise what it reads, such as `"screen"` | Proof that the database is right doesn't prove what the screen showed |
 | `code` | Per repository: which code ran (see [Code version](#code-version)) | A Verified result must name each commit here |
 | `harness_code` | Each harness file's path and SHA-256 with line endings normalized: `harness.json`, everything under `scripts/` apart from `framework/`, `__pycache__`, and other checks' entries under `checks/`, plus files the command names | A pass is proven only while the break's fingerprinted files are unchanged |
@@ -272,7 +274,7 @@ Files beyond the record go in a folder beside it with the same name minus `.json
 A passing run is **proven** when all of these hold:
 
 1. The break is the newest accepted planned break of the same check aimed at this behavior. The newest decides, so a replayed break that didn't fail withdraws the proof.
-2. The break's record failed, didn't stop, and failed a step that judges this behavior.
+2. The break's record failed, didn't stop, and failed a step that judges this behavior, and every step that failed before the first such step judges one of the break's targets. A break that also breaks an earlier behavior names it as a target, or its credit fails: `step '<name>' failed before any step judging it`.
 3. Every step that judged this behavior and failed during the break is still in the passing run, judging this behavior.
 4. Both records record every repository the behavior's entry names (every one in the manifest when it names none) with a valid commit, a `dirty_hash` for dirty code and none for clean, a `harness_code` fingerprint, a ready doctor, and `accepted_by`; the break's `planned_break.repo` is one of them.
 5. Every file in the break's `harness_code` is in the passing run's with the same hash. A file added since needs no new break. A changed or removed one does: `<file> changed since its planned break; replay the break with vf.py break replay`.
@@ -314,35 +316,40 @@ The add-checks mode runs these steps:
 sequenceDiagram
   participant A as Agent
   participant B as vf.py break
-  participant W as Scratch worktree
+  participant W as Copy
   participant R as vf.py run
   A->>R: run the check on current code (should pass)
-  A->>A: tell the user "Planned break: <change>"
+  A->>A: tell the user each "Planned break: <change>"
   A->>B: break start <repo>
-  B->>W: git worktree add, copy uncommitted edits, point the app at it
-  A->>W: make the change, uncommitted
-  A->>B: break run <repo> "<id>: <change>" -- vf.py run -- <check>
-  B->>R: run with VERIFY_PLANNED_BREAK set
-  R-->>B: record (must fail on a step judging <id>)
-  B->>B: save <time>.patch beside the record, append breaks.jsonl
-  B->>W: restore the copy
+  B->>W: use a break worktree in place, or git worktree add, copy uncommitted edits, point the app at it
+  loop each planned break
+    A->>W: make the change, uncommitted
+    A->>B: break run <repo> "<id>: <change>" -- vf.py run -- <check>
+    B->>R: run with VERIFY_PLANNED_BREAK set
+    R-->>B: record (must fail cleanly on a step judging <id>)
+    B->>B: save <time>.patch beside the record, append breaks.jsonl
+    B->>W: restore the product code
+  end
   A->>B: break end <repo>
-  B->>W: point the app back, remove the worktree
+  B->>W: in place, restore and restart unless reloads; else point the app back, remove the worktree
 ```
 
 1. Run the check on the current code through `vf.py run`. It should pass. If it fails, find out whether the app or the check is wrong first.
-2. Tell the user `Planned break: <the change>`: the smallest change that makes one behavior wrong while the app still builds.
-3. `vf.py break start <repository>` makes a throwaway copy with `git worktree add` at the commit under test, copies in the developer's staged, unstaged, and new files, confirms the copy's `dirty_hash` matches, and points the app at it by running Stop and then Start with `{checkout:<repository>}` filled with the copy (nothing runs when `Start` is `none`, since each check then reads `VERIFY_CHECKOUT_<REPO>`).
-4. Make the change in the copy, then `vf.py break run <repository> "<id>: <the change>" -- python3 scripts/framework/vf.py run -- <check command>`. It confirms the developer's folder hasn't changed and the copy holds an edit, restarts the app through Stop and Start unless `Reloads` is `yes`, runs the check with `VERIFY_PLANNED_BREAK` set, saves the edit as `<time>.patch` beside the record, then restores the copy. `vf.py run` records the session's repository in `planned_break.repo`, and stops before the check runs when `VERIFY_PLANNED_BREAK` is set without exactly one of this harness's sessions open. The run must fail on a step that judges the broken behavior.
-5. `vf.py break end <repository>` points the app back, removes the copy, and reports any change to the developer's folder since the session started.
+2. Tell the user every `Planned break: <the change>, caught by <step>, passing through <earlier steps>` for the change at once: each the smallest change that makes one behavior wrong while the app still builds.
+3. `vf.py break start <repository>` opens one session for all of them. When the repository's locator points at a worktree `vf.py break worktree <repository> <path> <commit> [--branch <name>]` made, the break happens there in place: no new worktree and no Stop or Start, since the app already runs it. That needs the doctor to report the app ready, no uncommitted product code, and product code still at the marker's commit, so a run that merges the default branch does it before `break worktree` and passes the merge commit; a marked worktree that fails one of these is refused, never quietly copied. Otherwise it makes a throwaway copy with `git worktree add` at the commit under test, copies in the developer's staged, unstaged, and new files, confirms the copy's `dirty_hash` matches, and points the app at it by running Stop and then Start with `{checkout:<repository>}` filled with the copy (nothing runs when `Start` is `none`, since each check then reads `VERIFY_CHECKOUT_<REPO>`). It prints which it did.
+4. Make the change in the copy, then `vf.py break run <repository> "<id>: <the change>" -- python3 scripts/framework/vf.py run -- <check command>`. It confirms the copy holds an edit and its HEAD hasn't moved, and for a throwaway copy that the developer's folder hasn't changed. It snapshots the copy's product code, restarts the app through Stop and Start unless `reloads` is true, runs the check with `VERIFY_PLANNED_BREAK` set, and snapshots again. When anything moved between the two, it leaves the copy alone, renames the run's record to `<time>.held` so it never counts, recomputes `status.md`, sets `held`, and refuses `run` and `replay` until `end`. Otherwise it saves the edit as `<time>.patch` beside the record, then restores the product code: `git reset --hard` in a throwaway copy, only the product paths in place, so harness work there survives. `vf.py run` records the session's repository in `planned_break.repo`, and stops before the check runs when `VERIFY_PLANNED_BREAK` is set without exactly one of this harness's sessions open. The run must fail on a step that judges the broken behavior, with every earlier failed step judging a target. Repeat for each planned break in the same session.
+5. `vf.py break end <repository>` refuses while the copy's HEAD has moved. For a throwaway copy it points the app back and removes the copy; in place it restores the copy and restarts the app on it unless `reloads` is true. It reports any change to the developer's folder, in place the copy itself, since the session started.
+6. Run every check the session credited once more on the restored code before reporting it.
+
+With `reloads` false, a session of N breaks restarts the app N+2 times in a throwaway copy (start, each break, end) and N+1 times in place (each break, end); with `reloads` true, twice and never.
 
 `break run` prints `Break recorded for <id>: step '<name>' caught it` for each target whose own step failed and appends a line to `evidence/breaks.jsonl`. Nothing in the feature file changes; `vf.py status` now reports the behavior Verified. A target whose step didn't fail gets `No break recorded`, so the agent plans a break that reaches it. A break run that stopped gets `No break recorded` with its reason, so the agent runs the break again.
 
-**The session** lives in `verify-break-session/` inside the repository's shared Git folder, visible to every worktree and never committed. It names the owning harness, the copy, the starting commit and fingerprint, and the intended checkout. One session covers the whole repository, so another harness in it can't start, run, end, or record code until this one ends. Manifest repositories that share a Git checkout, such as two folders of a monorepo, share its session too: it names the repository `break start` was given, `run` and `end` take that name, `planned_break.repo` records it, and a `start` for another of them is refused while it is open. Commands the script runs from `harness.json` get `VERIFY_BREAK_SESSION` set, so their own `code-state` calls report the folder the app is being pointed at. Restoring files doesn't reload running processes or undo data changes, so the doctor must still confirm the loaded version.
+**The session** lives in `verify-break-session/` inside the repository's shared Git folder, visible to every worktree and never committed. It names the owning harness, the copy, the starting commit and fingerprint, the developer's checkout, `in_place`, `held` (why `run` must wait for `end`, or null), and `ending`. One session covers the whole repository, so another harness in it can't start, run, end, or record code until this one ends. Manifest repositories that share a Git checkout, such as two folders of a monorepo, share its session too: it names the repository `break start` was given, `run` and `end` take that name, `planned_break.repo` records it, and a `start` for another of them is refused while it is open. Commands the script runs from `harness.json` get `VERIFY_BREAK_SESSION` set, so their own `code-state` calls report the folder the app is being pointed at. Restoring files doesn't reload running processes or undo data changes, so the doctor must still confirm the loaded version.
 
-`end` marks the session as ending before it points the app back, so a crash leaves a session that blocks ordinary runs, and running `end` again finishes it. `vf.py break status` shows each repository's session, adding `for <repository>` on one that shares another's. `vf.py break replay <record> -- <check command>` applies the record's saved patch to the repository its `planned_break` names, whose session must be open, and runs it again, for re-proving a check after its code changes.
+`end` sets `ending` before it points the app back or restarts it, so a crash leaves a session that blocks ordinary runs, and running `end` again finishes it. `vf.py break status` shows each repository's session, adding `for <repository>` on one that shares another's. `vf.py break replay <record> -- <check command>` applies the record's saved patch to the repository its `planned_break` names, whose session must be open, and runs it again, for re-proving a check after its code changes.
 
-Exit codes: 0 when the step finished, whatever the check's result; 1 when a guard found a problem (a session already open, no edit to run, the developer's folder changing, no break recorded); 2 when it couldn't run.
+Exit codes: 0 when the step finished, whatever the check's result; 1 when a guard found a problem (a session already open, a marked worktree that can't host the break in place, no edit to run, the developer's folder changing, a file moving during the check, no break recorded); 2 when it couldn't run.
 
 Keep the failing run's record in `evidence/`: every later Verified result for that behavior is checked against it. `breaks.jsonl` only tells a checkout without the record that a break happened.
 
@@ -437,7 +444,7 @@ Three scripts for harnesses whose checks are written in Python, run from the ins
 
 **`break_checks.py`** finds rule-checking functions the unit tests wouldn't notice if they stopped working. It looks for names ending in `_problems` or `_violations` or starting with `check_` (change with `--match`), works out what "nothing is wrong" looks like for each, copies the project to a temporary folder, makes that function always return it, and runs the tests. Each function is `CAUGHT` (a test failed), `SURVIVED` (every test still passed), or `SKIPPED` (couldn't work out the empty answer). The tests must pass in an unchanged copy first, else exit 2; add a missing folder with `--copy`. Exit 1 when any check survived. Defaults: a folder named `harness` (`--harness`), 600 seconds per run, half the processor cores at once.
 
-**`smells.py`** lists test code shaped like a test that can't fail: `no-assert`, `only-exists`, `self-compare`, `skip`, and `swallow` for error handling that hides every error. Each item is for an agent to judge. Exit 1 when it lists anything.
+**`smells.py`** lists test code shaped like a test that can't fail: `no-assert`, `only-exists`, `self-compare`, `skip`, `swallow` for error handling that hides every error, and `break-aware` for any harness script outside `scripts/framework/`, in any language, that reads `VERIFY_PLANNED_BREAK` or `VERIFY_BREAK_SESSION`, since such a check can act differently in a break than in a pass. Each item is for an agent to judge. Exit 1 when it lists anything.
 
 **`weakened.py`** lists ways the tests got weaker since a starting point: deleted tests, files that lost more checks than they gained, newly switched-off tests, and rule-checking functions whose code changed. The starting point is the last commit titled `Audit harness checks ...`, else the newest commit older than 30 days, else it asks for `--since`. Exit 1 when it lists anything.
 
