@@ -1156,6 +1156,21 @@ class MultiRepoTest(unittest.TestCase):
             self.assertEqual(resolve.call_count, 1)
             self.assertEqual(warnings, ["app checkout cannot be found from harness.json for checkout.pay, checkout.refund"])
 
+    def test_each_repo_and_commit_is_checked_for_staleness_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory)
+            (evidence / "checkout-pay").mkdir()
+            (evidence / "checkout-pay" / "run.json").write_text(json.dumps({
+                "passed": True, "sub_features": ["checkout.pay", "checkout.refund"], "code": {"app": {"commit": "abc1234"}},
+            }))
+            proofs = {"checkout.pay": {"check": "./scripts/pay"}, "checkout.refund": {"check": "./scripts/refund"}}
+            with patch.object(validate, "resolve_repo", return_value=evidence), \
+                    patch.object(validate, "uncommitted_files", return_value=[]), \
+                    patch.object(validate, "stale_commit_warning", return_value="app last pass is 2 commits behind HEAD") as stale:
+                warnings = validate.evidence_warnings(evidence, proofs, {"app": "."})
+            self.assertEqual(stale.call_count, 1)
+            self.assertEqual(warnings, ["app last pass is 2 commits behind HEAD for checkout.pay, checkout.refund"])
+
     def test_uncommitted_code_ignores_the_harness_and_warns_once_per_repo(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)

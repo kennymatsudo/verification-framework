@@ -775,6 +775,9 @@ def evidence_warnings(evidence_dir, check_proofs, repos):
     # Group by message so a stale repo prints once with every sub-feature it affects.
     subs_by_message = {}
     checkouts = {}
+    # Many sub-features share a passing run, so the same repo and commit come up hundreds of times, and each
+    # lookup runs several git commands that take most of a second in a large repo.
+    stale_messages = {}
     for sub_id in sorted(check_proofs):
         record = latest.get(sub_id)
         if not record:
@@ -793,7 +796,9 @@ def evidence_warnings(evidence_dir, check_proofs, repos):
             if not checkout:
                 subs_by_message.setdefault(f"{name} checkout cannot be found from harness.json", []).append(sub_id)
                 continue
-            message = stale_commit_warning(name, checkout, commit)
+            if (name, commit) not in stale_messages:
+                stale_messages[(name, commit)] = stale_commit_warning(name, checkout, commit)
+            message = stale_messages[(name, commit)]
             if message:
                 subs_by_message.setdefault(message, []).append(sub_id)
             if source.get("dirty"):
