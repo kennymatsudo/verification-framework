@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -282,6 +283,8 @@ try:
     report_event({"event": "check", "name": "pay", "sub_features": spec.get("sub_features", ["app.pay"]), "reads": "state"})
     for step in spec["steps"]:
         report_event(step)
+    if spec.get("touch_harness"):
+        Path(spec["touch_harness"]).write_text("loosened while running\\n")
     time.sleep(spec["wait"])
     Path(spec["finished"]).write_text("ran to the end\\n")
 except KeyboardInterrupt:
@@ -508,6 +511,44 @@ class HarnessCommands(unittest.TestCase):
         result = self.run_check(touch=True, touch_harness=str(self.harness / "scripts" / "pay.py"))
         self.assert_refused(result, "ran while the code changed in app")
         self.assertIn("ran while the harness's own code changed", result.stdout)
+
+    def run_waiting(self, env=None, **spec):
+        """Run WAITING_CHECK, timed. Returns the result, the seconds it took, and whether the check's cleanup ran
+        and whether it ran to its end."""
+        marks = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, marks)
+        spec = {**spec, "cleaned": str(marks / "cleaned"), "finished": str(marks / "finished")}
+        started = time.monotonic()
+        result = subprocess.run([sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--",
+                                 sys.executable, "-c", WAITING_CHECK, json.dumps(spec)],
+                                capture_output=True, text=True, timeout=60, env={**os.environ, **(env or {})})
+        return result, time.monotonic() - started, (marks / "cleaned").exists(), (marks / "finished").exists()
+
+    def test_a_run_whose_harness_code_changes_is_stopped_early_and_refused(self):
+        # The run would be refused when it ended anyway; stopping it once the edit is seen saves the rest of it.
+        stopped = "was stopped early because the harness's own code changed while it ran (.agents/skills/verify-app/scripts/pay.py)"
+        harness_file = str(self.harness / "scripts" / "pay.py")
+        result, seconds, cleaned, finished = self.run_waiting(steps=[PASSED_STEP], wait=50, touch_harness=harness_file)
+        self.assert_refused(result, stopped)
+        self.assertEqual((cleaned, finished), (True, False))
+        self.assertLess(seconds, vf.HARNESS_WATCH_INTERVAL + 10)
+
+        # A planned break's run is stopped the same way, and proves no break.
+        (self.harness / "scripts" / "pay.py").write_text("# the check\n")
+        self.open_break_session()
+        result, seconds, cleaned, finished = self.run_waiting(env={"VERIFY_PLANNED_BREAK": "app.pay: payment skipped"},
+                                                             steps=[PASSED_STEP], wait=50, touch_harness=harness_file)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn(stopped, result.stdout)
+        self.assertEqual(list((self.harness / "evidence").glob("*/*.json")), [])
+        self.assertEqual((cleaned, finished), (True, False))
+        self.assertLess(seconds, vf.HARNESS_WATCH_INTERVAL + 10)
+
+    def test_a_run_whose_harness_code_stays_the_same_runs_to_the_end(self):
+        result, _, cleaned, finished = self.run_waiting(steps=[PASSED_STEP], wait=vf.HARNESS_WATCH_INTERVAL + 1)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((cleaned, finished), (True, True))
+        self.assertIn("Accepted evidence/pay/", result.stdout)
 
     def test_the_doctor_runs_first_and_a_not_ready_app_stops_the_run(self):
         self.write_settings(doctor="echo not ready: process 42 has exited; exit 1")

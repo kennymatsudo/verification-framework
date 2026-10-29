@@ -50,7 +50,7 @@ Done when the unit suite passes and each new check fails with its behavior rever
 
 Run the approved scenarios with every PR's code loaded at once. In a framework harness, run each check through `scripts/framework/vf.py run --`; set `VERIFY_KEEP_RECORDING=1` for each check that drives a screen and covers a changed behavior, so a passing run keeps the video for the demo without a rerun. Before handing any step to the developer as one only they can run, read the command's script: a step needs them only when it prompts, needs their login or credentials, or has a side effect they have not approved. Run everything else yourself.
 
-Confirm each run's evidence names every PR's head commit and any other component versions it depended on. Decide reruns from the evidence: rerun only when it points to a stack or harness cause, and report every rerun. A failed product check may already have enough evidence to compare with the base build.
+Edit no harness file from the first counted run to the report, including fixes to a check you just built: `vf.py run` stops a run whose harness code changes, and an edit after a pass voids it. When a check needs a fix, make it, then rerun every check whose code it touched. Confirm each run's evidence names every PR's head commit and any other component versions it depended on. Decide reruns from the evidence: rerun only when it points to a stack or harness cause, and report every rerun. A failed product check may already have enough evidence to compare with the base build.
 
 Done when each approved scenario has finished on every PR's head commit, and every service is back where it started.
 
