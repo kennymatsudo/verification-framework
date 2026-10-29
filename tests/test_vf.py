@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from harness_json import edit_feature, edit_manifest, write_feature, write_manifest  # noqa: E402
@@ -326,6 +327,18 @@ class BreakStop(unittest.TestCase):
                 signal.signal(signal.SIGINT, previous)
             self.assertEqual(ended, {"reason": "judged", "killed": False})
             self.assertTrue(cleaned.exists())
+
+
+    def test_a_check_that_exits_as_the_stop_is_sent_is_not_an_error(self):
+        # macOS refuses to signal a group whose only member has exited but not been reaped, with EPERM.
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            report = folder / "report.jsonl"
+            report.write_text("")
+            with unittest.mock.patch.object(vf.os, "killpg", side_effect=PermissionError(1, "Operation not permitted")):
+                code, ended = vf.run_break_check([sys.executable, "-c", "import time; time.sleep(0.5)"], folder,
+                                                 dict(os.environ), report, lambda events: "judged")
+            self.assertEqual((code, ended), (0, {"reason": "judged", "killed": False}))
 
 
 class BreakCheckGroup(unittest.TestCase):

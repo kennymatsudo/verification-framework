@@ -146,6 +146,9 @@ START_TIMEOUT = 180
 BREAK_STOP_GRACE = 30
 # How often vf.py run reads a planned break's report while its check runs.
 WATCH_INTERVAL = 0.2
+# What signalling a check's own process group raises once the check has exited: macOS refuses a group whose
+# only member has exited but not yet been reaped with EPERM rather than ESRCH.
+CHECK_GONE = (ProcessLookupError, PermissionError)
 # How often vf.py run compares the harness's own code with what the run started on while a check runs.
 HARNESS_WATCH_INTERVAL = 5
 
@@ -396,7 +399,7 @@ def run_break_check(command, cwd, env, report, decide, group_file=None):
     def pass_on(signum, _frame):
         try:
             os.killpg(process.pid, signum)
-        except ProcessLookupError:
+        except CHECK_GONE:
             pass
 
     previous = {sig: signal.signal(sig, pass_on) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
@@ -422,13 +425,13 @@ def run_break_check(command, cwd, env, report, decide, group_file=None):
         try:
             os.killpg(process.pid, signal.SIGINT)
             process.wait(BREAK_STOP_GRACE)
-        except ProcessLookupError:
+        except CHECK_GONE:
             pass
         except subprocess.TimeoutExpired:
             killed = True
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except CHECK_GONE:
                 pass
         return process.wait(), {"reason": reason, "killed": killed}
     finally:
