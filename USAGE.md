@@ -113,7 +113,7 @@ There is one skill, vf, with a mode for each job. Type `/vf` followed by what yo
 | Find what the harness doesn't check | audit-coverage | "Audit coverage", "what aren't we checking?" |
 | Find checks that would still pass if the behavior broke | audit-weak-checks | "Audit weak checks", "are our tests fake?" |
 | Understand how far to trust a pass | explain | "Can I trust these checks?", "how is checkout checked?" |
-| Test a teammate's pull request on the real app | verify-pr | "Verify PR #123" |
+| Test a pull request on the real app, yours or a teammate's | verify-pr | "Verify PR #123", or the PR's link |
 
 ```mermaid
 flowchart LR
@@ -121,7 +121,7 @@ flowchart LR
     subgraph person[you ask for these by name]
       setup[setup<br/>proves the app can start]
       audit[audit<br/>gaps and weak checks]
-      pr[verify-pr<br/>tests a teammate's PR]
+      pr[verify-pr<br/>tests a PR]
     end
     subgraph agent[you or your agent]
       verify[verify<br/>runs the checks a change touches]
@@ -292,7 +292,7 @@ A bench drifts from the app over time: features change, checks get edited, and a
 
 It fixes clear-cut problems in your working copy, with a test shown failing before and passing after, and leaves them uncommitted. It offers to commit them under a title starting with `Audit harness checks`, so the next audit knows where to start.
 
-### Test a teammate's pull request
+### Test a pull request
 
 vf's verify-pr mode tests a pull request on the real app, or several across repos that make one change. It lists every fix and test case the PR claims, anything its ticket asks for that the description misses, and any change a user could notice that neither mentions. It sorts each one:
 

@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: verify-pr-own-link
+expected_outcome: |
+  A request through the app's verify-ledger skill to verify the developer's own pull request, which never names verify-pr, runs verify-pr: the PR's claims are listed and gated before any run, the PR's claim of no change to existing behavior is found false because the statement now lists oldest first, and the drafted comment uses verify-pr's Tested with Verification Framework format. Nothing is posted or committed and no check is loosened.
+context:
+  scaffold_script: scaffold.sh

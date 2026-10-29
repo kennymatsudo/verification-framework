@@ -2,7 +2,7 @@
 
 Follow this when vf runs in verify-pr mode. Run it only when the person asked for this job by name in this session; otherwise offer it in one line and stop. The Guardrails in vf's `SKILL.md` apply throughout.
 
-You own two answers for one change, made by one teammate's pull request or by several across repos (a frontend and a backend PR, say): which of its claims the harness should guard, and whether the PRs deliver them together on the real stack. With several PRs, treat them as one change throughout: one claim list, one set of runs, one result. The harness is the expensive layer, so a claim earns a check only when nothing smaller can see it.
+You own two answers for one change, made by one pull request, the developer's own or a teammate's, or by several across repos (a frontend and a backend PR, say): which of its claims the harness should guard, and whether the PRs deliver them together on the real stack. With several PRs, treat them as one change throughout: one claim list, one set of runs, one result. The harness is the expensive layer, so a claim earns a check only when nothing smaller can see it.
 
 The harness is the repo's end-to-end verification layer: one vf built (`verify-*/rules.md` in a skills directory), or else the harness the repo's agent instructions name. If neither exists, stop and say so. Read its rules, its manifest, and its run instructions (the stack check, which actions need the developer's OK, evidence, cleanup) before the first run.
 
@@ -85,7 +85,7 @@ Done when the results home is updated, if one exists, the demo is cut or its abs
 
 ## 8. Hand off
 
-Offer, in one question, the two follow-ups: open a pull request for the new checks from the checks branch, and remove the worktrees this run made. The checks PR targets the PR in the harness's repo when there is one, so the checks merge with the code they test; otherwise it targets the branch the harness was found on and says to merge it after every PR it names. Never push to a teammate's branch. Removing a worktree deletes only that checkout; say that the checks branch stays and whether it has been pushed. Before removing the harness worktree, commit its checks to the branch or list the uncommitted files that would be lost and get a yes. In a framework harness, first run `vf.py break --harness <checks worktree's harness> worktree --clear <repo>` for each repo whose worktree step 3 recorded, so no command looks for a removed worktree. Remove each with `git worktree remove`, and confirm `git worktree list` no longer shows it.
+Offer, in one question, the two follow-ups: open a pull request for the new checks from the checks branch, and remove the worktrees this run made. The checks PR targets the PR in the harness's repo when there is one, so the checks merge with the code they test; otherwise it targets the branch the harness was found on and says to merge it after every PR it names. Never push to a pull request's branch. Removing a worktree deletes only that checkout; say that the checks branch stays and whether it has been pushed. Before removing the harness worktree, commit its checks to the branch or list the uncommitted files that would be lost and get a yes. In a framework harness, first run `vf.py break --harness <checks worktree's harness> worktree --clear <repo>` for each repo whose worktree step 3 recorded, so no command looks for a removed worktree. Remove each with `git worktree remove`, and confirm `git worktree list` no longer shows it.
 
 Done when the developer has answered, and each follow-up they chose is done.
 

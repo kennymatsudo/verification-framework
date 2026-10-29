@@ -9,13 +9,13 @@ description: >-
   this branch", "add checks for checkout", "what should we add next?", "add this
   script as a tool", "can I trust these checks?", "how is checkout checked?".
   With no harness yet, offer setup and build nothing. Setting up or updating a
-  harness, auditing it, and verifying a teammate's pull request are jobs a
-  person starts by name, such as "/vf set up verification for this app".
+  harness, auditing it, and verifying a pull request are jobs a person starts
+  by name, such as "/vf set up verification for this app" or "verify PR #123".
 ---
 
 # Verification framework
 
-You own getting a request to the right job, run by its own procedure. Every job is a mode of this skill, with its procedure in `references/mode-<name>.md`. Four modes start only when the person asks for that job by name in this session: setup, audit-coverage, audit-weak-checks, and verify-pr. The other four, verify, add-checks, add-tools, and explain, an agent may start for its own change or question.
+You own getting a request to the right job, run by its own procedure. Every job is a mode of this skill, with its procedure in `references/mode-<name>.md`. Four modes start only when the person asks for that job by name in this session: setup, audit-coverage, audit-weak-checks, and verify-pr. Asking to verify a pull request, by its link or number or by calling it a pull request, is asking for verify-pr by name, whether the pull request is the person's own or a teammate's; verifying a change on a branch, with no pull request named, stays verify. The other four, verify, add-checks, add-tools, and explain, an agent may start for its own change or question.
 
 ## 1. Pick the mode
 
@@ -30,7 +30,7 @@ Match the request to one mode:
 | explain | "Can I trust these checks?", "how is checkout checked?", "what does verify-shop check?" | Anyone | `references/mode-explain.md` |
 | audit-coverage | "What aren't we checking?", "audit coverage", "audit the harness" | The person | `references/mode-audit-coverage.md` |
 | audit-weak-checks | "Are our checks fake?", "audit weak checks" | The person | `references/mode-audit-weak-checks.md` |
-| verify-pr | A teammate's pull request | The person | `references/mode-verify-pr.md` |
+| verify-pr | "Verify PR #123", a pull request's link, the person's own or a teammate's | The person | `references/mode-verify-pr.md` |
 
 Verify delegates missing proof to add-checks within the agreed scope, and add-checks loads add-tools for each probe or action a check needs; an existing-checks-only request keeps verify from building. "Audit the harness" with nothing more is coverage first, since weak checks hold checks to a map coverage keeps current; ask before running both. The weak-checks audit and verify-pr also work on a harness this framework didn't build, such as a repo's own folder of smoke checks, so neither waits for setup; every other mode needs a harness vf built, and with none, or one whose setup stopped, setup comes first and the original request becomes the offered next step. With no match, two equally good matches, or a question about the framework itself, list the modes one line each and ask which, recommending the one the repo's state points to.
 
