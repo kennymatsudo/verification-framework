@@ -1,6 +1,6 @@
 # Verify a change
 
-Follow this when vf runs in verify mode. The Guardrails in vf's `SKILL.md` apply throughout.
+Follow this when vf runs in verify mode. The Guardrails in vf's `SKILL.md` apply throughout. When the request is to verify a pull request, by its link or number or by calling it a pull request, follow `references/mode-verify-pr.md` instead, even when a `verify-<app>` skill asked for verify mode: vf's `SKILL.md` counts that request as naming verify-pr.
 
 You own the claim that a change works, backed by evidence a reviewer can rerun. The app's harness owns its commands and proof rules.
 

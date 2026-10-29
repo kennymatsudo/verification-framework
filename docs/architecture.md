@@ -81,7 +81,7 @@ flowchart LR
 | Mode | Owns | Writes |
 | --- | --- | --- |
 | setup | A harness whose startup and doctor are proven on the real app. Ends with zero feature coverage | Skeleton, manifest, doctor |
-| audit-coverage, audit-weak-checks, and verify-pr | Finding where an existing harness has drifted from the app, and testing a teammate's pull request | Harness fixes, findings, drafts |
+| audit-coverage, audit-weak-checks, and verify-pr | Finding where an existing harness has drifted from the app, and testing a pull request | Harness fixes, findings, drafts |
 | verify | Running proof for a change or named feature on the requested version | `evidence/`, and `status.md` through `vf.py` |
 | add-checks | Feature checks, each agreed with the user and proven to fail on a planned break | Feature files, `scripts/`, tool entries |
 | add-tools | Probes and actions, each proven on the real app | `scripts/`, tool entries |
@@ -97,7 +97,7 @@ The weak-checks audit and verify-pr also work on a harness this framework didn't
 
 ## A verification run
 
-1. The user asks `verify-<app>` to verify a change. It loads vf in verify mode with its own directory as the harness.
+1. The user asks `verify-<app>` to verify a change. It loads vf with its own directory as the harness, in verify mode, or in verify-pr mode when the user asked to verify a pull request.
 2. The verify mode runs `vf.py validate`. Incomplete setup stops here with the saved blocker.
 3. It previews the behaviors, actions, observations, and exclusions, and asks only about expected behavior it had to infer.
 4. Missing proof goes to the add-checks mode: agree on a plan, build the check, have a separate reviewer compare check to plan, and prove the check fails on a planned break in a scratch worktree.

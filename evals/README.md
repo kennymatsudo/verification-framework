@@ -66,6 +66,7 @@ Each is under 200 lines of app code and starts in about a second. Together they 
 | `verify-ledger-change` | verify-ledger, vf verify | The changed statement check Fails; nothing loosened; report leads with the failure |
 | `verify-split-stack` | verify-stock, vf verify | The API is rebuilt from the changed checkout; items.add Fails |
 | `verify-pr-ledger` | vf verify-pr | The PR's "no behavior change" claim is found false; a comment is drafted, not posted |
+| `verify-pr-own-link` | verify-ledger, vf verify-pr | The developer's own PR, asked through verify-ledger without naming verify-pr, runs verify-pr: claims gated first, comment in its format |
 | `audit-weak-ledger-legacy` | vf audit (weak checks) | The four planted weak checks are named, the sound one is not, nothing is edited |
 | `audit-coverage-ledger-drift` | vf audit (coverage) | A renamed route is reported as drift and a new endpoint as a gap |
 | `explain-ledger` | vf explain | The Failed behavior and the breaks are explained; nothing is called Verified that is not |

@@ -31,6 +31,9 @@ vf.py run records started_at and finished_at and the code code_state.py reports 
 harness.json), which must not change while the check runs, VERIFY_PLANNED_BREAK as planned_break with the repo of the break session this
 harness has open (the repo `break start` named, when several repos share its Git checkout), and the
 verdict from the exit code: 0 passed, 1 a step failed, anything else stopped.
+While any check runs it compares the harness's own code with what the run started on every
+HARNESS_WATCH_INTERVAL seconds, and once they differ ends the run, which would be refused anyway: SIGINT to
+the check, then SIGKILL after BREAK_STOP_GRACE seconds, and the record is refused with the files that changed.
 With VERIFY_PLANNED_BREAK set and no session open, or sessions open on several checkouts, it stops before
 running the check. In a planned break it runs the check in its own process group and reads its report as
 it goes, and ends the run once every target has a failed step judging it, or once the step that last
@@ -143,6 +146,11 @@ START_TIMEOUT = 180
 BREAK_STOP_GRACE = 30
 # How often vf.py run reads a planned break's report while its check runs.
 WATCH_INTERVAL = 0.2
+# What signalling a check's own process group raises once the check has exited: macOS refuses a group whose
+# only member has exited but not yet been reaped with EPERM rather than ESRCH.
+CHECK_GONE = (ProcessLookupError, PermissionError)
+# How often vf.py run compares the harness's own code with what the run started on while a check runs.
+HARNESS_WATCH_INTERVAL = 5
 
 
 class Stopped(Exception):
@@ -391,7 +399,7 @@ def run_break_check(command, cwd, env, report, decide, group_file=None):
     def pass_on(signum, _frame):
         try:
             os.killpg(process.pid, signum)
-        except ProcessLookupError:
+        except CHECK_GONE:
             pass
 
     previous = {sig: signal.signal(sig, pass_on) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
@@ -417,13 +425,13 @@ def run_break_check(command, cwd, env, report, decide, group_file=None):
         try:
             os.killpg(process.pid, signal.SIGINT)
             process.wait(BREAK_STOP_GRACE)
-        except ProcessLookupError:
+        except CHECK_GONE:
             pass
         except subprocess.TimeoutExpired:
             killed = True
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except CHECK_GONE:
                 pass
         return process.wait(), {"reason": reason, "killed": killed}
     finally:
@@ -431,6 +439,56 @@ def run_break_check(command, cwd, env, report, decide, group_file=None):
             signal.signal(sig, handler)
         if group_file is not None and process.poll() is not None:
             group_file.unlink(missing_ok=True)
+
+
+def run_watched_check(command, cwd, env, stop_reason):
+    """Run an ordinary check in vf.py run's own process group, so a Ctrl-C reaches both as it always has, and
+    end it once stop_reason() gives a reason: SIGINT to the check's process, so its cleanup runs, then SIGKILL
+    after BREAK_STOP_GRACE seconds. A wrapper script should exec its check, since the signal reaches only
+    the process vf.py run started.
+
+    Returns the check's exit code and the reason it was ended, else None."""
+    process = subprocess.Popen(command, cwd=cwd, env=env)
+    try:
+        while process.poll() is None:
+            reason = stop_reason()
+            if reason is not None:
+                process.send_signal(signal.SIGINT)
+                try:
+                    process.wait(BREAK_STOP_GRACE)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                return process.wait(), reason
+            time.sleep(WATCH_INTERVAL)
+        return process.returncode, None
+    except KeyboardInterrupt:
+        # The check got the same Ctrl-C, since it shares this process group; let its cleanup finish.
+        try:
+            process.wait(BREAK_STOP_GRACE)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        raise
+
+
+def harness_change_watch(harness, validate, command, harness_before):
+    """A function that, called while a check runs, compares the harness's own code with harness_before at most
+    once every HARNESS_WATCH_INTERVAL seconds: None while it matches, else the reason to stop. vf.py run
+    refuses a run whose harness code changed, so ending it then saves the rest of its time and side effects."""
+    next_look = time.monotonic() + HARNESS_WATCH_INTERVAL
+
+    def changed():
+        nonlocal next_look
+        if time.monotonic() < next_look:
+            return None
+        next_look = time.monotonic() + HARNESS_WATCH_INTERVAL
+        now = validate.harness_code(harness, command)
+        edited = sorted(path for path in now.keys() | harness_before.keys() if now.get(path) != harness_before.get(path))
+        if not edited:
+            return None
+        shown = ", ".join(edited[:3]) + (f" and {len(edited) - 3} more" if len(edited) > 3 else "")
+        return f"the harness's own code changed while it ran ({shown})"
+
+    return changed
 
 
 def judged_by_steps(steps):
@@ -531,11 +589,15 @@ def run_check(command):
 
     check_env = {**env, REPORT_VAR: str(report), RUN_DIR_VAR: str(pending)}
     planned_break = parse_planned_break(planned, broken_repo)
-    ended_early = None
+    ended_early, harness_changed = None, harness_change_watch(harness, validate, command, harness_before)
+    stopped_for = []
     if planned_break:
         targets, mapped, prior = planned_break["sub_features"], mapped_to_command(harness, validate, command), {}
 
         def decide(events):
+            if (change := harness_changed()) is not None:
+                stopped_for.append(change)
+                return change
             check = next((event.get("name") for event in events if event.get("event") == "check"), None)
             if check is not None and check not in prior:
                 prior[check] = last_target_step(harness, validate, check, targets, harness_before, list(code_before))
@@ -543,8 +605,11 @@ def run_check(command):
 
         exit_code, ended_early = run_break_check(command, validate.project_root(harness), check_env, report, decide,
                                                  session_folder / code_state.CHECK_GROUP)
+        if stopped_for:
+            ended_early = None
     else:
-        exit_code = subprocess.run(command, cwd=validate.project_root(harness), env=check_env).returncode
+        exit_code, change = run_watched_check(command, validate.project_root(harness), check_env, harness_changed)
+        stopped_for += [change] if change else []
 
     finished = utc_now()
     events, problems = report_events(report)
@@ -554,6 +619,7 @@ def run_check(command):
         events = [event for event in events if event["event"] != "stopped"]
         exit_code = 1 if any(event["event"] == "step" and event.get("passed") is False for event in events) else 0
     record, kept = assemble(events, exit_code, pending, problems)
+    problems += [f"was stopped early because {reason}" for reason in stopped_for]
     if record["sub_features"] in (None, []):
         judged = judged_by_steps(record["steps"])
         # A run that stopped never reached some of what its command proves, so it counts against those too.

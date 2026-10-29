@@ -103,7 +103,7 @@ One skill, [vf](skills/vf/SKILL.md), with a mode for each job. Type `/vf` and sa
 | explain | Tells a teammate what the harness checks and how far to trust each pass. Writes nothing | You or your agent |
 | audit-coverage | Finds what the harness doesn't check or checks against stale code | You, by name |
 | audit-weak-checks | Finds checks that would pass even if the behavior broke | You, by name |
-| verify-pr | Tests a teammate's pull request on the real app | You, by name |
+| verify-pr | Tests a pull request on the real app, yours or a teammate's | You, by name |
 
 [Choose a job](USAGE.md#choose-a-job) has an example request for each.
 
