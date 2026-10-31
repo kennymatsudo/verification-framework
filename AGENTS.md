@@ -96,7 +96,7 @@ The framework must fit setups we haven't seen: one repo or several, any language
 
 ## Scripts
 
-- Framework scripts use Python 3 standard library only. Generated app tools use the project's language, drivers, and connection settings; reads that judge state never go through the app's own models or logic.
+- Framework scripts use Python 3 standard library only. The one exception is optional: `clip.py` draws demo captions with Pillow when ffmpeg has no `drawtext` filter and Pillow is installed, and makes the demo without captions otherwise. Generated app tools use the project's language, drivers, and connection settings; reads that judge state never go through the app's own models or logic.
 - Exit codes: 0 means OK, 1 means it found a problem, 2 means it couldn't run.
 - Unit tests live in `tests/test_<script>.py`, not beside the script, so an install ships no tests. Each names its script's folder as `SCRIPTS`. Run everything with `python3 tests/run.py`, which runs each module in its own process so the suite takes as long as its slowest module; `python3 -m unittest discover -s tests` runs them one at a time.
 

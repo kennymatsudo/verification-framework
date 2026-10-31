@@ -61,6 +61,64 @@ class StepsTest(unittest.TestCase):
         self.assertEqual(clip.kept_spans([(1.0, 4.0), (5.0, 5.8)], 8.0), [(0.0, 2.0), (4.0, 8.0)], "a short still stays whole")
         self.assertEqual(clip.kept_spans([(2.0, 8.0)], 8.0), [(0.0, 3.0)], "a still that runs to the end is cut after its first second")
 
+    def test_demo_captions_number_each_mark_in_the_window_until_the_next(self):
+        _, _, start, end = clip.step_window(clip.steps(RECORD), "2-3")
+        self.assertEqual(clip.captions(RECORD, start, end), [
+            (0.5, 1.5, "1. Step 2: Customer pays"),
+            (1.5, 3.5, "2. Clicks Pay"),
+            (3.5, None, "3. Step 3: Customer sees the receipt"),
+        ])
+
+    def test_demo_captions_drop_a_mark_that_repeats_the_one_before_and_marks_outside_the_window(self):
+        record = dict(RECORD, marks=[
+            {"at": 5.0, "kind": "step", "label": "Step 2: Customer pays"},
+            {"at": 5.0, "kind": "action", "label": "Step 2: Customer pays"},
+            {"at": 6.0, "kind": "note", "label": "not a step or an action"},
+            {"at": 6.5, "kind": "action", "label": "  "},
+            {"at": 9.0, "kind": "action", "label": "after the window"},
+        ])
+        self.assertEqual(clip.captions(record, 3.5, 7.0), [(0.5, None, "1. Step 2: Customer pays")])
+
+    def test_demo_captions_keep_the_last_of_marks_at_the_same_moment(self):
+        record = dict(RECORD, marks=[
+            {"at": 5.0, "kind": "step", "label": "Step 2: Customer pays"},
+            {"at": 5.0, "kind": "action", "label": "Goes to the payment page"},
+            {"at": 6.0, "kind": "action", "label": "Clicks Pay"},
+        ])
+        self.assertEqual(clip.captions(record, 3.5, None), [(0.5, 1.5, "1. Goes to the payment page"), (1.5, None, "2. Clicks Pay")])
+
+    def test_a_captioned_demo_cuts_its_spans_from_the_captioned_video(self):
+        graph = clip.demo_filter([(0.0, 1.0), (2.0, 3.0)], (["[0:v]drawtext=textfile=caption-0.txt[captioned]"], "[captioned]"))
+        self.assertIn("[captioned]split=2[s0][s1]", graph)
+        self.assertIn("[s0]trim=start=0.000:end=1.000", graph)
+        self.assertIn("[s1]trim=start=2.000:end=3.000", graph)
+        self.assertNotIn("[0:v]trim", graph)
+        self.assertTrue(clip.demo_filter([(0.0, 1.0)]).startswith("[0:v]trim"), "an uncaptioned demo cuts the video itself")
+
+    def test_drawtext_captions_read_their_text_from_files_and_show_until_the_next(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            chain = clip.drawtext_chain([(0.5, 1.5, "1. Clicks 'Pay': 100%"), (1.5, None, "2. Sees the receipt")], scratch)
+            self.assertEqual(Path(scratch, "caption-0.txt").read_text(), "1. Clicks 'Pay': 100%")
+        self.assertIn("textfile=caption-0.txt", chain)
+        self.assertIn("enable='between(t,0.500,1.500)'", chain)
+        self.assertIn("enable='gte(t,1.500)'", chain)
+
+    def test_overlay_captions_lay_each_image_in_order(self):
+        filters, label = clip.overlay_chain([(0.5, 1.5, "a"), (1.5, None, "b")])
+        self.assertEqual(label, "[c1]")
+        self.assertTrue(filters[0].startswith("[0:v][1:v]overlay"))
+        self.assertTrue(filters[1].startswith("[c0][2:v]overlay"))
+
+    def test_check_says_how_demo_captions_are_drawn(self):
+        for renderer, line in (("drawtext", "Demo captions: yes, with ffmpeg drawtext"), ("pillow", "Demo captions: yes, with Pillow")):
+            with self.subTest(renderer=renderer), patch.object(clip, "find_tool", return_value="/bin/ffmpeg"), \
+                    patch.object(clip, "caption_renderer", return_value=renderer):
+                self.assertIn(line, clip.capabilities()[0])
+        with patch.object(clip, "find_tool", return_value="/bin/ffmpeg"), patch.object(clip, "caption_renderer", return_value=None), \
+                patch.object(clip.sys, "platform", "darwin"):
+            self.assertIn("Demo captions: no, this ffmpeg has no drawtext filter and Pillow is not installed. "
+                          "Install: python3 -m pip install pillow", clip.capabilities()[0])
+
     def test_frames_across_a_step_are_spread_inside_it(self):
         times = [round(seconds, 2) for seconds, _, _ in clip.frame_times(RECORD, "2")]
         self.assertEqual(times, [4.38, 5.12, 5.88, 6.62])
@@ -148,13 +206,29 @@ class CutTest(unittest.TestCase):
         # Moves for 4 seconds, then holds still for 6.
         source = "testsrc=size=320x240:rate=10:duration=4,tpad=stop_mode=clone:stop_duration=6"
         with tempfile.TemporaryDirectory() as directory:
-            target = clip.demo(self.make_run(directory, source), "2-3")
+            with patch.object(clip, "caption_renderer", return_value=None):
+                target, note = clip.demo(self.make_run(directory, source), "2-3")
             self.assertEqual(target.name, "checkout-pay-steps-2-to-3-customer-pays-demo.mp4")
+            self.assertIn("no captions", note)
             width, height, duration = self.probe(target)
             self.assertEqual((width, height), (320, 240))
             # 0.5 seconds moving, 1 second of the still stretch, then the held last frame, instead of 6.5 seconds.
             expected = 0.5 + clip.DEMO_STILL_SECONDS + clip.DEMO_HOLD_SECONDS
             self.assertAlmostEqual(duration, expected, delta=0.3)
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "needs Pillow to draw and read the caption")
+    def test_a_demo_drawn_with_pillow_shows_the_caption_on_the_video(self):
+        from PIL import Image
+        source = "color=c=white:size=320x240:rate=10:duration=10"
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(clip, "caption_renderer", return_value="pillow"):
+                target, note = clip.demo(self.make_run(directory, source), "2-3")
+            self.assertIsNone(note)
+            still = Path(directory, "still.png")
+            subprocess.run([FFMPEG, "-v", "error", "-ss", "0.8", "-i", str(target), "-frames:v", "1", str(still)], check=True)
+            # The caption's dark box sits centered just above the bottom of a white frame.
+            box = Image.open(still).convert("RGB").getpixel((160, int(240 * (1 - clip.CAPTION_BOTTOM_SHARE)) - 4))
+            self.assertLess(max(box), 80)
 
     def test_frames_around_a_failure_land_in_the_run_folder(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -344,7 +344,7 @@ Two commands work on a single run:
 ```sh
 scripts/framework/vf.py replay <record>                  # replay page: video beside the steps, every verdict marked on a strip under it
 scripts/framework/vf.py clip <record> --steps 2-3        # short MP4 of those steps, for a pull request
-scripts/framework/vf.py clip <record> --steps 2-3 --demo # same, with waits cut short and the result held on screen
+scripts/framework/vf.py clip <record> --steps 2-3 --demo # same, captioned with what the run did, waits cut short, the result held on screen
 ```
 
 Clips need ffmpeg. `vf.py clip --check` says whether this computer can make them (see the README's [Requirements](README.md#requirements)).

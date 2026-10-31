@@ -5,7 +5,7 @@ Usage:
   clip.py --check                           say what this machine can make, and how to install what's missing
   clip.py EVIDENCE_FILE                     list the run's steps and when each began
   clip.py EVIDENCE_FILE --steps 2-3         cut steps 2 through 3 into an MP4
-  clip.py EVIDENCE_FILE --steps 2-3 --demo  cut a short demo to post on a PR
+  clip.py EVIDENCE_FILE --steps 2-3 --demo  cut a short, captioned demo to post on a PR
   clip.py EVIDENCE_FILE --frames failed     stills before, at, and after each failed step
   clip.py EVIDENCE_FILE --frames 2          stills across step 2
 
@@ -21,10 +21,14 @@ A clip is the recording as it was, cut to the steps asked for; the clip's name
 and the step list say what it shows. A demo shows a reviewer the behavior with
 nothing in the way: each stretch where the picture holds still cut to a second, the last frame
 held so the result stays on screen, and scaled and compressed to fit GitHub's
-smallest video upload limit.
+smallest video upload limit. A demo also carries numbered captions, one per
+step and action mark in the window, each shown until the next, so a reviewer
+can tell what the run did from what the app did on its own.
 
-Needs ffmpeg and ffprobe, from PATH or the FFMPEG and FFPROBE variables. A clip
-or a frame shows a behavior; the run's steps are the proof.
+Needs ffmpeg and ffprobe, from PATH or the FFMPEG and FFPROBE variables.
+Captions are drawn with ffmpeg's drawtext filter when the build has it, else
+with Pillow when it is installed; with neither, a demo has no captions and
+says so. A clip or a frame shows a behavior; the run's steps are the proof.
 
 Exits 0 when the list, clip, or frames are written, or --check finds everything;
 1 when --check finds something missing; 2 when it cannot run.
@@ -66,12 +70,23 @@ DEMO_MAX_WIDTH = 1280
 # GitHub's smallest video upload limit, on free plans.
 DEMO_MAX_BYTES = 10_000_000
 DEMO_QUALITIES = ("28", "34", "40")
+# Captions sit above the bottom edge, where apps often keep an input bar, in a dark box sized to the video.
+CAPTION_HEIGHT_SHARE = 1 / 30
+CAPTION_BOTTOM_SHARE = 0.17
+CAPTION_WRAP = 60
+# Bold fonts tried for Pillow captions, in order, before its built-in font.
+CAPTION_FONTS = (
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+)
 # H.264 in MP4 plays inline on GitHub, in chat tools, and in every browser.
 # CRF 28 keeps a minute of mostly still UI to a few MB with readable text.
 ENCODE = ["-c:v", "libx264", "-preset", "slow", "-crf", "28", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an"]
 # Example install commands for the optional tools, by sys.platform prefix. Agents show these; they never run them unasked.
 INSTALL = {
     "ffmpeg": {"darwin": "brew install ffmpeg", "linux": "sudo apt install ffmpeg (or your package manager's ffmpeg)", "win": "winget install Gyan.FFmpeg"},
+    "pillow": {"darwin": "python3 -m pip install pillow", "linux": "python3 -m pip install pillow", "win": "py -m pip install pillow"},
 }
 
 
@@ -186,12 +201,111 @@ def kept_spans(stills, duration):
     return [(start, end) for start, end in spans if end - start > 0.05]
 
 
-def demo_filter(spans):
-    """Join the kept spans, scale down to DEMO_MAX_WIDTH, and hold the last frame."""
-    parts = [f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[p{index}]" for index, (start, end) in enumerate(spans)]
+def captions(record, start, end):
+    """(from, until, text) for each step and action mark in the video window [start, end), in seconds into the
+    window, numbered in order. A mark repeating the one before it is dropped, and of marks at the same moment only
+    the last is kept, since the others would show for no time. The last caption runs to the end, shown as None."""
+    found = []
+    for mark in sorted((mark for mark in record.get("marks") or [] if mark.get("kind") in ("step", "action")
+                        and isinstance(mark.get("at"), (int, float)) and str(mark.get("label", "")).strip()),
+                       key=lambda mark: mark["at"]):
+        at = mark["at"] - recording_start(record) - start
+        label = str(mark["label"]).strip()
+        if at < 0 or (end is not None and at >= end - start) or (found and found[-1][1] == label):
+            continue
+        if found and found[-1][0] == max(at, 0.0):
+            found.pop()
+        found.append((max(at, 0.0), label))
+    return [(at, found[index + 1][0] if index + 1 < len(found) else None, f"{index + 1}. {label}")
+            for index, (at, label) in enumerate(found)]
+
+
+def caption_renderer(ffmpeg):
+    """How this machine draws captions: "drawtext" when ffmpeg has that filter, else "pillow" when Pillow is
+    installed, else None."""
+    result = subprocess.run([ffmpeg, "-hide_banner", "-filters"], capture_output=True, text=True)
+    if re.search(r"^\s*\S+\s+drawtext\s", result.stdout, flags=re.MULTILINE):
+        return "drawtext"
+    return "pillow" if importlib.util.find_spec("PIL") else None
+
+
+def shown_while(since, until):
+    """An ffmpeg enable expression for a caption shown from since until until, or to the end when until is None."""
+    return f"gte(t,{since:.3f})" if until is None else f"between(t,{since:.3f},{until:.3f})"
+
+
+def wrapped(text):
+    """A caption broken into lines of about CAPTION_WRAP characters, so a long mark fits the frame."""
+    import textwrap
+    return "\n".join(textwrap.wrap(text, CAPTION_WRAP)) or text
+
+
+def drawtext_chain(caption_list, scratch):
+    """The drawtext filters that draw each caption, centered above the bottom edge in a dark box. Each caption's
+    text goes in a file, so no character in a mark needs escaping."""
+    filters = []
+    for index, (since, until, text) in enumerate(caption_list):
+        textfile = Path(scratch, f"caption-{index}.txt")
+        textfile.write_text(wrapped(text))
+        filters.append(
+            f"drawtext=textfile={textfile.name}:fontcolor=white:fontsize=h*{CAPTION_HEIGHT_SHARE:.4f}:box=1:"
+            f"boxcolor=black@0.85:boxborderw=18:x=(w-text_w)/2:y=h*(1-{CAPTION_BOTTOM_SHARE})-text_h:"
+            f"enable='{shown_while(since, until)}'"
+        )
+    return ",".join(filters)
+
+
+def caption_images(caption_list, width, height, scratch):
+    """Draw each caption with Pillow as a transparent PNG as wide as the video: white bold text in a dark rounded
+    box, centered. Returns the image paths, in caption order."""
+    from PIL import Image, ImageDraw, ImageFont  # Optional: only a demo on a machine without drawtext needs it.
+    size = max(int(height * CAPTION_HEIGHT_SHARE), 12)
+    font = next((ImageFont.truetype(path, size) for path in CAPTION_FONTS if Path(path).is_file()), None)
+    font = font or ImageFont.load_default(size=size)
+    paths = []
+    for index, (_, _, text) in enumerate(caption_list):
+        lines = wrapped(text).split("\n")
+        probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        line_height = size + size // 3
+        text_width = max(probe.textlength(line, font=font) for line in lines)
+        pad = size * 3 // 4
+        box_height = line_height * len(lines) + pad * 2
+        image = Image.new("RGBA", (width, box_height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        left = (width - text_width) / 2
+        draw.rounded_rectangle([left - pad, 0, left + text_width + pad, box_height - 1], radius=pad // 2, fill=(20, 20, 20, 225))
+        for number, line in enumerate(lines):
+            draw.text(((width - probe.textlength(line, font=font)) / 2, pad + number * line_height), line, font=font,
+                      fill=(255, 255, 255, 255))
+        path = Path(scratch, f"caption-{index}.png")
+        image.save(path)
+        paths.append(path)
+    return paths
+
+
+def overlay_chain(caption_list):
+    """The overlay filters that lay each caption image (inputs 1 onward) over the video while its caption shows."""
+    filters, source = [], "[0:v]"
+    for index, (since, until, _) in enumerate(caption_list):
+        label = f"[c{index}]"
+        filters.append(f"{source}[{index + 1}:v]overlay=x=0:y=H*(1-{CAPTION_BOTTOM_SHARE})-h:enable='{shown_while(since, until)}'{label}")
+        source = label
+    return filters, source
+
+
+def demo_filter(spans, captioned=None):
+    """Join the kept spans, scale down to DEMO_MAX_WIDTH, and hold the last frame. captioned is (filters, label):
+    filters that caption the video and the label of their output, which the spans are then cut from."""
+    prefix, source = [], "[0:v]"
+    if captioned and captioned[0]:
+        filters, label = captioned
+        prefix = [*filters, f"{label}split={len(spans)}" + "".join(f"[s{index}]" for index in range(len(spans)))]
+        source = None
+    parts = [f"{source or f'[s{index}]'}trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[p{index}]"
+             for index, (start, end) in enumerate(spans)]
     joined = "".join(f"[p{index}]" for index in range(len(spans))) + f"concat=n={len(spans)}:v=1:a=0"
     scale = f"scale='trunc(min({DEMO_MAX_WIDTH},iw)/2)*2':-2"
-    return ";".join([*parts, f"{joined},{scale},tpad=stop_mode=clone:stop_duration={DEMO_HOLD_SECONDS}[out]"])
+    return ";".join([*prefix, *parts, f"{joined},{scale},tpad=stop_mode=clone:stop_duration={DEMO_HOLD_SECONDS}[out]"])
 
 
 def encode_at(quality):
@@ -217,8 +331,8 @@ def recorded_video(record, evidence_path):
 
 
 def cut_plan(evidence_path, spec, demo=False):
-    """What cutting the steps spec names needs: the MP4's path in the run's folder, and ffmpeg's input arguments
-    for the video window those steps cover."""
+    """What cutting the steps spec names needs: the MP4's path in the run's folder, ffmpeg's input arguments
+    for the video window those steps cover, and the captions for that window."""
     record = load(evidence_path)
     video = recorded_video(record, evidence_path)
     run_steps = steps(record)
@@ -226,12 +340,12 @@ def cut_plan(evidence_path, spec, demo=False):
     target = evidence_path.with_suffix("") / clip_name(record, run_steps, first, last, demo)
     target.parent.mkdir(parents=True, exist_ok=True)
     window = ["-ss", f"{start:.2f}", "-i", str(video)] + (["-t", f"{end - start:.2f}"] if end is not None else [])
-    return target, window
+    return target, window, captions(record, start, end)
 
 
 def cut(evidence_path, spec):
     """Cut the steps spec names into an MP4 in the run's folder. Returns the MP4's path."""
-    target, window = cut_plan(evidence_path, spec)
+    target, window, _ = cut_plan(evidence_path, spec)
     ffmpeg = require_tool("ffmpeg", "FFMPEG")
     with tempfile.TemporaryDirectory() as scratch:
         output = Path(scratch, "clip.mp4")
@@ -241,12 +355,26 @@ def cut(evidence_path, spec):
     return target
 
 
-def demo(evidence_path, spec):
-    """Cut the steps spec names into a demo MP4 in the run's folder: still stretches shortened, and small enough to post.
+def video_size(ffprobe, video):
+    """The video's (width, height), read with ffprobe."""
+    result = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", str(video)],
+        capture_output=True, text=True,
+    )
+    try:
+        stream = json.loads(result.stdout)["streams"][0]
+        return int(stream["width"]), int(stream["height"])
+    except (json.JSONDecodeError, KeyError, IndexError, ValueError) as error:
+        raise ClipError(f"ffprobe cannot read {video}'s size: {result.stderr.strip()}") from error
 
-    Returns the MP4's path.
+
+def demo(evidence_path, spec):
+    """Cut the steps spec names into a demo MP4 in the run's folder: captioned, still stretches shortened, and small
+    enough to post.
+
+    Returns the MP4's path and a note when it could not draw captions, else None.
     """
-    target, window = cut_plan(evidence_path, spec, demo=True)
+    target, window, caption_list = cut_plan(evidence_path, spec, demo=True)
     ffmpeg = require_tool("ffmpeg", "FFMPEG")
     ffprobe = require_tool("ffprobe", "FFPROBE")
     with tempfile.TemporaryDirectory() as scratch:
@@ -254,10 +382,22 @@ def demo(evidence_path, spec):
         steps_video = Path(scratch, "steps.mp4")
         run_ffmpeg(ffmpeg, [*window, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-an", str(steps_video)], scratch)
         duration = video_duration(ffprobe, steps_video)
-        graph = demo_filter(kept_spans(still_stretches(ffmpeg, steps_video, duration), duration))
+        renderer = caption_renderer(ffmpeg) if caption_list else None
+        inputs, captioned, note = ["-i", str(steps_video)], None, None
+        if caption_list and renderer == "drawtext":
+            chain = drawtext_chain(caption_list, scratch)
+            captioned = ([f"[0:v]{chain}[captioned]"], "[captioned]")
+        elif caption_list and renderer == "pillow":
+            width, height = video_size(ffprobe, steps_video)
+            images = caption_images(caption_list, width, height, scratch)
+            inputs += [argument for image in images for argument in ("-i", str(image))]
+            captioned = overlay_chain(caption_list)
+        elif caption_list:
+            note = f"no captions: this ffmpeg has no drawtext filter and Pillow is not installed. Install: {install_hint('pillow')}"
+        graph = demo_filter(kept_spans(still_stretches(ffmpeg, steps_video, duration), duration), captioned)
         output = Path(scratch, "demo.mp4")
         for quality in DEMO_QUALITIES:
-            run_ffmpeg(ffmpeg, ["-i", str(steps_video), "-filter_complex", graph, "-map", "[out]", *encode_at(quality), str(output)], scratch)
+            run_ffmpeg(ffmpeg, [*inputs, "-filter_complex", graph, "-map", "[out]", *encode_at(quality), str(output)], scratch)
             if output.stat().st_size <= DEMO_MAX_BYTES:
                 break
         else:
@@ -267,7 +407,7 @@ def demo(evidence_path, spec):
             )
         shutil.move(str(output), target)
     replay.write_recordings(replay.harness_of(evidence_path))
-    return target
+    return target, note
 
 
 def slug(text):
@@ -357,6 +497,12 @@ def capabilities():
     else:
         found = " and ".join(name for name, present in (("ffmpeg", ffmpeg), ("ffprobe", ffprobe)) if not present)
         lines.append(f"Stills and clips: no, {found} not found. Install: {install_hint('ffmpeg')}")
+    if ffmpeg:
+        renderer = caption_renderer(ffmpeg)
+        if renderer:
+            lines.append(f"Demo captions: yes, with {'ffmpeg drawtext' if renderer == 'drawtext' else 'Pillow'}")
+        else:
+            lines.append(f"Demo captions: no, this ffmpeg has no drawtext filter and Pillow is not installed. Install: {install_hint('pillow')}")
     lines.append("Replay pages, snapshots, and logs need none of these.")
     return lines, bool(ffmpeg and ffprobe)
 
@@ -370,7 +516,8 @@ def main():
     action.add_argument("--frames", metavar="STEP|failed", help="write stills across one step, or around each failed step")
     parser.add_argument(
         "--demo", action="store_true",
-        help="with --steps, cut a demo to post on a PR: still stretches cut to a second, last frame held, under GitHub's upload limit",
+        help="with --steps, cut a demo to post on a PR: captioned with the run's marks, still stretches cut to a second, "
+             "last frame held, under GitHub's upload limit",
     )
     args = parser.parse_args()
     if args.check:
@@ -386,7 +533,10 @@ def main():
             for path, seconds, label in frames(args.evidence, args.frames):
                 print(f"{path}  {seconds:.1f}s  {label}")
         elif args.demo:
-            print(demo(args.evidence, args.steps))
+            path, note = demo(args.evidence, args.steps)
+            print(path)
+            if note:
+                print(note, file=sys.stderr)
         elif args.steps:
             print(cut(args.evidence, args.steps))
         else:

@@ -421,7 +421,7 @@ Details list every step with its detail, the time in the video its verdict was d
 | --- | --- |
 | `vf.py clip <evidence file>` | Lists each step's number, time range, and label |
 | `... --steps 2-3` | A short MP4 of steps 2 and 3, starting half a second early, named for what it shows: `checkout-pay-steps-2-to-3-customer-pays-2026-10-03-1402.mp4` |
-| `... --steps 2-3 --demo` | A reviewer's demo: each still stretch over a second cut to its first second, the last frame held 1.5 seconds, scaled to 1280 pixels wide, compressed to fit GitHub's 10 MB limit. Stops and says to cut fewer steps if it can't |
+| `... --steps 2-3 --demo` | A reviewer's demo: numbered captions from the step and action marks in the window, each shown until the next (of marks at the same moment, the last), centered above the bottom edge; each still stretch over a second cut to its first second, the last frame held 1.5 seconds, scaled to 1280 pixels wide, compressed to fit GitHub's 10 MB limit. Stops and says to cut fewer steps if it can't |
 | `... --frames failed` | Three stills per failed step: 3 seconds before, at, and 1 second after |
 | `... --frames 2` | Four stills spread across step 2 (the last step is assumed to last 10 seconds) |
 | `vf.py clip --check` | Whether this computer can make stills and clips, and how to install what's missing. Exit 1 when something is |
@@ -454,5 +454,5 @@ Three scripts for harnesses whose checks are written in Python, run from the ins
 
 - Exit 0 means OK, 1 means it found a problem, 2 means it couldn't run, explained on a `STOPPED:` line.
 - `validate.py` prints one line per problem starting with `ERROR` or `WARN`, then a summary. `code_state.py` prints JSON. The audit scripts print one item per line.
-- They use only what comes with Python 3. ffmpeg is optional, and only `clip.py` uses it.
+- They use only what comes with Python 3. ffmpeg is optional, and only `clip.py` uses it. A demo's captions use ffmpeg's `drawtext` filter when the build has it, else Pillow when it is installed; with neither, the demo has no captions, `clip.py` says so on stderr, and `--check` gives the install line. Pillow is imported only then, so no script depends on it.
 - Each script's unit tests live in `tests/test_<script>.py`, outside the skill folders. Run them with `python3 -m unittest discover -s tests`.
