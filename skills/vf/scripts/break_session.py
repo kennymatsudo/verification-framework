@@ -5,7 +5,7 @@ Usage:
   break_session.py worktree REPO PATH COMMIT [--branch NAME]
   break_session.py worktree --clear REPO
   break_session.py start REPO
-  break_session.py run REPO "IDS: WHAT WAS BROKEN" -- CHECK COMMAND...
+  break_session.py run REPO "IDS: WHAT WAS BROKEN [ ;; IDS: WHAT ELSE]" -- CHECK COMMAND...
   break_session.py replay EVIDENCE_FILE -- CHECK COMMAND...
   break_session.py status
   break_session.py end REPO
@@ -29,9 +29,11 @@ copy, no new worktree is made, and Stop and Start don't run, since the app alrea
 start runs harness.json's doctor first and refuses unless it reports the app ready. In place needs no
 uncommitted product code in the worktree and its commit's product code to match the marker's commit; a
 marked worktree that fails one of these, or a marker in a repo's main worktree, is refused, never quietly
-copied instead. Otherwise start makes a scratch git worktree of REPO at the commit under test, replays the
-developer's staged, unstaged, and untracked changes into it, confirms its code_state.py fingerprint
-matches the developer's checkout, and points the app at the copy: when harness.json's start is a command,
+copied instead. Otherwise start uses a scratch git worktree of REPO at a stable path kept between sessions,
+making it when it is absent and reusing the one left by the last session when it is there, so its build
+artifacts survive and a restart does an incremental build. Either way it resets the copy to the commit
+under test, replays the developer's staged, unstaged, and untracked changes into it, confirms its
+code_state.py fingerprint matches the developer's checkout, and points the app at the copy: when harness.json's start is a command,
 it runs Stop and then Start with {checkout:REPO} filled with the copy and every other repo's placeholder
 with that repo's checkout. Start must name {checkout:REPO}; when Start is `none`, nothing runs and the
 checks read the copy from VERIFY_CHECKOUT_<REPO>; when Start is `user`, only a person starts the app and a
@@ -62,7 +64,8 @@ session must be open.
 
 end refuses while the copy's HEAD differs from the session's commit, since a commit there may hold a break
 or someone's work. It then marks the session ending. For a scratch copy it points the app back at the
-developer's checkout (Stop, then Start with the developer's checkouts) and removes the copy; in place it
+developer's checkout (Stop, then Start with the developer's checkouts) and leaves the copy at the clean
+commit for the next session to reuse; in place it
 restores the copy, confirms it, restarts the app on it the same way unless reloads is true, and keeps the
 worktree. It closes the session and reports whether the developer's checkout, in place the copy itself,
 still has its starting fingerprint. Ending a repo with no session does nothing, so end is safe to repeat
@@ -89,9 +92,11 @@ not run, with a STOPPED: line on stderr.
 
 import argparse
 import datetime
+import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -121,6 +126,26 @@ OWNER_MARKER = "verify-scratch-owner.json"
 
 class GuardError(Exception):
     pass
+
+
+def scratch_home(top, repo):
+    """The stable path a repo's scratch worktree is kept at between sessions, so its build artifacts
+    survive and a restart does an incremental build instead of a full one. Keyed by the repo's own Git
+    folder, so two clones of the same repo never share one, and kept outside the source tree in the
+    system temp folder, where a reboot may clear it and `start` then rebuilds it once."""
+    key = hashlib.sha256(str(git_dirs(top)[1]).encode()).hexdigest()[:12]
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", repo)
+    return Path(tempfile.gettempdir()) / f"verify-break-{key}-{safe}"
+
+
+def worktree_of(path, top):
+    """Whether path is a usable linked worktree of top's repo, so a kept scratch copy can be reused."""
+    if not path.is_dir():
+        return False
+    try:
+        return git_dirs(path)[1] == git_dirs(top)[1]
+    except StateError:
+        return False
 
 
 def git_output(directory, *args, data=None, env=None):
@@ -497,13 +522,22 @@ def start(harness, repo):
         raise StateError("harness.json says only a person starts the app (start: user), so a planned break can't run here; record the proof as Not break-tested")
     marker = owner_marker(harness, repo, top)
     in_place = marker is not None
+    reused = False
     if in_place:
         require_in_place(harness, repo, top, marker)
         require_app_ready(harness, repo, top)
         # The worktree is both the code under test and the copy, so the session's checkout is the copy itself.
         worktree, scratch = top, checkout
     else:
-        worktree = Path(tempfile.mkdtemp(prefix=f"verify-break-{repo}-")).resolve()
+        # A stable path kept between sessions, so the app's build artifacts there survive and a restart
+        # does an incremental build. end leaves it at the repo's clean commit; a stale registration from a
+        # worktree a reboot cleared is pruned so a fresh one can take its place.
+        worktree = scratch_home(top, repo).resolve()
+        reused = worktree_of(worktree, top)
+        if not reused:
+            if worktree.exists() or worktree.is_symlink():
+                shutil.rmtree(worktree, ignore_errors=True)
+            git_output(top, "worktree", "prune")
         scratch = worktree / checkout.relative_to(top)
     under_test = code_state.checkout_state(checkout, harness)
 
@@ -531,7 +565,10 @@ def start(harness, repo):
     # Written before the worktree exists, so a crash from here on leaves a session that blocks ordinary runs and that end can clean up.
     save_session(folder, session)
     if not in_place:
-        git_output(top, "worktree", "add", "-q", "--detach", str(worktree), under_test["commit"])
+        if not reused:
+            git_output(top, "worktree", "add", "-q", "--detach", str(worktree), under_test["commit"])
+        # restore resets the copy to the commit under test and replays the developer's changes, so a
+        # reused worktree is set to the same code a fresh one would hold, keeping only its build artifacts.
         restore(session, folder, harness)
         if code_identity(code_state.checkout_state(scratch, harness)) != code_identity(under_test):
             raise GuardError(f"the scratch copy at {scratch} doesn't match {checkout}'s code after replaying its changes; run `vf.py break end {repo}`")
@@ -542,7 +579,8 @@ def start(harness, repo):
         print(f"Break session open for {repo} in place: {scratch} is a worktree `vf.py break worktree` made, and the "
               f"doctor reports the app ready on it, so nothing was restarted.")
     else:
-        print(f"Break session open for {repo} in a new scratch worktree at {worktree}.")
+        where = "the kept scratch worktree" if reused else "a new scratch worktree"
+        print(f"Break session open for {repo} in {where} at {worktree}.")
         point_app(harness, session, repo, scratch=True)
     print(f"Make the break as an uncommitted edit in {scratch}, then run:")
     print(f'  vf.py break run {repo} "<sub-feature IDs>: <what was broken>" -- <check command>')
@@ -564,12 +602,26 @@ def planned_break_runs(paths):
     return found
 
 
+PLANNED_BREAK_SEP = " ;; "
+
+
+def parse_planned(planned):
+    """The `IDS: what` segments a planned-break argument names, one per ` ;; `, so one run can carry several
+    breaks aimed at different behaviors. StateError on a malformed segment."""
+    segments = []
+    for segment in planned.split(PLANNED_BREAK_SEP):
+        ids, sep, what = segment.partition(": ")
+        if not sep or not ids.strip() or not what.strip():
+            raise StateError(f'expected "<sub-feature IDs>: <what was broken>", one break per " ;; ", got {segment!r}')
+        segments.append((ids.strip(), what.strip()))
+    return segments
+
+
 def run_break(harness, repo, planned, command, patch=None):
-    """Run the check against the copy's edit, or against a saved patch, then restore the copy.
-    Saves the edit as <time>.patch beside the evidence the check wrote and logs what the break caught."""
-    ids, sep, what = planned.partition(": ")
-    if not sep or not ids.strip() or not what.strip():
-        raise StateError(f"expected \"<sub-feature IDs>: <what was broken>\", got {planned!r}")
+    """Run the check against the copy's edit, or against a saved patch, then restore the copy. The edit may hold
+    several breaks aimed at different behaviors, named in one argument and separated by ` ;; `, so one run
+    proves them all. Saves the edit as <time>.patch beside the evidence the check wrote and logs what each break caught."""
+    parse_planned(planned)
     located, _ = locate(harness, repo)
     session, folder = load_session(located, repo, harness)
     stop_leftover_check(folder)
@@ -665,20 +717,22 @@ def record_breaks(harness, evidence):
     if record.get("passed") is not False:
         return ["No break recorded: the break run did not fail"]
     cite = evidence.relative_to(harness).as_posix()
-    what = record["planned_break"]["what"]
     at = record.get("finished_at") or datetime.datetime.now(datetime.timezone.utc).strftime(validate.TIME_FORMAT)
     lines, entries = [], []
-    for sub_id in record["planned_break"]["sub_features"]:
-        failed_steps, spoiled_by = validate.break_catch(record, sub_id)
-        if not failed_steps:
-            lines.append(f"{sub_id}: no step judging it failed, so the break proves nothing for it; plan a break that reaches its own step")
-            continue
-        if spoiled_by is not None:
-            lines.append(f"{sub_id}: step '{spoiled_by}' failed before any step judging it, so the break proves nothing for it; "
-                         "plan a break of its own that the earlier steps pass through")
-            continue
-        entries.append({"at": at, "sub_feature": sub_id, "check": record["check"], "what": what, "step": failed_steps[0], "evidence": cite})
-        lines.append(f"Break recorded for {sub_id}: step '{failed_steps[0]}' caught it")
+    # One run may carry several breaks; credit each sub-feature to the break aimed at it, as its own clean catch.
+    for break_entry in validate.break_entries(record):
+        for sub_id in break_entry["sub_features"]:
+            failed_steps, spoiled_by = validate.break_catch(record, sub_id)
+            if not failed_steps:
+                lines.append(f"{sub_id}: no step judging it failed, so the break proves nothing for it; plan a break that reaches its own step")
+                continue
+            if spoiled_by is not None:
+                lines.append(f"{sub_id}: step '{spoiled_by}' failed before any step judging it, so the break proves nothing for it; "
+                             "plan a break of its own that the earlier steps pass through")
+                continue
+            entries.append({"at": at, "sub_feature": sub_id, "check": record["check"], "what": break_entry["what"],
+                            "step": failed_steps[0], "evidence": cite})
+            lines.append(f"Break recorded for {sub_id}: step '{failed_steps[0]}' caught it")
     if entries:
         log = harness / BREAKS_LOG
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -690,16 +744,17 @@ def record_breaks(harness, evidence):
 def replay(harness, evidence, command):
     """Run a saved break again: apply the patch beside the evidence to the repo it edited and run the check as run does."""
     record = validate.read_record(evidence)
-    planned_break = (record or {}).get("planned_break")
-    if not planned_break:
+    breaks = validate.break_entries(record or {})
+    if not breaks:
         raise StateError(f"{evidence} is not a planned break run")
-    if not planned_break.get("repo"):
+    repos = {entry.get("repo") for entry in breaks}
+    if None in repos or len(repos) != 1:
         raise StateError(f"{evidence} doesn't name the repo its break edited; run the break again with `vf.py break run`")
     patch = evidence.with_suffix(".patch")
     if not patch.is_file():
         raise StateError(f"{evidence} has no saved break at {patch}")
-    planned = f"{','.join(planned_break['sub_features'])}: {planned_break['what']}"
-    return run_break(harness, planned_break["repo"], planned, command, patch.read_bytes())
+    planned = PLANNED_BREAK_SEP.join(f"{','.join(entry['sub_features'])}: {entry['what']}" for entry in breaks)
+    return run_break(harness, repos.pop(), planned, command, patch.read_bytes())
 
 
 def status(harness):
@@ -766,8 +821,11 @@ def end(harness, repo):
                 point_app(harness, session, repo, scratch=False)
     else:
         point_app(harness, session, repo, scratch=False)
-        if worktree.exists():
-            git_output(top, "worktree", "remove", "--force", str(worktree))
+        if started:
+            # Keep the worktree and its build artifacts for the next session, but strip the developer's
+            # replayed changes so it sits at the clean commit, the base start restores onto.
+            git_output(worktree, "reset", "-q", "--hard", session["commit"])
+            git_output(worktree, "clean", "-fdq", "--", *validate.source_pathspec(worktree, harness))
         git_output(top, "worktree", "prune")
     shutil.rmtree(folder)
 
@@ -781,7 +839,8 @@ def end(harness, repo):
     if session["in_place"]:
         print(f"Break session for {repo} closed; {checkout} is back at its starting state, the app runs it again, and it stays in place.")
     else:
-        print(f"Break session for {repo} closed; the app is pointed back at {checkout}, which is unchanged.")
+        print(f"Break session for {repo} closed; the app is pointed back at {checkout}, which is unchanged. "
+              f"The scratch worktree at {worktree} is kept at the clean commit for the next session.")
     return 0
 
 
@@ -804,7 +863,7 @@ def main():
     actions.add_parser("start").add_argument("repo")
     run = actions.add_parser("run")
     run.add_argument("repo")
-    run.add_argument("planned_break", metavar='"IDS: WHAT WAS BROKEN"')
+    run.add_argument("planned_break", metavar='"IDS: WHAT WAS BROKEN [ ;; IDS: WHAT ELSE]"')
     actions.add_parser("replay").add_argument("evidence", type=Path)
     actions.add_parser("status")
     actions.add_parser("end").add_argument("repo")

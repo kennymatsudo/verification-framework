@@ -14,15 +14,9 @@ A change to a check after its review, including an expectation changed after a f
 
 ### Batch planned breaks when runs are expensive
 
-One planned break per behavior means at least two runs per behavior. That's cheap when the app starts in seconds. It isn't when each run spends something scarce: a rate-limited sandbox, paid test transactions, a shared daily quota, or minutes of rebuilding. In the first converted app (an existing harness brought into the framework by hand, see below), one journey checks 38 behaviors, and one break per behavior would cost several days of quota.
+Decided by [ADR 0016](adr/0016-batch-independent-breaks-in-one-run.md): one run carries several breaks joined by ` ;; `, `planned_break` is a list, and clean-catch is widened so another break's failed step is that break's own catch, not a knock-on, which keeps ADR 0015's guarantee exact for a single break. Batched breaks must break unrelated code; interference between dependent breaks is the residual risk the add-checks discipline, the blind reviewer, and the eval suite's hidden breaks guard.
 
-**Proposal:** one break run carries several breaks, each in an unrelated part of the code and aimed at a different behavior. `planned_break` becomes a list of `{what, sub_features}` entries. [ADR 0005](adr/0005-credit-a-planned-break-only-to-what-it-broke.md)'s rule still applies: a behavior gets credit only where the break was aimed at it and its own step failed.
-
-**Risks:** masking (one break stops the run before another's step is reached, which wastes a run but never grants false credit) and interference (two breaks combine so a step fails for the wrong reason, which step labels don't catch). It also changes the `planned_break` and `VERIFY_PLANNED_BREAK` formats.
-
-**Still open:** how independent the breaks must be and who decides; how often masking and interference happen; whether a knock-on failure should be reported even though it earns no credit; whether run cost belongs in the contract or only in settings.
-
-**What settles it:** the converted app's break testing done with batching, with the runs spent and the masking rate recorded, plus a practice repo with hidden breaks where every credited behavior's hidden break is also caught.
+**Still open, as ADR 0016 is Proposed:** how often interference happens in practice, measured on the converted app's break testing done with batching, with the runs spent and the masking rate recorded. Until that evidence is in, batching saves runs but leans on the independence discipline rather than a measured bound.
 
 ### Support more break-session setups
 
@@ -93,6 +87,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0013: One manifest for everything a script reads; prose stays prose](adr/0013-one-manifest-for-what-scripts-read.md)
 - [0014: One skill, with a mode for each job](adr/0014-one-skill.md)
 - [0015: Break in the run's own copy, and credit only a clean catch](adr/0015-break-in-the-runs-own-copy-and-credit-only-a-clean-catch.md) (proposed)
+- [0016: Batch independent breaks in one run, and keep a stable scratch worktree](adr/0016-batch-independent-breaks-in-one-run.md) (proposed)
 
 ## Parked ideas
 
@@ -106,7 +101,7 @@ Four pieces shipped before this redesign (commit f220499 on main) and were remov
 A redesign review on 2026-10-21 set these aside:
 
 - **Readiness proven by `vf.py`.** The doctor already runs before every verification, and the up/down proof is a procedure in vf's `references/doctor.md`. Pick it up if a harness is ever marked ready without the doctor having run.
-- **Breaks in the developer's checkout** instead of a scratch worktree. Rejected: a crash or a second agent could lose uncommitted work. The rebuild cost it aimed at is better met by one persistent worktree per repo, which is still open.
+- **Breaks in the developer's checkout** instead of a scratch worktree. Rejected: a crash or a second agent could lose uncommitted work. The rebuild cost it aimed at is now met by keeping the scratch worktree between sessions ([ADR 0016](adr/0016-batch-independent-breaks-in-one-run.md)), so its build artifacts survive and a restart rebuilds incrementally.
 - **A single packed `vf.pyz` with no `rules.md` copy.** Rejected: an archive can't be reviewed in a diff, and the rules copy is what reviewers and vf-explain read.
 - **Blind breaks in place of the weak-checks audit.** Worth adding beside the audit's scripts, not instead of them. This is the independent-judges question above.
 

@@ -618,7 +618,7 @@ class HarnessCommands(unittest.TestCase):
         self.open_break_session()
         result = self.run_check(env=env, exit=1, steps=FAILED_STEP)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertEqual(self.record()["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"})
+        self.assertEqual(self.record()["planned_break"], [{"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"}])
 
     def run_waiting_break(self, steps, wait, exit):
         """Run WAITING_CHECK as a planned break aimed at app.pay. Returns the result, the break's record, and
@@ -688,7 +688,7 @@ class HarnessCommands(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         record = self.record()
-        self.assertEqual(record["planned_break"]["repo"], "app")
+        self.assertEqual(record["planned_break"][0]["repo"], "app")
         self.assertTrue(record["code"]["mailer"]["dirty"])
         self.assertFalse(vf.sibling("code_state").checkout_state(self.project / "mailer", self.harness)["dirty"])
 
@@ -761,7 +761,7 @@ class HarnessCommands(unittest.TestCase):
         record, path = self.record(), self.evidence()
         self.assertEqual(record["accepted_by"], "vf.py run")
         self.assertTrue(record["code"]["app"]["dirty"])
-        self.assertEqual(record["planned_break"], {"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"})
+        self.assertEqual(record["planned_break"], [{"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"}])
         self.assertIn("+broken", path.with_suffix(".patch").read_text())
         self.assertIn("Break recorded for app.pay: step 'order is paid' caught it", result.stdout)
         logged = json.loads((self.harness / "evidence" / "breaks.jsonl").read_text().splitlines()[0])
@@ -775,6 +775,46 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
         self.assertRegex((self.harness / "status.md").read_text(),
                          r"- app\.pay: Verified\. pay, reads state, app [0-9a-f]{7}\. Break-tested \d{4}-\d{2}-\d{2}: payment skipped\. Evidence: ")
+
+    def test_one_run_proves_several_breaks_aimed_at_different_behaviors(self):
+        # A journey check covers two behaviors; one run carries a break for each, with one restart, and each
+        # is credited on its own failed step because the other break's failed step is that break's own catch.
+        (self.project / ".gitignore").write_text("pointed.txt\n.agents/\n")
+        git(self.project, "add", ".gitignore")
+        git(self.project, "commit", "-qm", "ignore")
+        features = self.harness / "features"
+        features.mkdir(exist_ok=True)
+        (features / "app.json").write_text(json.dumps({"name": "App", "summary": "The app.", "reach": ["Pay."], "behaviors": {
+            "app.pay": {"words": "order is paid", "check": "journey", "reads": "state", "not_break_tested": "x"},
+            "app.ship": {"words": "order ships", "check": "journey", "reads": "state", "not_break_tested": "x"}}}, indent=2) + "\n")
+        (self.harness / "notes.md").write_text("# Verification notes\n")
+        framework = self.harness / "scripts" / "framework"
+
+        def framework_command(*args):
+            return subprocess.run([sys.executable, str(framework / "vf.py"), *args], capture_output=True, text=True)
+
+        self.assertEqual(framework_command("break", "start", "app").returncode, 0)
+        self.addCleanup(framework_command, "break", "end", "app")
+        scratch = Path((self.project / "pointed.txt").read_text().strip())
+        (scratch / "pay.txt").write_text("payment broken\n")
+        (scratch / "ship.txt").write_text("shipping broken\n")
+        events = [{"event": "check", "name": "journey", "sub_features": ["app.pay", "app.ship"], "reads": "state"},
+                  {"event": "step", "name": "order is paid", "passed": False, "at": 1.0, "sub_features": ["app.pay"]},
+                  {"event": "step", "name": "order ships", "passed": False, "at": 2.0, "sub_features": ["app.ship"]}]
+        check = [sys.executable, "-c", CHECK, json.dumps({"events": events, "exit": 1})]
+
+        result = framework_command("break", "run", "app", "app.pay: payment skipped ;; app.ship: shipping skipped",
+                                   "--", sys.executable, str(framework / "vf.py"), "run", "--", *check)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        record = self.record("journey")
+        self.assertEqual(record["planned_break"], [{"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"},
+                                                    {"what": "shipping skipped", "sub_features": ["app.ship"], "repo": "app"}])
+        self.assertIn("Break recorded for app.pay: step 'order is paid' caught it", result.stdout)
+        self.assertIn("Break recorded for app.ship: step 'order ships' caught it", result.stdout)
+        logged = [json.loads(line) for line in (self.harness / "evidence" / "breaks.jsonl").read_text().splitlines()]
+        self.assertEqual({(e["sub_feature"], e["what"]) for e in logged},
+                         {("app.pay", "payment skipped"), ("app.ship", "shipping skipped")})
 
     def test_stops_outside_a_harness(self):
         result = subprocess.run([sys.executable, str(SCRIPT), "run", "--", "true"], capture_output=True, text=True)

@@ -6,7 +6,7 @@ You own two answers for one change, made by one pull request, the developer's ow
 
 The harness is the repo's end-to-end verification layer: one vf built (`verify-*/rules.md` in a skills directory), or else the harness the repo's agent instructions name. If neither exists, stop and say so. Read its rules, its manifest, and its run instructions (the stack check, which actions need the developer's OK, evidence, cleanup) before the first run.
 
-For a framework harness: Run `<harness>/scripts/framework/vf.py validate --written-for 8` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
+For a framework harness: Run `<harness>/scripts/framework/vf.py validate --written-for 9` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
 
 ## 1. List the claims
 
@@ -42,7 +42,7 @@ Done when each PR has a worktree at its head commit, or its merge commit, the ch
 
 ## 4. Build the approved checks
 
-For a framework harness, follow `references/mode-add-checks.md` with the approved claims, acceptance sources, and action permissions to build and prove only those checks, with the breaks for all of them planned together and run in one session per repo. For a non-framework harness, build only what was approved in its existing scenarios and drivers, with unit tests beside them, following its own conventions. A check of what a page or a polled service shows waits up to one refresh cycle for the expected state rather than sampling once. Update every doc that describes the changed scenarios.
+For a framework harness, follow `references/mode-add-checks.md` with the approved claims, acceptance sources, and action permissions to build and prove only those checks, with the breaks for all of them planned together and run in one session per repo, grouping breaks in unrelated code into one run. For a non-framework harness, build only what was approved in its existing scenarios and drivers, with unit tests beside them, following its own conventions. A check of what a page or a polled service shows waits up to one refresh cycle for the expected state rather than sampling once. Update every doc that describes the changed scenarios.
 
 Done when the unit suite passes and each new check fails with its behavior reverted, using the cheapest proof the harness allows (the add-checks mode's planned break for a framework harness). Each check a break credited must still pass once on the restored code; its step 5 run serves.
 

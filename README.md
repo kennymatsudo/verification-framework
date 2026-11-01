@@ -9,7 +9,7 @@ An engineer handed a device to test doesn't take its word for it. They build a *
 These skills have an agent build that bench around your running app, with you deciding what gets measured:
 
 - **The instruments** are command-line tools in your project's language: probes that read the app's data, actions that do what a user or operator does, a doctor that reports what's running, and checks that drive one behavior and read back the result from the database, the response, or the screen, never from the app's own code.
-- **Calibration** is a planned break: the behavior broken on purpose in a throwaway copy of the app, and the check shown to fail there. Until that happens, the check's passes don't count.
+- **Calibration** is a planned break: the behavior broken on purpose in a copy of the app, and the check shown to fail there. Until that happens, the check's passes don't count.
 - **The notebook** is a record of every run, with the commit tested in every repo and, when the run drove a screen, a video: a failed run keeps it, and a passing one can be cut into a short clip for your pull request. A script, not the agent, turns those records into a verdict for each behavior: **Verified**, **Failed**, or **Not verified** with the reason.
 
 You agree on what each check will prove before the agent builds it, from your requirements rather than the code, and a separate agent reviews the check against that agreement. The instruments stay in your repo for debugging by hand, and the agent uses the bench to verify its own change before it says "done."
@@ -115,7 +115,7 @@ The skills are tested the way they test apps: `evals/` holds seven small practic
 
 | Need | Required | Used for |
 | --- | --- | --- |
-| Git | Yes | Code versions in records, throwaway copies for planned breaks |
+| Git | Yes | Code versions in records, scratch copies for planned breaks |
 | Python 3 | Yes | The framework scripts (standard library only) |
 | ffmpeg | Optional | Still frames for agents and video clips for pull requests |
 

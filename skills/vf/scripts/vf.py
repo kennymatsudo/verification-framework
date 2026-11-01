@@ -246,12 +246,20 @@ def utc_now():
     return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
 
 
+PLANNED_BREAK_SEP = " ;; "
+
+
 def parse_planned_break(planned, repo):
-    """VERIFY_PLANNED_BREAK as the evidence records it, with the repo the break edited, or None when it is not set."""
+    """VERIFY_PLANNED_BREAK as the evidence records it: a list of {what, sub_features, repo} breaks, one per
+    ` ;; `-separated `IDS: what` segment, so one run can carry several breaks aimed at different behaviors.
+    None when it is not set."""
     if not planned:
         return None
-    ids, _, what = planned.partition(": ")
-    return {"what": what.strip(), "sub_features": [item.strip() for item in ids.split(",") if item.strip()], "repo": repo}
+    breaks = []
+    for segment in planned.split(PLANNED_BREAK_SEP):
+        ids, _, what = segment.partition(": ")
+        breaks.append({"what": what.strip(), "sub_features": [item.strip() for item in ids.split(",") if item.strip()], "repo": repo})
+    return breaks
 
 
 def report_events(report):
@@ -592,7 +600,9 @@ def run_check(command):
     ended_early, harness_changed = None, harness_change_watch(harness, validate, command, harness_before)
     stopped_for = []
     if planned_break:
-        targets, mapped, prior = planned_break["sub_features"], mapped_to_command(harness, validate, command), {}
+        # Every sub-feature any of the run's breaks is aimed at; the run can end once each has failed a step.
+        targets = [sub_id for entry in planned_break for sub_id in entry["sub_features"]]
+        mapped, prior = mapped_to_command(harness, validate, command), {}
 
         def decide(events):
             if (change := harness_changed()) is not None:
