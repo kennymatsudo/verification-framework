@@ -87,7 +87,7 @@ class TrustFacts(unittest.TestCase):
             {"at": "2026-10-03T14:02:40Z", "sub_feature": "checkout.saved-card", "check": "saved", "what": "saved card ignored",
              "step": "card is charged", "evidence": "evidence/saved/gone.json"}) + "\n")
 
-    AIMED_AT_PAY = [{"what": "capture skipped", "sub_features": ["checkout.pay"], "repo": "app"}]
+    AIMED_AT_PAY = {"what": "capture skipped", "sub_features": ["checkout.pay"]}
 
     def write_evidence(self, name, passed, steps, planned_break=None):
         record = {"check": "pay", "planned_break": planned_break, "sub_features": ["checkout.pay"], "passed": passed, "reads": "state",
@@ -120,7 +120,7 @@ class TrustFacts(unittest.TestCase):
 
     def test_break_aimed_at_another_behavior_is_not_counted_as_caught(self):
         self.write_evidence("break-pay.json", passed=False, steps=[{"name": "order is paid", "passed": False}],
-                            planned_break=[{"what": "card lookup skipped", "sub_features": ["checkout.saved-card"], "repo": "app"}])
+                            planned_break={"what": "card lookup skipped", "sub_features": ["checkout.saved-card"]})
         behaviors = self.behaviors()
         self.assertIsNone(behaviors["checkout.pay"]["break"])
         self.assertEqual(trust_facts.caught_cell(behaviors["checkout.pay"]), "Never shown failing")

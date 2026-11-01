@@ -12,12 +12,6 @@ The check reviewer and the weak-checks verifiers are independent judges: each ge
 
 A change to a check after its review, including an expectation changed after a failed run, now goes back for review as a diff before the next run, to the same reviewer when the session can resume it (vf's `references/verification-plan.md`).
 
-### Batch planned breaks when runs are expensive
-
-Decided by [ADR 0016](adr/0016-batch-independent-breaks-in-one-run.md): one run carries several breaks joined by ` ;; `, `planned_break` is a list, and clean-catch is widened so another break's failed step is that break's own catch, not a knock-on, which keeps ADR 0015's guarantee exact for a single break. Batched breaks must break unrelated code; interference between dependent breaks is the residual risk the add-checks discipline, the blind reviewer, and the eval suite's hidden breaks guard.
-
-**Still open, as ADR 0016 is Proposed:** how often interference happens in practice, measured on the converted app's break testing done with batching, with the runs spent and the masking rate recorded. Until that evidence is in, batching saves runs but leans on the independence discipline rather than a measured bound.
-
 ### Support more break-session setups
 
 - **A person-only switch.** Where only a person can point the app at another checkout, `start` and `end` could print the step for the person to do and exit, and a second command could record that it was done. Agents have no terminal to wait on, so the script can't simply pause.
@@ -87,7 +81,6 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0013: One manifest for everything a script reads; prose stays prose](adr/0013-one-manifest-for-what-scripts-read.md)
 - [0014: One skill, with a mode for each job](adr/0014-one-skill.md)
 - [0015: Break in the run's own copy, and credit only a clean catch](adr/0015-break-in-the-runs-own-copy-and-credit-only-a-clean-catch.md) (proposed)
-- [0016: Batch independent breaks in one run, and keep a stable scratch worktree](adr/0016-batch-independent-breaks-in-one-run.md) (proposed)
 
 ## Parked ideas
 
@@ -101,7 +94,8 @@ Four pieces shipped before this redesign (commit f220499 on main) and were remov
 A redesign review on 2026-10-21 set these aside:
 
 - **Readiness proven by `vf.py`.** The doctor already runs before every verification, and the up/down proof is a procedure in vf's `references/doctor.md`. Pick it up if a harness is ever marked ready without the doctor having run.
-- **Breaks in the developer's checkout** instead of a scratch worktree. Rejected: a crash or a second agent could lose uncommitted work. The rebuild cost it aimed at is now met by keeping the scratch worktree between sessions ([ADR 0016](adr/0016-batch-independent-breaks-in-one-run.md)), so its build artifacts survive and a restart rebuilds incrementally.
+- **Breaks in the developer's checkout** instead of a scratch worktree. Rejected: a crash or a second agent could lose uncommitted work. The rebuild cost it aimed at is now met by keeping the scratch worktree between sessions, so its build artifacts survive and a restart rebuilds incrementally.
+- **Several breaks in one run** (`planned_break` as a list, clean-catch widened so another break's failed step doesn't spoil a target). Built and rejected 2026-11-01 after review. In a journey, once any step has failed every later failure is causally ambiguous, and the only thing deciding whether it counts as "another break's catch" or a knock-on is the label the agent writes: the same edit labelled as two breaks earns credit it is denied as one. That hands the ADR 0015 guarantee to the agent. A batch that keeps the rule across the whole run credits only the first failing break, which saves nothing. Make the restart cheap instead: the kept scratch worktree, `reloads`, `start: none`, or an idempotent `start` that restarts one service.
 - **A single packed `vf.pyz` with no `rules.md` copy.** Rejected: an archive can't be reviewed in a diff, and the rules copy is what reviewers and vf-explain read.
 - **Blind breaks in place of the weak-checks audit.** Worth adding beside the audit's scripts, not instead of them. This is the independent-judges question above.
 

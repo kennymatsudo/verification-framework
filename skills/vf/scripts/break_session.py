@@ -5,7 +5,7 @@ Usage:
   break_session.py worktree REPO PATH COMMIT [--branch NAME]
   break_session.py worktree --clear REPO
   break_session.py start REPO
-  break_session.py run REPO "IDS: WHAT WAS BROKEN [ ;; IDS: WHAT ELSE]" -- CHECK COMMAND...
+  break_session.py run REPO "IDS: WHAT WAS BROKEN" -- CHECK COMMAND...
   break_session.py replay EVIDENCE_FILE -- CHECK COMMAND...
   break_session.py status
   break_session.py end REPO
@@ -567,6 +567,8 @@ def start(harness, repo):
     if not in_place:
         if not reused:
             git_output(top, "worktree", "add", "-q", "--detach", str(worktree), under_test["commit"])
+        # The copy holds the developer's uncommitted changes at a predictable path, so only they may read it.
+        os.chmod(worktree, 0o700)
         # restore resets the copy to the commit under test and replays the developer's changes, so a
         # reused worktree is set to the same code a fresh one would hold, keeping only its build artifacts.
         restore(session, folder, harness)
@@ -602,26 +604,12 @@ def planned_break_runs(paths):
     return found
 
 
-PLANNED_BREAK_SEP = " ;; "
-
-
-def parse_planned(planned):
-    """The `IDS: what` segments a planned-break argument names, one per ` ;; `, so one run can carry several
-    breaks aimed at different behaviors. StateError on a malformed segment."""
-    segments = []
-    for segment in planned.split(PLANNED_BREAK_SEP):
-        ids, sep, what = segment.partition(": ")
-        if not sep or not ids.strip() or not what.strip():
-            raise StateError(f'expected "<sub-feature IDs>: <what was broken>", one break per " ;; ", got {segment!r}')
-        segments.append((ids.strip(), what.strip()))
-    return segments
-
-
 def run_break(harness, repo, planned, command, patch=None):
-    """Run the check against the copy's edit, or against a saved patch, then restore the copy. The edit may hold
-    several breaks aimed at different behaviors, named in one argument and separated by ` ;; `, so one run
-    proves them all. Saves the edit as <time>.patch beside the evidence the check wrote and logs what each break caught."""
-    parse_planned(planned)
+    """Run the check against the copy's edit, or against a saved patch, then restore the copy.
+    Saves the edit as <time>.patch beside the evidence the check wrote and logs what the break caught."""
+    ids, sep, what = planned.partition(": ")
+    if not sep or not ids.strip() or not what.strip():
+        raise StateError(f"expected \"<sub-feature IDs>: <what was broken>\", got {planned!r}")
     located, _ = locate(harness, repo)
     session, folder = load_session(located, repo, harness)
     stop_leftover_check(folder)
@@ -717,22 +705,20 @@ def record_breaks(harness, evidence):
     if record.get("passed") is not False:
         return ["No break recorded: the break run did not fail"]
     cite = evidence.relative_to(harness).as_posix()
+    what = record["planned_break"]["what"]
     at = record.get("finished_at") or datetime.datetime.now(datetime.timezone.utc).strftime(validate.TIME_FORMAT)
     lines, entries = [], []
-    # One run may carry several breaks; credit each sub-feature to the break aimed at it, as its own clean catch.
-    for break_entry in validate.break_entries(record):
-        for sub_id in break_entry["sub_features"]:
-            failed_steps, spoiled_by = validate.break_catch(record, sub_id)
-            if not failed_steps:
-                lines.append(f"{sub_id}: no step judging it failed, so the break proves nothing for it; plan a break that reaches its own step")
-                continue
-            if spoiled_by is not None:
-                lines.append(f"{sub_id}: step '{spoiled_by}' failed before any step judging it, so the break proves nothing for it; "
-                             "plan a break of its own that the earlier steps pass through")
-                continue
-            entries.append({"at": at, "sub_feature": sub_id, "check": record["check"], "what": break_entry["what"],
-                            "step": failed_steps[0], "evidence": cite})
-            lines.append(f"Break recorded for {sub_id}: step '{failed_steps[0]}' caught it")
+    for sub_id in record["planned_break"]["sub_features"]:
+        failed_steps, spoiled_by = validate.break_catch(record, sub_id)
+        if not failed_steps:
+            lines.append(f"{sub_id}: no step judging it failed, so the break proves nothing for it; plan a break that reaches its own step")
+            continue
+        if spoiled_by is not None:
+            lines.append(f"{sub_id}: step '{spoiled_by}' failed before any step judging it, so the break proves nothing for it; "
+                         "plan a break of its own that the earlier steps pass through")
+            continue
+        entries.append({"at": at, "sub_feature": sub_id, "check": record["check"], "what": what, "step": failed_steps[0], "evidence": cite})
+        lines.append(f"Break recorded for {sub_id}: step '{failed_steps[0]}' caught it")
     if entries:
         log = harness / BREAKS_LOG
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -744,17 +730,16 @@ def record_breaks(harness, evidence):
 def replay(harness, evidence, command):
     """Run a saved break again: apply the patch beside the evidence to the repo it edited and run the check as run does."""
     record = validate.read_record(evidence)
-    breaks = validate.break_entries(record or {})
-    if not breaks:
+    planned_break = (record or {}).get("planned_break")
+    if not planned_break:
         raise StateError(f"{evidence} is not a planned break run")
-    repos = {entry.get("repo") for entry in breaks}
-    if None in repos or len(repos) != 1:
+    if not planned_break.get("repo"):
         raise StateError(f"{evidence} doesn't name the repo its break edited; run the break again with `vf.py break run`")
     patch = evidence.with_suffix(".patch")
     if not patch.is_file():
         raise StateError(f"{evidence} has no saved break at {patch}")
-    planned = PLANNED_BREAK_SEP.join(f"{','.join(entry['sub_features'])}: {entry['what']}" for entry in breaks)
-    return run_break(harness, repos.pop(), planned, command, patch.read_bytes())
+    planned = f"{','.join(planned_break['sub_features'])}: {planned_break['what']}"
+    return run_break(harness, planned_break["repo"], planned, command, patch.read_bytes())
 
 
 def status(harness):
@@ -821,9 +806,10 @@ def end(harness, repo):
                 point_app(harness, session, repo, scratch=False)
     else:
         point_app(harness, session, repo, scratch=False)
-        if started:
+        if worktree_of(worktree, top):
             # Keep the worktree and its build artifacts for the next session, but strip the developer's
-            # replayed changes so it sits at the clean commit, the base start restores onto.
+            # replayed changes and any break left there so it sits at the clean commit, the base start
+            # restores onto. This runs even after a start that crashed before the session was fully open.
             git_output(worktree, "reset", "-q", "--hard", session["commit"])
             git_output(worktree, "clean", "-fdq", "--", *validate.source_pathspec(worktree, harness))
         git_output(top, "worktree", "prune")
@@ -863,7 +849,7 @@ def main():
     actions.add_parser("start").add_argument("repo")
     run = actions.add_parser("run")
     run.add_argument("repo")
-    run.add_argument("planned_break", metavar='"IDS: WHAT WAS BROKEN [ ;; IDS: WHAT ELSE]"')
+    run.add_argument("planned_break", metavar='"IDS: WHAT WAS BROKEN"')
     actions.add_parser("replay").add_argument("evidence", type=Path)
     actions.add_parser("status")
     actions.add_parser("end").add_argument("repo")

@@ -858,81 +858,23 @@ def steps_judging(record, sub_id):
     return [step for step in record.get("steps") or [] if isinstance(step, dict) and sub_id in judged_by(step, record)]
 
 
-def break_entries(record):
-    """The planned-break entries a run records, as a list of {what, sub_features, repo}, or [] when the run is
-    not a planned break. One run may carry several breaks, each aimed at different sub-features."""
-    planned = record.get("planned_break")
-    return planned if isinstance(planned, list) else []
-
-
-def break_entry_for(record, sub_id):
-    """The one planned break in a run aimed at sub_id, or None. Each sub-feature is broken by at most one
-    break in a run, so a credit always names the break that caught it."""
-    for entry in break_entries(record):
-        if isinstance(entry, dict) and sub_id in (entry.get("sub_features") or []):
-            return entry
-    return None
-
-
-def planned_break_problems(planned, ids, repos):
-    """Problems in a run's planned_break: it must be a non-empty list of {what, sub_features, repo} breaks, each
-    aimed at sub-features among the run's and at a repo the behavior's check runs, and no sub-feature broken
-    by two breaks, so a batched run credits each break to the sub-features it alone broke."""
-    if not isinstance(planned, list) or not planned:
-        return ["has a planned_break that is not a non-empty list of breaks"]
-    problems, targeted = [], []
-    for entry in planned:
-        if not isinstance(entry, dict) or not isinstance(entry.get("what"), str) or not entry["what"].strip():
-            problems.append("has a planned_break that does not say what was broken")
-            continue
-        subs = entry.get("sub_features")
-        if not isinstance(subs, list) or not subs or not all(isinstance(item, str) and item in ids for item in subs):
-            problems.append("has a planned_break whose sub_features are not among the run's")
-        elif entry.get("repo") not in repos:
-            problems.append("has a planned_break whose repo is not one the behavior's check runs")
-        else:
-            targeted += subs
-    if len(targeted) != len(set(targeted)):
-        problems.append("has two planned breaks aimed at one sub-feature, so a credit can't name which break caught it")
-    return problems
-
-
-def other_break_targets(record, sub_id):
-    """The sub-features broken by the run's other breaks, not the one that names sub_id. A failed step
-    judging one of these is another break's own catch, not a knock-on, so it never spoils sub_id. Within
-    one break this is empty, so a break aimed at several sub-features keeps the strict rule: a step that
-    failed only because an earlier one did proves nothing, even when the earlier step judges a sub-feature
-    the same break names."""
-    own = break_entry_for(record, sub_id)
-    others = set()
-    for entry in break_entries(record):
-        if entry is not own:
-            others.update(entry.get("sub_features") or [])
-    return others
-
-
 def break_catch(record, sub_id):
     """How a planned break run caught sub_id: the names of the failed steps judging it, and the first step
-    before the earliest of them that failed without judging sub_id or another break's target, or None.
+    before the earliest of them that failed without judging sub_id, or None.
 
     The break earns sub_id credit only when it was caught and no such step failed first. A step judging
     sub_id that failed only because an earlier step failed proves nothing, even when that earlier step
-    judges another sub-feature the same break names: skip the order insert, and the payment step fails
-    only because no order exists. So one break credits the behavior whose step failed first, and any other
-    behavior that same step judges. When a run carries several breaks, a failed step that judges a
-    different break's target is that break's own catch, so it does not spoil this one; interference between
-    two breaks that are not independent can still fail a step for the wrong reason, which is why batched
-    breaks must break unrelated code (see ADR 0016).
+    judges another target: skip the order insert, and the payment step fails only because no order
+    exists. So one break credits the behavior whose step failed first, and any other behavior that same
+    step judges.
     """
-    others = other_break_targets(record, sub_id)
     caught, spoiled_by = [], None
     for step in record.get("steps") or []:
         if not isinstance(step, dict) or step.get("passed") is not False:
             continue
-        judged = judged_by(step, record)
-        if sub_id in judged:
+        if sub_id in judged_by(step, record):
             caught.append(step.get("name"))
-        elif not caught and spoiled_by is None and not (set(judged) & others):
+        elif not caught and spoiled_by is None:
             spoiled_by = step.get("name")
     return caught, spoiled_by
 
@@ -950,7 +892,13 @@ def record_problems(record, repos):
         problems.append("has a passed value that is not true, false, or null")
     planned = record.get("planned_break")
     if planned is not None:
-        problems += planned_break_problems(planned, ids, repos)
+        targets = planned.get("sub_features") if isinstance(planned, dict) else None
+        if not isinstance(planned, dict) or not isinstance(planned.get("what"), str) or not planned["what"].strip():
+            problems.append("has a planned_break that does not say what was broken")
+        elif not isinstance(targets, list) or not targets or not all(isinstance(item, str) and item in ids for item in targets):
+            problems.append("has a planned_break whose sub_features are not among the run's")
+        elif planned.get("repo") not in repos:
+            problems.append("has a planned_break whose repo is not one the behavior's check runs")
     if "ended_early" in record and planned is None:
         problems.append("was ended early by vf.py run but is not a planned break")
     steps = record.get("steps")
@@ -1185,8 +1133,7 @@ def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
         parts.append(f"reads {record['reads']}")
     parts.append(code)
     _, broken_record = broken
-    entry = break_entry_for(broken_record, sub_id) or {}
-    tested = f"Break-tested {str(broken_record.get('finished_at', ''))[:10]}: {entry.get('what', '')}"
+    tested = f"Break-tested {str(broken_record.get('finished_at', ''))[:10]}: {broken_record['planned_break']['what']}"
     return verdict("Verified", f"{', '.join(parts)}. {sentence(tested)} Evidence: {cite}", [], cite, absent_video=absent_video)
 
 
@@ -1213,9 +1160,9 @@ def not_break_tested_reason(proof):
 
 
 def aimed_breaks(records, sub_id):
-    """The accepted planned break runs aimed at sub_id, oldest first. A run counts when any of its breaks
-    names sub_id, so a batched run that broke several behaviors is an aimed break for each of them."""
-    return [(path, record) for path, record in records if break_entry_for(record, sub_id) is not None]
+    """The accepted planned break runs aimed at sub_id, oldest first."""
+    return [(path, record) for path, record in records
+            if isinstance(record.get("planned_break"), dict) and sub_id in (record["planned_break"].get("sub_features") or [])]
 
 
 def latest_break(breaks, record):

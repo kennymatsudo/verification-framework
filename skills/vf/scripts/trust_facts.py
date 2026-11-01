@@ -115,13 +115,12 @@ def break_facts(validate, harness_dir, sub_id, records):
     aimed = validate.aimed_breaks(records, sub_id)
     if aimed:
         path, record = aimed[-1]
-        entry = validate.break_entry_for(record, sub_id) or {}
         return {
             "date": str(record.get("finished_at") or "")[:10],
-            "what": entry.get("what"),
+            "what": record["planned_break"].get("what"),
             "evidence": path.relative_to(harness_dir).as_posix(),
             "on_hand": True,
-            "aimed_at": entry.get("sub_features"),
+            "aimed_at": record["planned_break"].get("sub_features"),
             "failed_steps": [step.get("name") for step in validate.steps_judging(record, sub_id) if step.get("passed") is False]
             if record.get("passed") is False else [],
         }

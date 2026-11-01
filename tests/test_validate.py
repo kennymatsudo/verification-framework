@@ -497,7 +497,7 @@ class VerifiedResultsTest(unittest.TestCase):
             "code": {"app": {"commit": self.COMMIT, "dirty": True, "dirty_hash": "a" * 64}},
             "harness_code": dict(self.CODE),
             "doctor": dict(self.DOCTOR),
-            "planned_break": [{"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "app"}],
+            "planned_break": {"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "app"},
             "started_at": "2026-10-09T09:59:00Z",
             "finished_at": "2026-10-09T10:00:00Z",
             "steps": [dict(self.STEP, passed=False)],
@@ -654,7 +654,7 @@ class VerifiedResultsTest(unittest.TestCase):
             ({"sub_features": "checkout.pay"}, "no accepted run covers it"),
             ({"steps": [dict(self.STEP, sub_features=["checkout.refund"])]}, "whose sub_features are not among the run's"),
             ({"steps": [dict(self.STEP, sub_features="checkout.pay")]}, "whose sub_features are not among the run's"),
-            ({"planned_break": [{"what": "x", "sub_features": ["checkout.pay"], "repo": "app"}]}, "no accepted run covers it"),
+            ({"planned_break": {"what": "x", "sub_features": ["checkout.pay"]}}, "no accepted run covers it"),
             ({"finished_at": None}, "has no finished_at in UTC"),
             ({"finished_at": "2026-10-13 14:02"}, "has no finished_at in UTC"),
             ({"started_at": 5}, "has no started_at in UTC"),
@@ -697,14 +697,9 @@ class VerifiedResultsTest(unittest.TestCase):
                                            ({"steps": [{"name": None, "passed": False}]}, "invalid step", "Pass not proven: "),
                                            ({"code": {"app": {"commit": self.COMMIT, "dirty": True}}}, "dirty_hash", "Pass not proven: "),
                                            ({"doctor": "skipped"}, "ran without the doctor reporting the app ready", "Pass not proven: "),
-                                           ({"planned_break": [{"sub_features": ["checkout.pay"], "repo": "app"}]}, "does not say what was broken", "Pass not proven: "),
-                                           ({"planned_break": [{"what": "x", "sub_features": ["checkout.pay"]}]},
+                                           ({"planned_break": {"sub_features": ["checkout.pay"]}}, "does not say what was broken", "Pass not proven: "),
+                                           ({"planned_break": {"what": "x", "sub_features": ["checkout.pay"]}},
                                             "whose repo is not one the behavior's check runs", "Pass not proven: "),
-                                           ({"planned_break": {"what": "x", "sub_features": ["checkout.pay"], "repo": "app"}},
-                                            "its check is not break-tested", "Passed but not break-tested: "),
-                                           ({"planned_break": [{"what": "a", "sub_features": ["checkout.pay"], "repo": "app"},
-                                                               {"what": "b", "sub_features": ["checkout.pay"], "repo": "app"}]},
-                                            "two planned breaks aimed at one sub-feature", "Pass not proven: "),
                                            ({"check": "other"}, "its check is not break-tested", "Passed but not break-tested: ")):
             with self.subTest(broken=broken), tempfile.TemporaryDirectory() as directory:
                 harness = self.make_verified_harness(Path(directory))
@@ -752,7 +747,7 @@ class VerifiedResultsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             harness = self.make_verified_harness(Path(directory), proof=dict(self.READS, repos=["app"]))
             self.two_repo_settings(harness)
-            self.write_break(harness, planned_break=[{"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "api"}],
+            self.write_break(harness, planned_break={"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "api"},
                              code={"app": {"commit": self.COMMIT, "dirty": False}, "api": {"commit": self.COMMIT, "dirty": False}})
             self.write_results(harness, self.LINE)
             result, output = run_check(harness, "--require-evidence")
@@ -898,10 +893,10 @@ class VerifiedResultsTest(unittest.TestCase):
             (self.LINE, {}, None),
             (refund_line, {}, "its check is not break-tested"),
             (refund_line.replace("payment capture skipped", "refund skipped"),
-             {"planned_break": [{"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"}],
+             {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"},
               "steps": [pay, dict(refund, passed=False)]}, None),
             # Aimed at the refund, but only the payment step failed.
-            (refund_line, {"planned_break": [{"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"}],
+            (refund_line, {"planned_break": {"what": "refund skipped", "sub_features": ["checkout.refund"], "repo": "app"},
                            "steps": [dict(pay, passed=False), refund]}, "no step judging it failed in its planned break"),
         )
         for line, broken, expected in cases:
@@ -945,7 +940,7 @@ class VerifiedResultsTest(unittest.TestCase):
                 edit_feature(harness, "checkout", lambda d: d["behaviors"]["checkout.refund"].update(self.READS))
                 self.write_evidence(harness, sub_features=both, steps=[dict(pay_and_refund, passed=True), pay, dict(refund, passed=True)])
                 self.write_break(harness, sub_features=both, steps=steps,
-                                 planned_break=[{"what": "payment capture skipped", "sub_features": targets, "repo": "app"}])
+                                 planned_break={"what": "payment capture skipped", "sub_features": targets, "repo": "app"})
                 self.write_results(harness, line)
                 result, output = run_check(harness, "--require-evidence")
                 if expected is None:
@@ -1046,7 +1041,7 @@ class BreakCatchTest(unittest.TestCase):
 
     def record(self, targets, steps):
         return {"sub_features": ["shop.order", "shop.pay"],
-                "planned_break": [{"what": "order insert skipped", "sub_features": targets, "repo": "app"}], "steps": steps}
+                "planned_break": {"what": "order insert skipped", "sub_features": targets, "repo": "app"}, "steps": steps}
 
     def test_a_knock_on_failure_earns_nothing_even_when_its_setup_is_named_as_a_target(self):
         # The payment step failed only because skipping the order insert left nothing to pay for.
@@ -1064,27 +1059,6 @@ class BreakCatchTest(unittest.TestCase):
         record = self.record(["shop.order", "shop.pay"], steps)
         self.assertEqual(validate.break_catch(record, "shop.order"), (["order is placed and paid"], None))
         self.assertEqual(validate.break_catch(record, "shop.pay"), (["order is placed and paid", "payment is saved"], None))
-
-    def batched(self, steps):
-        """A run carrying two breaks, each aimed at a different behavior, as one batched break run would record."""
-        return {"sub_features": ["shop.order", "shop.pay"], "steps": steps,
-                "planned_break": [{"what": "order insert skipped", "sub_features": ["shop.order"], "repo": "app"},
-                                  {"what": "capture skipped", "sub_features": ["shop.pay"], "repo": "app"}]}
-
-    def test_two_separate_breaks_each_earn_their_own_target(self):
-        # Each break is its own catch, so the order break's failed step does not spoil the pay break, and the reverse.
-        steps = [{"name": "order is placed", "passed": False, "sub_features": ["shop.order"]},
-                 {"name": "payment is saved", "passed": False, "sub_features": ["shop.pay"]}]
-        record = self.batched(steps)
-        self.assertEqual(validate.break_catch(record, "shop.order"), (["order is placed"], None))
-        self.assertEqual(validate.break_catch(record, "shop.pay"), (["payment is saved"], None))
-
-    def test_an_unexplained_failure_before_a_target_still_spoils_it(self):
-        # A failed step judging neither break's target is a knock-on, not a catch, so it still spoils what follows.
-        steps = [{"name": "page loads", "passed": False, "sub_features": []},
-                 {"name": "payment is saved", "passed": False, "sub_features": ["shop.pay"]}]
-        record = self.batched(steps)
-        self.assertEqual(validate.break_catch(record, "shop.pay"), (["payment is saved"], "page loads"))
 
 
 class HarnessFingerprintTest(unittest.TestCase):

@@ -34,7 +34,7 @@ broken = Path(scratch, "app.txt").read_text() == "broken\\n"
 folder = Path(sys.argv[2], "evidence", "pay")
 folder.mkdir(parents=True, exist_ok=True)
 ids, _, what = os.environ["VERIFY_PLANNED_BREAK"].partition(": ")
-record = {"check": "pay", "passed": not broken, "planned_break": [{"what": what, "sub_features": ids.split(","), "repo": "app"}]}
+record = {"check": "pay", "passed": not broken, "planned_break": {"what": what, "sub_features": ids.split(","), "repo": "app"}}
 (folder / f"run-{len(list(folder.glob('*.json')))}.json").write_text(json.dumps(record))
 sys.exit(1 if broken else 0)
 """
@@ -147,7 +147,7 @@ class BreakSessionTest(unittest.TestCase):
             self.assertIn("Check exited 1", output)
             evidence = harness / "evidence" / "pay" / "run-0.json"
             self.assertEqual(json.loads(evidence.read_text())["planned_break"],
-                             [{"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"}])
+                             {"what": "payment skipped", "sub_features": ["app.pay"], "repo": "app"})
             self.assertIn("+broken", (harness / "evidence" / "pay" / "run-0.patch").read_text())
             self.assertEqual((scratch / "app.txt").read_text(), "under test\n")
             self.assertEqual(code_state.checkout_state(scratch, harness)["dirty_hash"], under_test["dirty_hash"])
@@ -158,7 +158,7 @@ class BreakSessionTest(unittest.TestCase):
             self.assertEqual(result, 0, errors)
             self.assertIn("Check exited 1", output)
             replayed = json.loads((harness / "evidence" / "pay" / "run-1.json").read_text())
-            self.assertEqual(replayed["planned_break"][0]["sub_features"], ["app.pay"])
+            self.assertEqual(replayed["planned_break"]["sub_features"], ["app.pay"])
             self.assertFalse(replayed["passed"])
 
     def test_replay_refuses_a_break_that_does_not_name_its_repo(self):
@@ -166,7 +166,7 @@ class BreakSessionTest(unittest.TestCase):
             _, harness = make_project(directory)
             evidence = harness / "evidence" / "pay" / "run-0.json"
             evidence.parent.mkdir(parents=True)
-            evidence.write_text(json.dumps({"check": "pay", "planned_break": [{"what": "skipped", "sub_features": ["app.pay"]}]}))
+            evidence.write_text(json.dumps({"check": "pay", "planned_break": {"what": "skipped", "sub_features": ["app.pay"]}}))
             evidence.with_suffix(".patch").write_text("")
 
             result, _, errors = run(harness, "replay", str(evidence), "--", sys.executable, "-c", "pass")
@@ -254,7 +254,7 @@ app = json.loads(subprocess.check_output([sys.executable, str(checkout / "app.py
 assert Path(app["checkout"]) == checkout
 ids, _, what = os.environ["VERIFY_PLANNED_BREAK"].partition(": ")
 record = {"check": "cli", "passed": app["behavior"] == "working", "code": app["code"],
-          "planned_break": [{"what": what, "sub_features": ids.split(","), "repo": "app"}]}
+          "planned_break": {"what": what, "sub_features": ids.split(","), "repo": "app"}}
 folder = harness / "evidence" / "cli"
 folder.mkdir(parents=True, exist_ok=True)
 (folder / f"run-{len(list(folder.glob('*.json')))}.json").write_text(json.dumps(record))
@@ -355,6 +355,25 @@ sys.exit(0 if record["passed"] else 1)
             self.assertEqual(Path((project / "pointed.txt").read_text().strip()), scratch)
             self.assertEqual((scratch / "node_modules" / "dep.js").read_text(), "built once\n")
             self.assertEqual(run(harness, "end", "app")[0], 0)
+
+    def test_a_break_left_in_the_kept_copy_never_reaches_the_next_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, harness = make_project(directory)
+            run(harness, "start", "app")
+            scratch = Path((project / "pointed.txt").read_text().strip())
+            self.assertEqual(scratch.stat().st_mode & 0o777, 0o700)
+            # A break made but never run, as an abandoned session would leave it.
+            (scratch / "app.txt").write_text("broken\n")
+            (scratch / "stray.txt").write_text("left behind\n")
+
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+
+            self.assertEqual((scratch / "app.txt").read_text(), "first\n")
+            self.assertFalse((scratch / "stray.txt").exists())
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            self.assertEqual((scratch / "app.txt").read_text(), "first\n")
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+            self.assertEqual((project / "app.txt").read_text(), "first\n")
 
     def test_a_break_runs_on_a_repo_found_through_an_env_locator(self):
         with tempfile.TemporaryDirectory() as directory:
