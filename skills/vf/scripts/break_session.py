@@ -29,9 +29,11 @@ copy, no new worktree is made, and Stop and Start don't run, since the app alrea
 start runs harness.json's doctor first and refuses unless it reports the app ready. In place needs no
 uncommitted product code in the worktree and its commit's product code to match the marker's commit; a
 marked worktree that fails one of these, or a marker in a repo's main worktree, is refused, never quietly
-copied instead. Otherwise start makes a scratch git worktree of REPO at the commit under test, replays the
-developer's staged, unstaged, and untracked changes into it, confirms its code_state.py fingerprint
-matches the developer's checkout, and points the app at the copy: when harness.json's start is a command,
+copied instead. Otherwise start uses a scratch git worktree of REPO at a stable path kept between sessions,
+making it when it is absent and reusing the one left by the last session when it is there, so its build
+artifacts survive and a restart does an incremental build. Either way it resets the copy to the commit
+under test, replays the developer's staged, unstaged, and untracked changes into it, confirms its
+code_state.py fingerprint matches the developer's checkout, and points the app at the copy: when harness.json's start is a command,
 it runs Stop and then Start with {checkout:REPO} filled with the copy and every other repo's placeholder
 with that repo's checkout. Start must name {checkout:REPO}; when Start is `none`, nothing runs and the
 checks read the copy from VERIFY_CHECKOUT_<REPO>; when Start is `user`, only a person starts the app and a
@@ -62,7 +64,8 @@ session must be open.
 
 end refuses while the copy's HEAD differs from the session's commit, since a commit there may hold a break
 or someone's work. It then marks the session ending. For a scratch copy it points the app back at the
-developer's checkout (Stop, then Start with the developer's checkouts) and removes the copy; in place it
+developer's checkout (Stop, then Start with the developer's checkouts) and leaves the copy at the clean
+commit for the next session to reuse; in place it
 restores the copy, confirms it, restarts the app on it the same way unless reloads is true, and keeps the
 worktree. It closes the session and reports whether the developer's checkout, in place the copy itself,
 still has its starting fingerprint. Ending a repo with no session does nothing, so end is safe to repeat
@@ -89,9 +92,11 @@ not run, with a STOPPED: line on stderr.
 
 import argparse
 import datetime
+import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -121,6 +126,26 @@ OWNER_MARKER = "verify-scratch-owner.json"
 
 class GuardError(Exception):
     pass
+
+
+def scratch_home(top, repo):
+    """The stable path a repo's scratch worktree is kept at between sessions, so its build artifacts
+    survive and a restart does an incremental build instead of a full one. Keyed by the repo's own Git
+    folder, so two clones of the same repo never share one, and kept outside the source tree in the
+    system temp folder, where a reboot may clear it and `start` then rebuilds it once."""
+    key = hashlib.sha256(str(git_dirs(top)[1]).encode()).hexdigest()[:12]
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", repo)
+    return Path(tempfile.gettempdir()) / f"verify-break-{key}-{safe}"
+
+
+def worktree_of(path, top):
+    """Whether path is a usable linked worktree of top's repo, so a kept scratch copy can be reused."""
+    if not path.is_dir():
+        return False
+    try:
+        return git_dirs(path)[1] == git_dirs(top)[1]
+    except StateError:
+        return False
 
 
 def git_output(directory, *args, data=None, env=None):
@@ -497,13 +522,22 @@ def start(harness, repo):
         raise StateError("harness.json says only a person starts the app (start: user), so a planned break can't run here; record the proof as Not break-tested")
     marker = owner_marker(harness, repo, top)
     in_place = marker is not None
+    reused = False
     if in_place:
         require_in_place(harness, repo, top, marker)
         require_app_ready(harness, repo, top)
         # The worktree is both the code under test and the copy, so the session's checkout is the copy itself.
         worktree, scratch = top, checkout
     else:
-        worktree = Path(tempfile.mkdtemp(prefix=f"verify-break-{repo}-")).resolve()
+        # A stable path kept between sessions, so the app's build artifacts there survive and a restart
+        # does an incremental build. end leaves it at the repo's clean commit; a stale registration from a
+        # worktree a reboot cleared is pruned so a fresh one can take its place.
+        worktree = scratch_home(top, repo).resolve()
+        reused = worktree_of(worktree, top)
+        if not reused:
+            if worktree.exists() or worktree.is_symlink():
+                shutil.rmtree(worktree, ignore_errors=True)
+            git_output(top, "worktree", "prune")
         scratch = worktree / checkout.relative_to(top)
     under_test = code_state.checkout_state(checkout, harness)
 
@@ -531,7 +565,12 @@ def start(harness, repo):
     # Written before the worktree exists, so a crash from here on leaves a session that blocks ordinary runs and that end can clean up.
     save_session(folder, session)
     if not in_place:
-        git_output(top, "worktree", "add", "-q", "--detach", str(worktree), under_test["commit"])
+        if not reused:
+            git_output(top, "worktree", "add", "-q", "--detach", str(worktree), under_test["commit"])
+        # The copy holds the developer's uncommitted changes at a predictable path, so only they may read it.
+        os.chmod(worktree, 0o700)
+        # restore resets the copy to the commit under test and replays the developer's changes, so a
+        # reused worktree is set to the same code a fresh one would hold, keeping only its build artifacts.
         restore(session, folder, harness)
         if code_identity(code_state.checkout_state(scratch, harness)) != code_identity(under_test):
             raise GuardError(f"the scratch copy at {scratch} doesn't match {checkout}'s code after replaying its changes; run `vf.py break end {repo}`")
@@ -542,7 +581,8 @@ def start(harness, repo):
         print(f"Break session open for {repo} in place: {scratch} is a worktree `vf.py break worktree` made, and the "
               f"doctor reports the app ready on it, so nothing was restarted.")
     else:
-        print(f"Break session open for {repo} in a new scratch worktree at {worktree}.")
+        where = "the kept scratch worktree" if reused else "a new scratch worktree"
+        print(f"Break session open for {repo} in {where} at {worktree}.")
         point_app(harness, session, repo, scratch=True)
     print(f"Make the break as an uncommitted edit in {scratch}, then run:")
     print(f'  vf.py break run {repo} "<sub-feature IDs>: <what was broken>" -- <check command>')
@@ -766,8 +806,12 @@ def end(harness, repo):
                 point_app(harness, session, repo, scratch=False)
     else:
         point_app(harness, session, repo, scratch=False)
-        if worktree.exists():
-            git_output(top, "worktree", "remove", "--force", str(worktree))
+        if worktree_of(worktree, top):
+            # Keep the worktree and its build artifacts for the next session, but strip the developer's
+            # replayed changes and any break left there so it sits at the clean commit, the base start
+            # restores onto. This runs even after a start that crashed before the session was fully open.
+            git_output(worktree, "reset", "-q", "--hard", session["commit"])
+            git_output(worktree, "clean", "-fdq", "--", *validate.source_pathspec(worktree, harness))
         git_output(top, "worktree", "prune")
     shutil.rmtree(folder)
 
@@ -781,7 +825,8 @@ def end(harness, repo):
     if session["in_place"]:
         print(f"Break session for {repo} closed; {checkout} is back at its starting state, the app runs it again, and it stays in place.")
     else:
-        print(f"Break session for {repo} closed; the app is pointed back at {checkout}, which is unchanged.")
+        print(f"Break session for {repo} closed; the app is pointed back at {checkout}, which is unchanged. "
+              f"The scratch worktree at {worktree} is kept at the clean commit for the next session.")
     return 0
 
 

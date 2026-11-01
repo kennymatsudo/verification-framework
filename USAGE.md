@@ -15,7 +15,7 @@ Every behavior the framework tests is reported as **Verified**, **Failed**, or *
 | Was the instrument calibrated? | The check has failed when the behavior was broken on purpose. A check that passes on broken code can't tell working from broken |
 | Is the measurement in the notebook? | The run left a record anyone can open or rerun |
 
-The calibration is called a **planned break**: the behavior broken on purpose in a throwaway copy of the code, never in your working folder, and the check shown to fail there. The record of that failing run is kept, and a pass counts only while the check is still the one that was calibrated. Edit the check and the pass drops to Not verified until the break is run again.
+The calibration is called a **planned break**: the behavior broken on purpose in a copy of the code, never in your working folder, and the check shown to fail there. The record of that failing run is kept, and a pass counts only while the check is still the one that was calibrated. Edit the check and the pass drops to Not verified until the break is run again.
 
 The harness's `vf.py status` computes every verdict from the records; agents and people don't write them. [How a behavior earns Verified](docs/internals.md#how-a-behavior-earns-verified) follows one example step by step.
 
@@ -75,7 +75,7 @@ The agent writes the check. A second agent, which never sees the first one's rea
 Planned break: skip saving the payment record in billing/charge.py, caught by "payment is saved", passing through "order is placed".
 ```
 
-It makes that change in a throwaway copy of the repository, runs the check there, confirms it fails, and deletes the copy. The final report says how many behaviors are now Verified and what was broken to calibrate each check.
+It makes that change in a copy of the repository, runs the check there, confirms it fails, and puts the copy back. The final report says how many behaviors are now Verified and what was broken to calibrate each check.
 
 ### 3. Verify a change
 
@@ -229,9 +229,9 @@ A check can start in the browser or at the app's web API, the addresses the page
 
 ### Calibration: planned breaks
 
-A check is calibrated by a planned break. Before running any, the agent lists every break for the change in one message, each as `Planned break: <the change>, caught by <step>, passing through <earlier steps>`, and asks once for their shared side effects only when they have any. A framework script copies your code, uncommitted edits included, into a throwaway copy and points the app at it, or uses the copy a pull request run already made and the app already runs, runs the breaks one after another, saves each change beside its run's record, and puts the code back afterward. Each calibrated check then passes once more on the restored code. While that copy is in use, ordinary verification waits.
+A check is calibrated by a planned break. Before running any, the agent lists every break for the change in one message, each as `Planned break: <the change>, caught by <step>, passing through <earlier steps>`, and asks once for their shared side effects only when they have any. A framework script copies your code, uncommitted edits included, into a copy it keeps between runs so a restart rebuilds only what changed, or uses the copy a pull request run already made and the app already runs, runs the breaks one after another, saves each change beside its run's record, and puts the code back afterward. Each calibrated check then passes once more on the restored code. While that copy is in use, ordinary verification waits.
 
-A break calibrates only the behavior it was aimed at, and only when a step checking that behavior failed with nothing unplanned failing before it. Breaking payment can make a later receipt step fail too, but that proves nothing about the receipt, even when the break names the receipt as a target; the receipt needs a break of its own that payment passes through. The framework ends a break's run once it has caught or missed, so a check must clean up when interrupted and act the same in a break as in a pass. [Prove a check with a planned break](docs/internals.md#prove-a-check-with-a-planned-break) has the mechanics.
+A break calibrates only the behavior it was aimed at, and only when a step checking that behavior failed with nothing unplanned failing before it. Breaking payment can make a later receipt step fail too, but that proves nothing about the receipt, even when the break names the receipt as a target; the receipt needs a break of its own that payment passes through. Calibration is paid once per check, not on every verification: a routine verify reruns only the passes, and a kept break stays valid until the check's own code changes. The framework ends a break's run once it has caught or missed, so a check must clean up when interrupted and act the same in a break as in a pass. [Prove a check with a planned break](docs/internals.md#prove-a-check-with-a-planned-break) has the mechanics.
 
 ### What the report says
 
@@ -373,7 +373,7 @@ A probe's answer describes the app's current data. It isn't a Verified result on
 - **Instrument**: any tool on the bench: a check, probe, action, or the doctor.
 - **Check**: a program that uses the app the way a user would, then reads back what happened to judge the result.
 - **Evidence file**: the saved record of one check run, with each step's result and the code version tested.
-- **Planned break**: the smallest deliberate change that makes a behavior wrong, made in a throwaway copy of the code to show its check fails. The bench's calibration step.
+- **Planned break**: the smallest deliberate change that makes a behavior wrong, made in a copy of the code to show its check fails. The bench's calibration step.
 - **Doctor**: a command that reports whether the app is running and ready to test, and which code it's running, without changing anything.
 - **Probe**: a command that answers a question about the app's current data without changing anything.
 - **Action**: a command that does something a user or operator would do, through the same entry point they use.

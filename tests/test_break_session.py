@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -38,6 +39,20 @@ record = {"check": "pay", "passed": not broken, "planned_break": {"what": what, 
 sys.exit(1 if broken else 0)
 """
 
+
+
+def setUpModule():
+    # A scratch worktree is kept between sessions under the system temp folder; point that at a throwaway
+    # root so the worktrees this module leaves there are cleaned up and never clash with a real machine's.
+    global _SCRATCH_ROOT, _SCRATCH_PATCH
+    _SCRATCH_ROOT = tempfile.mkdtemp(prefix="verify-break-tests-")
+    _SCRATCH_PATCH = patch.object(break_session.tempfile, "gettempdir", return_value=_SCRATCH_ROOT)
+    _SCRATCH_PATCH.start()
+
+
+def tearDownModule():
+    _SCRATCH_PATCH.stop()
+    shutil.rmtree(_SCRATCH_ROOT, ignore_errors=True)
 
 
 def make_project(directory, start="echo {checkout:app} > pointed.txt", stop="none", reloads="yes"):
@@ -297,7 +312,7 @@ sys.exit(0 if record["passed"] else 1)
             self.assertTrue((project / "restarted.txt").exists(), "Reloads: no restarts the app before the break check")
             self.assertEqual((scratch / "app.txt").read_text(), "first\n")
 
-    def test_end_points_back_removes_the_copy_and_reports_a_changed_checkout(self):
+    def test_end_points_back_keeps_a_clean_copy_and_reports_a_changed_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
             project, harness = make_project(directory)
             run(harness, "start", "app")
@@ -307,8 +322,11 @@ sys.exit(0 if record["passed"] else 1)
 
             self.assertEqual(result, 0, errors)
             self.assertEqual(Path((project / "pointed.txt").read_text().strip()), project.resolve())
-            self.assertFalse(scratch.exists())
-            self.assertNotIn(str(scratch), git(project, "worktree", "list"))
+            # The copy is kept for the next session, at the clean commit with no leftover break.
+            self.assertTrue(scratch.exists())
+            self.assertIn(str(scratch), git(project, "worktree", "list"))
+            self.assertEqual(code_state.checkout_state(scratch, harness)["dirty_hash"], None)
+            self.assertEqual((scratch / "app.txt").read_text(), "first\n")
             self.assertEqual(ordinary_state(harness, {})["app"]["dirty_hash"], None)
             self.assertEqual(run(harness, "end", "app")[0], 0)
 
@@ -318,6 +336,44 @@ sys.exit(0 if record["passed"] else 1)
             self.assertEqual(result, 1)
             self.assertIn("app.txt", errors)
             self.assertIsNone(code_state.open_session(project))
+
+    def test_a_kept_copy_is_reused_and_its_build_artifacts_survive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, harness = make_project(directory)
+            (project / ".gitignore").write_text("pointed.txt\nrestarted.txt\nnode_modules/\n")
+            git(project, "commit", "-qam", "ignore node_modules")
+
+            self.assertIn("in a new scratch worktree", run(harness, "start", "app")[1])
+            scratch = Path((project / "pointed.txt").read_text().strip())
+            # Stand in for the app's build output, which git ignores and a restart would otherwise rebuild.
+            (scratch / "node_modules").mkdir()
+            (scratch / "node_modules" / "dep.js").write_text("built once\n")
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+            self.assertEqual((scratch / "node_modules" / "dep.js").read_text(), "built once\n")
+
+            self.assertIn("in the kept scratch worktree", run(harness, "start", "app")[1])
+            self.assertEqual(Path((project / "pointed.txt").read_text().strip()), scratch)
+            self.assertEqual((scratch / "node_modules" / "dep.js").read_text(), "built once\n")
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+
+    def test_a_break_left_in_the_kept_copy_never_reaches_the_next_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project, harness = make_project(directory)
+            run(harness, "start", "app")
+            scratch = Path((project / "pointed.txt").read_text().strip())
+            self.assertEqual(scratch.stat().st_mode & 0o777, 0o700)
+            # A break made but never run, as an abandoned session would leave it.
+            (scratch / "app.txt").write_text("broken\n")
+            (scratch / "stray.txt").write_text("left behind\n")
+
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+
+            self.assertEqual((scratch / "app.txt").read_text(), "first\n")
+            self.assertFalse((scratch / "stray.txt").exists())
+            self.assertEqual(run(harness, "start", "app")[0], 0)
+            self.assertEqual((scratch / "app.txt").read_text(), "first\n")
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+            self.assertEqual((project / "app.txt").read_text(), "first\n")
 
     def test_a_break_runs_on_a_repo_found_through_an_env_locator(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -350,7 +406,7 @@ sys.exit(0 if record["passed"] else 1)
             self.assertEqual(result, 0, errors)
             self.assertEqual((project / "local.env").read_text().strip(), f"SERVICE_DIR={service}")
             self.assertEqual(Path((project / "pointed.txt").read_text().strip()), service.resolve())
-            self.assertFalse(scratch.exists())
+            self.assertTrue(scratch.exists())
 
     def test_one_session_serves_every_repo_in_a_shared_checkout(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:
@@ -495,21 +551,27 @@ class InPlaceSessionTest(unittest.TestCase):
             self.assertIsNone(code_state.open_session(pr))
             self.assertEqual(starts(pr), [])
 
-    def test_start_copies_an_unmarked_checkout_as_before(self):
+    def test_start_copies_an_unmarked_checkout_and_reuses_the_kept_copy(self):
         with tempfile.TemporaryDirectory() as directory:
             project, _, _ = make_pr_worktree(directory)
             mine = Path(directory) / "mine"
             git(project, "worktree", "add", "-q", str(mine), "HEAD")
-            for name, checkout in (("the main worktree", project), ("a developer's worktree", mine.resolve())):
+            # Both are worktrees of one repo, so they share the one kept scratch copy; the second start reuses it.
+            seen = []
+            for name, checkout, expected in (("the main worktree", project, "in a new scratch worktree"),
+                                             ("a developer's worktree", mine.resolve(), "in the kept scratch worktree")):
                 with self.subTest(name):
                     harness = checkout / ".agents" / "skills" / "verify-app"
                     result, output, errors = run(harness, "start", "app")
                     self.assertEqual(result, 0, errors)
-                    self.assertIn("in a new scratch worktree", output)
+                    self.assertIn(expected, output)
                     scratch = Path((checkout / "pointed.txt").read_text().strip())
                     self.assertNotEqual(scratch, checkout)
+                    seen.append(scratch)
                     self.assertEqual(run(harness, "end", "app")[0], 0)
-                    self.assertFalse(scratch.exists())
+                    # The copy is kept between sessions rather than removed.
+                    self.assertTrue(scratch.exists())
+            self.assertEqual(seen[0], seen[1])
 
     def test_start_refuses_a_marked_worktree_that_fails_a_precondition(self):
         def uncommitted(project, pr, harness):
