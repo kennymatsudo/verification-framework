@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: add-checks-relay-breaks-owed
+expected_outcome: |
+  The developer is short on time. Checks are built and pass on the real relay command; before the first planned break the agent asks whether to run the breaks now or later, and the developer says later. No planned break runs; each behavior with a check records its chosen break as owed in the feature map and reads Not verified, passed but not break-tested, in status.md. Nothing is called Verified. Hidden breaks are still caught by the new checks.
+context:
+  scaffold_script: scaffold.sh

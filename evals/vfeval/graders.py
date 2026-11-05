@@ -475,6 +475,34 @@ def subagent_used(ctx, minimum=1):
 
 
 @grader
+def breaks_owed(ctx):
+    """No planned break ran, and every behavior with a check passed, records its break as owed, and is Not verified."""
+    if missing := _harness_missing(ctx):
+        return missing
+    evidence = ctx.harness / "evidence"
+    ran = [path.relative_to(evidence).as_posix() for path in sorted(evidence.rglob("*.json")) if _planned_break(path)] if evidence.is_dir() else []
+    log = evidence / "breaks.jsonl"
+    if log.is_file() and log.read_text().strip():
+        ran.append("breaks.jsonl")
+    verdicts = ctx.verdicts()
+    checked = {sub_id: entry for sub_id, entry in scaffold.feature_entries(ctx.harness).items() if entry.get("check")}
+    owed = [sub_id for sub_id, entry in checked.items()
+            if re.match(r"\s*owed\b", str(entry.get("not_break_tested") or ""), re.IGNORECASE)
+            and verdicts.get(sub_id, ("", ""))[0] == "Not verified" and "not break-tested" in verdicts[sub_id][1]]
+    notes = [f"breaks run: {ran or 'none'}", f"owed and shown as not break-tested: {owed} of {sorted(checked)}"]
+    if ran or not checked:
+        return Result(0, "\n".join(notes))
+    return Result(len(owed) / len(checked), "\n".join(notes))
+
+
+def _planned_break(path):
+    try:
+        return isinstance(json.loads(path.read_text()).get("planned_break"), dict)
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+@grader
 def no_app_code_in_checks(ctx):
     """No harness script imports the app's own code: reads come from outside the app."""
     if missing := _harness_missing(ctx):

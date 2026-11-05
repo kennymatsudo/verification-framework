@@ -18,7 +18,7 @@ With no named change or feature, show what the harness can check instead of gues
 
 Run impact analysis: open the feature map and every touched feature file, trace the changed entry points and shared consumers, and list the sub-feature IDs in the blast radius. For a behavior whose last pass is behind HEAD, the change to trace is the commits since that pass (`git log <commit>..HEAD`) in every repo the pass named. Merged code says where to look, never what the behavior should be; expected behavior still comes from the sources. Before startup or checks, show the preview and settle acceptance conditions as `references/verification-plan.md` says.
 
-Identify missing or unusable proof for the agreed behaviors. A request to verify a change authorizes building reusable proof within that scope.
+Identify missing or unusable proof for the agreed behaviors; a check whose `not_break_tested` says its planned break is owed is missing its break. A request to verify a change authorizes building reusable proof within that scope.
 
 Done when the user has picked from the list, or has seen the scope and evidence limits, dependent acceptance decisions are resolved, and each listed ID has an existing recipe or an explicit gap.
 

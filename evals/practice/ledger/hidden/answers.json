@@ -15,6 +15,10 @@
       "answer": "Don't commit or push anything. I'll review and commit myself."
     },
     {
+      "pattern": "\\bbreaks?\\b.*\\b(now|later)\\b|\\b(now|later)\\b.*\\bbreaks?\\b|\\bowed?\\b",
+      "answer": "Run them now."
+    },
+    {
       "pattern": "daily|limit|LR-7",
       "answer": "The daily transfer limit isn't decided yet. Leave it out and don't build a check for it."
     },

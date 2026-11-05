@@ -104,6 +104,22 @@ class Graders(unittest.TestCase):
             finally:
                 link.unlink()
 
+    def test_breaks_owed_passes_only_when_no_break_ran_and_each_pass_owes_one(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            harness = pathlib.Path(directory) / ".claude" / "skills" / "verify-x"
+            (harness / "features").mkdir(parents=True)
+            (harness / "evidence" / "rows").mkdir(parents=True)
+            (harness / "rules.md").write_text("")
+            entry = {"words": "rows convert", "check": "python3 check.py", "reads": "state", "not_break_tested": "owed: round down"}
+            (harness / "features" / "convert.json").write_text(json.dumps({"name": "C", "summary": "s", "behaviors": {"convert.rows": entry}}))
+            (harness / "status.md").write_text("- convert.rows: Not verified. Passed but not break-tested: owed: round down. Evidence: x\n")
+            practice = {"project_root": ".", "harness": ".claude/skills/verify-x"}
+            self.assertTrue(graders.GRADERS["breaks_owed"](graders.Context(directory, practice, {}, {}, [])).passed)
+            (harness / "evidence" / "rows" / "t.json").write_text(json.dumps({"planned_break": {"what": "round down"}}))
+            self.assertFalse(graders.GRADERS["breaks_owed"](graders.Context(directory, practice, {}, {}, [])).passed)
+
     def test_status_lines_parse(self):
         ctx = graders.Context.__new__(graders.Context)
         ctx.status_snapshot = "- a.b: Verified. x\n- c.d: Not verified. No check yet.\n- e.f: Failed. Step 'x'.\n"
