@@ -302,12 +302,21 @@ def no_new_commits(ctx):
 def product_code_clean(ctx, allow_worktrees=False):
     """The developer's checkout has no edits outside the skills directories, and no worktree was left behind.
 
-    allow_worktrees is for verify-pr, which keeps its worktree with the uncommitted evidence for the developer."""
+    allow_worktrees is for verify-pr, which keeps its worktree with the uncommitted evidence for the developer.
+    The framework's own planned-break copy (`verify-break-*`) is kept between sessions on purpose and passes while it
+    holds no edits, so a break left in it still fails."""
     notes, clean = [], True
     for name, repo in ctx.repos().items():
         changed = [line for line in scaffold.git(repo, "status", "--porcelain", "--untracked-files=all", check=False).splitlines()
                    if not any(prefix in line for prefix in SKILLS_DIRS)]
         worktrees = [line for line in scaffold.git(repo, "worktree", "list", "--porcelain", check=False).splitlines() if line.startswith("worktree ")]
+        for line in worktrees[1:]:
+            path = Path(line.split(" ", 1)[1])
+            if path.name.startswith("verify-break-"):
+                worktrees.remove(line)
+                if scaffold.git(path, "status", "--porcelain", check=False).strip():
+                    clean = False
+                    notes.append(f"{name}: the planned-break copy {path.name} still holds edits")
         if changed:
             clean = False
             notes.append(f"{name}: edited outside the harness: {changed[:8]}")
