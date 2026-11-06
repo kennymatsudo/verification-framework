@@ -97,7 +97,7 @@ Details: .agents/skills/verify-storefront/status.md
 
 Within the scope you agreed to, the agent can build a missing check in the same run, unless you asked for existing checks only.
 
-A check that drives a screen records its run. A failed run keeps the video, and the report links its replay page. When this computer can make clips, a verify run keeps the video of a screen check that passed too, and the agent offers to cut a short clip of the changed behavior for your pull request. Otherwise, keep a passing run's video by running the check with `VERIFY_KEEP_RECORDING=1`. Every kept recording is listed on the harness's `recordings.html`, and the report's `Details:` line names it.
+A check that drives a screen records its run. A failed run keeps the video, and the report links its replay page. Keep a passing run's video by running the check with `VERIFY_KEEP_RECORDING=1`. These recordings are raw and fast, made for diagnosing a run. A video to show people comes from a separate demo run; see [Record a demo](#record-a-demo). Every kept recording is listed on the harness's `recordings.html`, and the report's `Details:` line names it.
 
 ## Choose a job
 
@@ -114,6 +114,7 @@ There is one skill, vf, with a mode for each job. Type `/vf` followed by what yo
 | Find checks that would still pass if the behavior broke | audit-weak-checks | "Audit weak checks", "are our tests fake?" |
 | Understand how far to trust a pass | explain | "Can I trust these checks?", "how is checkout checked?" |
 | Test a pull request on the real app, yours or a teammate's | verify-pr | "Verify PR #123", or the PR's link |
+| Make a video of a feature for people to watch | record-demo | "Record a demo of checkout", "make a video of this feature for the PR" |
 
 ```mermaid
 flowchart LR
@@ -122,6 +123,7 @@ flowchart LR
       setup[setup<br/>proves the app can start]
       audit[audit<br/>gaps and weak checks]
       pr[verify-pr<br/>tests a PR]
+      demo[record-demo<br/>a video for people]
     end
     subgraph agent[you or your agent]
       verify[verify<br/>runs the checks a change touches]
@@ -134,10 +136,10 @@ flowchart LR
   end
   you[Your change] --> app[verify-&lt;app&gt;<br/>everyday entry point] --> verify
   harness[(Harness)]
-  setup & audit & pr & verify & build & tools & explain --> harness
+  setup & audit & pr & demo & verify & build & tools & explain --> harness
 ```
 
-Setup, the audits, and PR verification run only when you ask for them by name, so they never start on their own. Your agent may start vf to verify its own change, add the checks that change needs, or explain a pass. After setup, use the app's own verify skill for everyday work.
+Setup, the audits, PR verification, and demo recording run only when you ask for them by name, so they never start on their own. Your agent may start vf to verify its own change, add the checks that change needs, or explain a pass. After setup, use the app's own verify skill for everyday work.
 
 ## Set up a harness
 
@@ -305,9 +307,21 @@ vf's verify-pr mode tests a pull request on the real app, or several across repo
 
 You approve the list.
 
-It checks out each PR in a git worktree of its own, so your checkouts stay as they are and planned breaks happen in that copy, builds the approved checks on a branch named `vf-pr/<number>-checks`, and runs them with every PR's code loaded together. It drafts a comment and posts it only when you say so. When a check showed the changed behavior on screen, the draft comes with a short demo video, reviewed for anything that shouldn't be public.
+It checks out each PR in a git worktree of its own, so your checkouts stay as they are and planned breaks happen in that copy, builds the approved checks on a branch named `vf-pr/<number>-checks`, and runs them with every PR's code loaded together. It drafts a comment and posts it only when you say so. When the PR changes something a viewer can see, the list you approve also names a demo run and its cost, and you can drop it. The demo is a separate paced run, made as [Record a demo](#record-a-demo) describes, and the comment carries its video. The check runs themselves keep a video only when they fail.
 
 At the end it offers to open a pull request for the new checks, so they merge with the code they test.
+
+## Record a demo
+
+Ask with "/vf record a demo of checkout" when you want a video to show people: a pull request's reviewers, a launch, another team. vf's record-demo mode makes it from a demo run, a separate run paced at a person's speed, never from a check run's recording.
+
+1. **You approve a shot list.** The agent drafts it from what the feature is for: its behaviors' words, the change or PR, and the design docs. Each row names whose screen it is, what that person does, the caption the viewer reads, and what must be on screen at the end. It writes no code until you say yes.
+2. **The agent writes the demo** in the harness's `demos/` folder, outside `scripts/`, so no check's code changes and no pass goes stale. Every shot ends in a read of what it just showed, so a broken app fails the demo instead of being filmed.
+3. **You approve the run** with its cost, such as tickets opened in a shared sandbox, plus any check rerun it needs first.
+4. **The demo runs** through `vf.py run --demo --user-approved`. Its record goes under `evidence/demos/`, and it never changes `status.md`, since pacing can hide a race.
+5. **You get the MP4.** `vf.py demo <record> --steps <range>` makes it at real speed, with nothing cut between the first step shown and the last. The agent reads a still at every caption and screen switch before you see it, and tells you the path, length, size, the steps it shows and why, and any ordinary passing run on the same code of a behavior it shows. A demo can show a feature no check covers yet.
+
+The video plays the run as it happened: typing a character at a time, a pause before each click, each caption held long enough to read, and a full-screen card naming whose screen comes next at each switch between people. It is never sped up and nothing is cut inside it. One over the upload limit is encoded smaller, then split at step marks into parts. It shows; the ordinary passing run proves.
 
 ## Read results
 
@@ -337,7 +351,7 @@ Three limits to keep in mind:
 
 ### Recorded runs
 
-A check that uses a screen records a video and keeps it when the run fails, or when you ask by setting `VERIFY_KEEP_RECORDING=1`.
+A check that uses a screen records a video and keeps it when the run fails, or when you ask by setting `VERIFY_KEEP_RECORDING=1`. These are for diagnosing a run. Demo runs are listed separately, under Demos at the bottom of the page, each with its video and any ordinary pass on the same code of what it shows.
 
 Open `recordings.html` in the harness to see how the checks are doing. Each check gets one line for its latest run, failing checks first: the result (Failed, Passed, or Didn't finish), the first failed step or the reason it stopped, when it ran, and each repo's branch and commit. A Watch button opens the video a few seconds before the failure. Details show every step and every behavior with the moment in the video it was decided, each with its own Watch link, then the run's code, earlier runs, and the replay page. Filter or search at the top.
 
@@ -345,8 +359,7 @@ Two commands work on a single run:
 
 ```sh
 scripts/framework/vf.py replay <record>                  # replay page: video beside the steps, every verdict marked on a strip under it
-scripts/framework/vf.py clip <record> --steps 2-3        # short MP4 of those steps, for a pull request
-scripts/framework/vf.py clip <record> --steps 2-3 --demo # same, captioned with what the run did, waits cut short, the result held on screen
+scripts/framework/vf.py clip <record> --steps 2-3        # short MP4 of those steps, as recorded, for diagnosing the run
 ```
 
 Clips need ffmpeg. `vf.py clip --check` says whether this computer can make them (see the README's [Requirements](README.md#requirements)).
@@ -364,7 +377,7 @@ A probe's answer describes the app's current data. It isn't a Verified result on
 ## Glossary
 
 - **Skill**: a set of written instructions an AI agent loads to do one kind of job.
-- **Mode**: one job inside the skill. vf's modes are setup, verify, add-checks, add-tools, explain, audit-coverage, audit-weak-checks, and verify-pr.
+- **Mode**: one job inside the skill. vf's modes are setup, verify, add-checks, add-tools, explain, audit-coverage, audit-weak-checks, verify-pr, and record-demo.
 - **Verification harness**: the app's test bench, a `verify-<app>/` folder in your repository holding the app's manifest, feature map, checks, results, tools, and records.
 - **App verify skill**: the skill setup creates for one app, such as `verify-storefront`. The everyday way to verify a change; it points vf at the harness.
 - **Repository**: one Git project folder. An app may run code from several.
@@ -375,6 +388,7 @@ A probe's answer describes the app's current data. It isn't a Verified result on
 - **Instrument**: any tool on the bench: a check, probe, action, or the doctor.
 - **Check**: a program that uses the app the way a user would, then reads back what happened to judge the result.
 - **Evidence file**: the saved record of one check run, with each step's result and the code version tested.
+- **Demo run**: a separate run of a demo scenario, paced at a person's speed and captioned for an audience, recorded to make a video for people. It never decides a verdict and needs no check to exist first; each shot's own read still fails a broken app.
 - **Planned break**: the smallest deliberate change that makes a behavior wrong, made in a copy of the code to show its check fails. The bench's calibration step.
 - **Doctor**: a command that reports whether the app is running and ready to test, and which code it's running, without changing anything.
 - **Probe**: a command that answers a question about the app's current data without changing anything.

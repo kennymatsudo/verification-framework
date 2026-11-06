@@ -478,5 +478,41 @@ process.stdout.write(JSON.stringify(answers));
         self.assertIn("replay page", result.stdout)
 
 
+class DemosSectionTest(unittest.TestCase):
+    def demo(self, directory, proven):
+        root = Path(directory)
+        (root / "rules.md").write_text("# Verification rules\n")
+        code = {"app": {"commit": "abc", "dirty_hash": None}}
+        demo = root / "evidence" / "demos" / "checkout-demo" / "2026-11-06T14-00-00Z.json"
+        demo.parent.mkdir(parents=True)
+        (demo.with_suffix("")).mkdir()
+        (demo.with_suffix("") / "checkout-demo-demo-steps-1-to-2.mp4").write_bytes(b"x")
+        demo.write_text(json.dumps({"check": "checkout-demo", "demo": True, "accepted_by": "vf.py run", "passed": True,
+                                    "sub_features": ["checkout.pay"], "code": code, "harness_code": {}, "steps": [],
+                                    "started_at": "2026-11-06T14:00:00Z"}))
+        if proven:
+            check = root / "evidence" / "checkout-pay" / "1.json"
+            check.parent.mkdir(parents=True)
+            check.write_text(json.dumps({"check": "checkout-pay", "accepted_by": "vf.py run", "passed": True,
+                                         "planned_break": None, "sub_features": ["checkout.pay"], "code": code,
+                                         "harness_code": {}, "steps": [], "started_at": "2026-11-06T13:00:00Z"}))
+        return replay.recordings_page(root)
+
+    def test_a_demo_is_listed_apart_with_any_pass_on_its_code(self):
+        with tempfile.TemporaryDirectory() as directory:
+            page = self.demo(directory, proven=True)
+        self.assertIn('<h2 class="section">Demos</h2>', page)
+        self.assertIn('href="evidence/demos/checkout-demo/2026-11-06T14-00-00Z/checkout-demo-demo-steps-1-to-2.mp4"', page)
+        self.assertIn('Ordinary passing runs on the same code: <a href="evidence/checkout-pay/1.json">checkout.pay</a>', page)
+        self.assertIn("Videos for people come from separate demo runs", page)
+
+    def test_a_demo_no_check_covers_is_listed_with_no_warning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            page = self.demo(directory, proven=False)
+        self.assertIn("checkout-demo-demo-steps-1-to-2.mp4", page)
+        self.assertNotIn("Ordinary passing runs", page)
+        self.assertNotIn("Not proven", page)
+
+
 if __name__ == "__main__":
     unittest.main()

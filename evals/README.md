@@ -71,6 +71,8 @@ Each is under 200 lines of app code and starts in about a second. Together they 
 | `audit-weak-ledger-legacy` | vf audit (weak checks) | The four planted weak checks are named, the sound one is not, nothing is edited |
 | `audit-coverage-ledger-drift` | vf audit (coverage) | A renamed route is reported as drift and a new endpoint as a gap |
 | `explain-ledger` | vf explain | The Failed behavior and the breaks are explained; nothing is called Verified that is not |
+| `verify-never-records-demo` | verify-ledger, vf verify | The change is verified with existing checks; though the developer mentions showing the team, no demo is run and nothing appears under `demos/` or `evidence/demos/` |
+| `record-demo-asks-first` | vf record-demo | A shot list drawn from the requirements is shown and approval asked before any demo file is written; told not yet, nothing is written or run |
 
 Tags select subsets: `smoke` is one case per skill, about an hour of agent time; `setup`, `add-checks`, `verify`, `audit`, `explain`, and `guardrails` pick by job.
 

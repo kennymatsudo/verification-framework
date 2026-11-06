@@ -497,7 +497,7 @@ def write_tools(harness_dir):
 
 
 def credential_errors(harness_dir):
-    """Report each line in harness.json or a harness script that holds what looks like a credential, without echoing it."""
+    """Report each line in harness.json, a harness script, or a demo that holds what looks like a credential, without echoing it."""
     scripts = harness_dir / "scripts"
     files = [harness_dir / MANIFEST]
     if scripts.is_dir():
@@ -505,6 +505,9 @@ def credential_errors(harness_dir):
             path for path in scripts.rglob("*")
             if path.is_file() and path.relative_to(scripts).parts[0] != "framework" and "__pycache__" not in path.parts
         )
+    demos = harness_dir / "demos"
+    if demos.is_dir():
+        files += sorted(path for path in demos.rglob("*") if path.is_file() and "__pycache__" not in path.parts)
     errors = []
     for path in files:
         try:
@@ -885,7 +888,9 @@ def record_problems(record, repos):
     if not isinstance(record.get("check"), str) or not record["check"].strip():
         problems.append("has no check name")
     ids = record.get("sub_features")
-    if not isinstance(ids, list) or not ids or not all(isinstance(item, str) and item for item in ids):
+    # A demo run may show a feature no behavior in the map covers yet; it never decides a verdict.
+    if (not isinstance(ids, list) or (not ids and record.get("demo") is not True)
+            or not all(isinstance(item, str) and item for item in ids)):
         problems.append("has invalid sub_features")
         ids = []
     if record.get("passed") not in (True, False, None):

@@ -68,5 +68,13 @@
     "query": "Set up GitHub Actions to run our linter on every push.",
     "should_trigger": false,
     "holdout": true
+  },
+  {
+    "query": "/vf record a demo of the checkout flow for the PR",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you make a short video of the new search page for the team's Slack channel, recorded from our verification harness?",
+    "should_trigger": true
   }
 ]

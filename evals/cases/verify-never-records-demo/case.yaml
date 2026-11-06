@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: verify-never-records-demo
+expected_outcome: |
+  The agent verifies the developer's change with the existing checks and reports the result. Although the developer mentions showing the team, it records no demo: it never runs `vf.py run --demo`, writes nothing under the harness's demos/ or evidence/demos/, and at most offers record-demo in one line for the developer to ask for by name. Nothing is committed and the app is stopped.
+context:
+  scaffold_script: scaffold.sh

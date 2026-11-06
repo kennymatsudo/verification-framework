@@ -3,7 +3,7 @@
 
 Usage: vf.py COMMAND [ARGS ...]
 
-validate, code-state, break, replay, and clip run the framework script of that
+validate, code-state, break, replay, clip, and demo run the framework script of that
 name beside this one with ARGS, and exit with its exit code; each one's --help
 describes it. start, stop, and doctor run launch.py's command of that name: an
 optional launcher that records the code on disk when it starts the app, so a
@@ -20,8 +20,8 @@ checkout the run records for that repo (the scratch copy during a planned break)
 the code itself runs it from there. It gives the check two more: VERIFY_REPORT, a file the check appends
 one JSON object per line to, and VERIFY_RUN_DIR, the folder for its video, screenshots, and logs. The events are check
 (name, reads, and optionally sub_features), step (name, passed, at, and optionally sub_features, detail,
-evidence, snapshot), mark (kind, label, at), recording (video, starts_at), created (lists of IDs by
-kind), and stopped (reason). The check event may come anywhere in the report; one written first still
+evidence, snapshot), mark (kind, label, at, and optionally caption and screen), recording (video,
+starts_at, and optionally screen), created (lists of IDs by kind), and stopped (reason). The check event may come anywhere in the report; one written first still
 names the check if the run is killed. A check that reports no sub_features covers the ones its steps
 name, plus, when it judged none or stopped, the ones the feature map proves with this exact command,
 so a run that stops before judging what it was run for is recorded as stopped rather than refused.
@@ -52,6 +52,13 @@ code, stamps it "accepted_by": "vf.py run", builds its replay page, refreshes st
 the check's code. Otherwise it writes the record as <time>.json.refused, so no result can cite it,
 prints each reason on a REFUSED: line, and exits 2. A break session's check runs through it:
 vf.py break run REPO "IDS: WHAT" -- python3 scripts/framework/vf.py run -- CHECK COMMAND...
+
+vf.py run --demo --user-approved -- CHECK COMMAND... is a demo run: the same run, with VERIFY_DEMO=1 and
+VERIFY_KEEP_RECORDING=1 set for the check so it paces itself for people as rules.md's "Demo runs" section
+says. It refuses without --user-approved, which only a person's request for a demo allows, and refuses in a
+planned break. Its record carries "demo": true, may hold one recording per screen in `recordings`, and is saved
+under evidence/demos/<check>/<time>.json, where nothing that computes a verdict reads, so it never changes
+status.md or a check's latest run. An ordinary run unsets VERIFY_DEMO. demo.py makes its video.
 
 vf.py verify ID [ID ...] [--start] runs the proof of each named sub-feature: it looks up each one's
 check command in the feature map, runs every distinct command once through vf.py run, which runs the
@@ -121,7 +128,7 @@ INSTALL_COMMAND = "npx skills add kennymatsudo/verification-framework"
 # What every harness carries: the scripts that record runs, run breaks, compute verdicts, launch the app, gather
 # trust facts, and show recordings. The audit scripts stay in the installed skill (ADR 0012).
 FRAMEWORK_SCRIPTS = ["validate.py", "code_state.py", "break_session.py", "launch.py", "replay.py", "clip.py",
-                     "trust_facts.py", "vf.py"]
+                     "demo.py", "trust_facts.py", "vf.py"]
 SCRIPT_COMMANDS = {
     "validate": ("validate.py", "check the harness's rules copy, settings, feature map, and Verified results"),
     "code-state": ("code_state.py", "print every repo's Git state for an evidence file's code field"),
@@ -131,10 +138,16 @@ SCRIPT_COMMANDS = {
     "doctor": ("launch.py", "is the instance vf.py start started running the code on disk, and ready?"),
     "replay": ("replay.py", "build a run's replay page, or recordings.html with --recordings"),
     "clip": ("clip.py", "cut a clip or stills from a recorded run, or --check what this machine can make"),
+    "demo": ("demo.py", "make a video for people from a demo run, at real speed with no cuts inside it"),
 }
 # vf.py run hands a check these two variables: the file it appends events to, and its run folder.
 REPORT_VAR = "VERIFY_REPORT"
 RUN_DIR_VAR = "VERIFY_RUN_DIR"
+# A demo run's check paces itself for people when this is 1, and keeps its video.
+DEMO_VAR = "VERIFY_DEMO"
+KEEP_RECORDING_VAR = "VERIFY_KEEP_RECORDING"
+# Demo runs are saved one folder deeper, under evidence/demos/<check>/, where nothing that computes a verdict reads.
+DEMOS = "demos"
 EVENTS = ("check", "step", "mark", "recording", "created", "stopped")
 CHECK_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 # A run's folder lives here until its check event names the check.
@@ -283,11 +296,15 @@ def kept_file(value, label, run_dir, problems):
     return value
 
 
-def assemble(events, exit_code, run_dir, problems):
-    """Build the evidence record from a check's events and exit code, adding format problems."""
+def assemble(events, exit_code, run_dir, problems, demo=False):
+    """Build the evidence record from a check's events and exit code, adding format problems.
+
+    A demo run may report one recording per screen, each naming its `screen`; they go in `recordings`, and the
+    first is also the record's `recording`."""
     record = {"check": None, "sub_features": None, "passed": {0: True, 1: False}.get(exit_code), "reads": None,
               "steps": [], "marks": [], "created": {}, "stopped": None}
-    kept = {"recording": None, "snapshots": []}
+    kept = {"recordings": [], "snapshots": []}
+    recordings = []
     if not any(event["event"] == "check" for event in events):
         problems.append("reported no check event; one line of the report names the check and what it reads")
     for event in events:
@@ -298,6 +315,8 @@ def assemble(events, exit_code, run_dir, problems):
             record["check"], record["sub_features"], record["reads"] = event.get("name"), event.get("sub_features"), event.get("reads")
             if not isinstance(record["check"], str) or not CHECK_NAME.fullmatch(record["check"]):
                 problems.append(f"names check {record['check']!r}; a check name is letters, digits, dots, dashes, and underscores")
+            elif record["check"] == DEMOS:
+                problems.append(f"names check {DEMOS!r}, the folder demo runs are saved in; give the check another name")
         elif kind == "step":
             step = dict(event)
             snapshot = step.get("snapshot")
@@ -314,13 +333,15 @@ def assemble(events, exit_code, run_dir, problems):
                 problems.append(f"has a mark that is not a step or action mark with a label: {json.dumps(event)}")
             elif not isinstance(event.get("at"), (int, float)) or isinstance(event.get("at"), bool) or event["at"] < 0:
                 problems.append(f"has mark {event['label']!r} with no 'at' time")
+            for key in ("caption", "screen"):
+                if key in event and (not isinstance(event[key], str) or not event[key].strip()):
+                    problems.append(f"has mark {event.get('label')!r} whose {key} is not text")
             record["marks"].append(event)
         elif kind == "recording":
-            if "recording" in record:
-                problems.append("reported a second recording")
-            record["recording"] = dict(event)
+            recording = dict(event)
+            recordings.append(recording)
             if kept_file(event.get("video"), "recording", run_dir, problems):
-                kept["recording"] = record["recording"]
+                kept["recordings"].append(recording)
         elif kind == "created":
             for key, values in event.items():
                 if not isinstance(values, list):
@@ -338,6 +359,15 @@ def assemble(events, exit_code, run_dir, problems):
         problems.append("exited 1 but no step failed")
     if exit_code not in (0, 1) and record["stopped"] is None:
         record["stopped"] = f"the check exited {exit_code}"
+    if len(recordings) > 1 and not demo:
+        problems.append("reported a second recording")
+    elif len(recordings) > 1:
+        screens = [recording.get("screen") for recording in recordings]
+        if not all(isinstance(screen, str) and screen for screen in screens) or len(set(screens)) != len(screens):
+            problems.append("reported several recordings without a different screen named on each")
+        record["recordings"] = recordings
+    if recordings:
+        record["recording"] = recordings[0]
     if not record["marks"]:
         del record["marks"]
     if not record["created"]:
@@ -524,21 +554,23 @@ def mapped_to_command(harness, validate, command):
 def unique_stamp(evidence, stamp):
     """The run's timestamp, suffixed when a run in the same second already left a record, so neither overwrites the other."""
     candidate, attempt = stamp, 1
-    while (evidence / PENDING / candidate).exists() or any(evidence.glob(f"*/{candidate}.json")):
+    while ((evidence / PENDING / candidate).exists() or any(evidence.glob(f"*/{candidate}.json"))
+           or any(evidence.glob(f"{DEMOS}/*/{candidate}.json"))):
         attempt += 1
         candidate = f"{stamp}-{attempt}"
     return candidate
 
 
-def settle_run_folder(evidence, pending, stamp, name, kept):
+def settle_run_folder(evidence, pending, stamp, name, kept, demo=False):
     """Move the run's folder out of .pending into its check's folder once the check is named, and point the kept
-    recording and snapshots at it. Returns the evidence file's path."""
-    folder = evidence / name if name else evidence / PENDING
+    recordings and snapshots at it. A demo run's folder goes under evidence/demos/. Returns the evidence file's path."""
+    home = evidence / DEMOS if demo and name else evidence
+    folder = home / name if name else evidence / PENDING
     folder.mkdir(parents=True, exist_ok=True)
     run_dir = folder / stamp
-    run_folder = f"{name}/{stamp}" if name else f"{PENDING}/{stamp}"
-    if kept["recording"]:
-        kept["recording"]["video"] = f"{run_folder}/{kept['recording']['video']}"
+    run_folder = (f"{DEMOS}/{name}/{stamp}" if demo else f"{name}/{stamp}") if name else f"{PENDING}/{stamp}"
+    for recording in kept["recordings"]:
+        recording["video"] = f"{run_folder}/{recording['video']}"
     for snapshot, key in kept["snapshots"]:
         snapshot[key] = f"{run_folder}/{snapshot[key]}"
     if any(pending.iterdir()):
@@ -557,14 +589,18 @@ def build_pages(*arguments):
     return (built.stderr or built.stdout).strip() if built.returncode != 0 else ""
 
 
-def run_check(command):
+def run_check(command, demo=False):
     """Run a check, build its evidence file from the events it reports, and accept or refuse it.
 
-    Returns the lines to print and the exit code.
+    A demo run sets VERIFY_DEMO=1 and VERIFY_KEEP_RECORDING=1 for the check, is saved under evidence/demos/, and
+    leaves status.md alone, since its pacing can hide a race; demo.py makes its video. Returns the lines to print
+    and the exit code.
     """
     harness = harness_of(SCRIPTS_DIR, "vf.py run")
     validate, code_state = sibling("validate"), sibling("code_state")
     planned = os.environ.get("VERIFY_PLANNED_BREAK")
+    if demo and planned:
+        raise Stopped("a demo run never runs in a planned break; unset VERIFY_PLANNED_BREAK")
     try:
         broken_repo, session_folder = code_state.open_break_session(harness) if planned else (None, None)
     except code_state.StateError as error:
@@ -588,6 +624,10 @@ def run_check(command):
     report.write_text("")
 
     check_env = {**env, REPORT_VAR: str(report), RUN_DIR_VAR: str(pending)}
+    if demo:
+        check_env.update({DEMO_VAR: "1", KEEP_RECORDING_VAR: "1"})
+    else:
+        check_env.pop(DEMO_VAR, None)
     planned_break = parse_planned_break(planned, broken_repo)
     ended_early, harness_changed = None, harness_change_watch(harness, validate, command, harness_before)
     stopped_for = []
@@ -618,7 +658,7 @@ def run_check(command):
         # up is its verdict: the steps it reported are.
         events = [event for event in events if event["event"] != "stopped"]
         exit_code = 1 if any(event["event"] == "step" and event.get("passed") is False for event in events) else 0
-    record, kept = assemble(events, exit_code, pending, problems)
+    record, kept = assemble(events, exit_code, pending, problems, demo)
     problems += [f"was stopped early because {reason}" for reason in stopped_for]
     if record["sub_features"] in (None, []):
         judged = judged_by_steps(record["steps"])
@@ -630,9 +670,12 @@ def run_check(command):
                   finished_at=finished.strftime(validate.TIME_FORMAT), planned_break=planned_break)
     if ended_early:
         record["ended_early"] = ended_early
-    name = record["check"] if isinstance(record["check"], str) and CHECK_NAME.fullmatch(record["check"]) else None
+    if demo:
+        record["demo"] = True
+    name = (record["check"] if isinstance(record["check"], str) and CHECK_NAME.fullmatch(record["check"])
+            and record["check"] != DEMOS else None)
     report.unlink()
-    path = settle_run_folder(evidence, pending, stamp, name, kept)
+    path = settle_run_folder(evidence, pending, stamp, name, kept, demo)
     shown = path.relative_to(harness)
     if name:
         try:
@@ -657,8 +700,12 @@ def run_check(command):
     lines = [f"Accepted {shown}"]
     if failure := build_pages(str(path)):
         lines.append(f"replay page not built: {failure}")
-    elif kept["recording"]:
+    elif kept["recordings"]:
         lines.append(f"Recording kept. Watch it at {harness / 'recordings.html'}")
+    if demo:
+        lines.append("Demo run: status.md is unchanged, since a demo never decides a verdict. "
+                     f"List its steps with scripts/framework/vf.py demo {shown}")
+        return lines, exit_code
     return lines + refresh_status(harness, validate), exit_code
 
 
@@ -1019,6 +1066,19 @@ def earlier_format_warnings(harness_dir):
             "fails until it has them. Carry the settings over, then remove the old files."]
 
 
+def run_arguments(arguments):
+    """vf.py run's options and the check command after them: ({options}, command), or (options, None) when the
+    command is missing or the arguments cannot be read. Options come before `--`; without `--`, there are none."""
+    if "--" in arguments:
+        split = arguments.index("--")
+        options, command = arguments[:split], arguments[split + 1:]
+    else:
+        options, command = [], arguments
+    if not command or command[0].startswith("-"):
+        return set(options), None
+    return set(options), command
+
+
 def main():
     # The script commands and run pass their arguments through untouched, so they are dispatched before argparse sees them.
     if len(sys.argv) > 1 and sys.argv[1] in SCRIPT_COMMANDS:
@@ -1028,12 +1088,16 @@ def main():
         return subprocess.run([sys.executable, str(script), *passed]).returncode
 
     if len(sys.argv) > 1 and sys.argv[1] == "run":
-        command = sys.argv[3:] if sys.argv[2:3] == ["--"] else sys.argv[2:]
-        if not command or command[0].startswith("-"):
-            print("usage: vf.py run -- CHECK COMMAND...", file=sys.stderr)
+        options, command = run_arguments(sys.argv[2:])
+        if command is None or options - {"--demo", "--user-approved"}:
+            print("usage: vf.py run [--demo --user-approved] -- CHECK COMMAND...", file=sys.stderr)
+            return 2
+        if "--demo" in options and "--user-approved" not in options:
+            print("STOPPED: a demo run records a video for people and repeats the check's side effects; "
+                  "run it only once the user asked for it, with --user-approved", file=sys.stderr)
             return 2
         try:
-            lines, code = run_check(command)
+            lines, code = run_check(command, demo="--demo" in options)
         except Stopped as stopped:
             print(f"STOPPED: {stopped}", file=sys.stderr)
             return 2

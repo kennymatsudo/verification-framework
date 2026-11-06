@@ -12,11 +12,12 @@ The README has the install commands and the skills index; USAGE.md says what a p
 
 ## Where we are
 
-Updated 2026-10-27. Keep this section current; a stale one misleads.
+Updated 2026-11-06. Keep this section current; a stale one misleads.
 
 - The framework has had one redesign (the three skills, computed verdicts, the bench words), nine ADRs from it, and five more from a second redesign (`docs/redesign-proposal.md`: Start takes the checkout, per-behavior repos, fewer vendored scripts, one JSON manifest, one skill with a mode per job). Each step passed the smoke tier; the merge's one miss was the description not triggering, fixed and rerun (evals/README.md, "Seventh run"). No app outside this repo and one hand-converted pilot has used it yet. Most of what we believe about developer experience comes from practice repos, the eval suite's smoke runs, and that one converted app.
 - The eval suite (`evals/`) is the only test that a skill's wording still produces trustworthy checks. It has run a few times, on one model. Its numbers are early evidence, not a baseline to defend.
 - `docs/design.md` lists what the converted app exposed: break runs that cost too much on a slow app, harnesses that can't run from a second checkout, repos a run doesn't need but must still find. Several are signs the contract was shaped by one Python harness.
+- Since 2026-11-06, a video for people comes only from a demo run (`vf.py run --demo`, the record-demo mode, [ADR 0016](docs/adr/0016-videos-for-people-come-from-demo-runs.md)), never from a check run's recording; `clip.py --demo` is gone. No harness has recorded one through the new mode yet.
 - Nothing is published to a wide audience yet. We can still change the contract, rename things, and remove features cheaply. That window closes once harnesses exist in other people's repos.
 
 ## How to work here
@@ -74,8 +75,8 @@ The framework must fit setups we haven't seen: one repo or several, any language
 
 ## Skill conventions
 
-- **Name.** There is one skill, vf, and the generated `verify-<app>` entry point ([ADR 0014](docs/adr/0014-one-skill.md)). A mode is named for the verb of its job: setup, verify, add-checks, add-tools, explain, audit-coverage, audit-weak-checks, verify-pr. A new job is a new mode, never a new skill.
-- **Invocation.** vf and the generated `verify-<app>` entry point allow agent invocation, so an agent can verify its own change and a teammate who knows no skill name can ask how far to trust a pass. Who may start a job is a rule inside the mode: setup, audit-coverage, audit-weak-checks, and verify-pr open with the same sentence, word for word, that they run only when the person asked for that job by name in this session; `tests/test_preamble.py` holds it, and the eval case `verify-bare-offers-setup` guards it. The description names only the agent-started jobs as triggers. Keep the generated entry point thin: commands stay in the manifest and the procedure stays in the verify mode.
+- **Name.** There is one skill, vf, and the generated `verify-<app>` entry point ([ADR 0014](docs/adr/0014-one-skill.md)). A mode is named for the verb of its job: setup, verify, add-checks, add-tools, explain, audit-coverage, audit-weak-checks, verify-pr, record-demo. A new job is a new mode, never a new skill.
+- **Invocation.** vf and the generated `verify-<app>` entry point allow agent invocation, so an agent can verify its own change and a teammate who knows no skill name can ask how far to trust a pass. Who may start a job is a rule inside the mode: setup, audit-coverage, audit-weak-checks, verify-pr, and record-demo open with the same sentence, word for word, that they run only when the person asked for that job by name in this session; `tests/test_preamble.py` holds it, and the eval case `verify-bare-offers-setup` guards it. The description names only the agent-started jobs as triggers. Keep the generated entry point thin: commands stay in the manifest and the procedure stays in the verify mode.
 - **Description.** Say what the skill does, give a few example requests that should trigger it, and say which jobs a person starts by name.
 - **Body.** Open with what the skill owns ("You own ..."). Use numbered steps, each ending with a checkable "Done when" line. Close with Guardrails and a `Reply:` line that says what the final report contains, in the shape `references/messages.md` gives ([ADR 0003](docs/adr/0003-agree-on-proof-and-end-with-one-short-ask.md)). Each mode's procedure is `references/mode-<name>.md`, opening with "Follow this when vf runs in <mode> mode" and keeping its own guardrails under "Guardrails for this mode"; the skill body only picks the mode and points at the file.
 - **Guardrails.** Every skill's Guardrails open with the same four lines, word for word: change product code only in a scratch git worktree, removed afterward; drive and stop only app instances the run started or the user named, by process ID; ask before committing, pushing, posting, filing, or running anything with a real or shared side effect; never forge an event the real system would produce, and never loosen a check to turn a run green. `tests/test_guardrails.py` holds the exact wording.
@@ -96,7 +97,7 @@ The framework must fit setups we haven't seen: one repo or several, any language
 
 ## Scripts
 
-- Framework scripts use Python 3 standard library only. The one exception is optional: `clip.py` draws demo captions with Pillow when ffmpeg has no `drawtext` filter and Pillow is installed, and makes the demo without captions otherwise. Generated app tools use the project's language, drivers, and connection settings; reads that judge state never go through the app's own models or logic.
+- Framework scripts use Python 3 standard library only; `clip.py` and `demo.py` also call ffmpeg when it is installed. Generated app tools use the project's language, drivers, and connection settings; reads that judge state never go through the app's own models or logic.
 - Exit codes: 0 means OK, 1 means it found a problem, 2 means it couldn't run.
 - Unit tests live in `tests/test_<script>.py`, not beside the script, so an install ships no tests. Each names its script's folder as `SCRIPTS`. Run everything with `python3 tests/run.py`, which runs each module in its own process so the suite takes as long as its slowest module; `python3 -m unittest discover -s tests` runs them one at a time.
 

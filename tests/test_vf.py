@@ -261,6 +261,8 @@ if events is None:
     else:
         events += spec.get("steps", [{"event": "step", "name": "order is paid", "passed": True, "at": 1.0}])
     events += spec.get("more", [])
+for name in spec.get("echo_env", []):
+    events.append({"event": "step", "name": f"env {name}", "passed": True, "at": 1.5, "detail": os.environ.get(name, "")})
 if not spec.get("no_report"):
     with open(os.environ["VERIFY_REPORT"], "a") as report:
         for event in events:
@@ -725,6 +727,75 @@ class HarnessCommands(unittest.TestCase):
         self.assertTrue((self.harness / "evidence" / record["recording"]["video"]).is_file())
         self.assertFalse((self.harness / "evidence" / ".pending").exists())
         self.assertIn(f"Recording kept. Watch it at {self.harness / 'recordings.html'}", result.stdout)
+
+    def run_demo(self, options=("--demo", "--user-approved"), env=None, **spec):
+        command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", *options, "--",
+                   sys.executable, "-c", CHECK, json.dumps(spec)]
+        return subprocess.run(command, capture_output=True, text=True, env={**os.environ, **(env or {})})
+
+    def test_a_demo_run_needs_the_users_approval(self):
+        result = self.run_demo(options=("--demo",))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--user-approved", result.stderr)
+        self.assertFalse((self.harness / "evidence").exists() and any((self.harness / "evidence").rglob("*.json")))
+        self.assertEqual(self.run_demo(options=("--loud",)).returncode, 2, "an unknown option is refused")
+
+    def test_a_demo_run_paces_keeps_its_videos_and_never_touches_status(self):
+        screens = [{"event": "mark", "kind": "step", "label": "Step 1: pays", "at": 0.5, "caption": "The shopper pays",
+                    "screen": "Shopper view"},
+                   {"event": "recording", "video": "shopper.webm", "starts_at": 0.1, "screen": "Shopper view"},
+                   {"event": "recording", "video": "staff.webm", "starts_at": 0.2, "screen": "Staff view"}]
+        result = self.run_demo(echo_env=["VERIFY_DEMO", "VERIFY_KEEP_RECORDING"], more=screens,
+                               files=["shopper.webm", "staff.webm"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("status.md is unchanged", result.stdout)
+        self.assertFalse((self.harness / "status.md").exists(), "a demo run never writes status.md")
+        self.assertEqual(list((self.harness / "evidence").glob("*/*.json")), [], "no verdict reads a demo run")
+        [path] = (self.harness / "evidence" / "demos" / "pay").glob("*.json")
+        record = json.loads(path.read_text())
+        self.assertTrue(record["demo"])
+        self.assertEqual({step["name"]: step.get("detail") for step in record["steps"]}["env VERIFY_DEMO"], "1")
+        self.assertEqual({step["name"]: step.get("detail") for step in record["steps"]}["env VERIFY_KEEP_RECORDING"], "1")
+        self.assertEqual([item["video"] for item in record["recordings"]],
+                         [f"demos/pay/{path.stem}/shopper.webm", f"demos/pay/{path.stem}/staff.webm"])
+        self.assertEqual(record["recording"], record["recordings"][0])
+        self.assertTrue((self.harness / "evidence" / record["recordings"][1]["video"]).is_file())
+        self.assertEqual(record["marks"][0]["caption"], "The shopper pays")
+        self.assertIn("Demos", (self.harness / "recordings.html").read_text())
+
+    def test_a_demo_run_may_show_a_feature_no_behavior_covers_yet(self):
+        events = [{"event": "check", "name": "pay-demo", "sub_features": [], "reads": "what the shopper sees"},
+                  {"event": "mark", "kind": "step", "label": "Step 1: pays", "at": 0.5, "caption": "The shopper pays"},
+                  {"event": "step", "name": "the receipt shows", "passed": True, "at": 1.0}]
+        result = self.run_demo(events=events)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        [path] = (self.harness / "evidence" / "demos" / "pay-demo").glob("*.json")
+        self.assertEqual(json.loads(path.read_text())["sub_features"], [])
+
+    def test_an_ordinary_run_never_paces_and_keeps_one_recording(self):
+        result = self.run_check(env={"VERIFY_DEMO": "1"}, echo_env=["VERIFY_DEMO"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.record()["steps"][1]["detail"], "", "an ordinary run unsets VERIFY_DEMO")
+        shutil.rmtree(self.harness / "evidence" / "pay")
+        two = [{"event": "recording", "video": "a.webm", "starts_at": 0.1, "screen": "A"},
+               {"event": "recording", "video": "b.webm", "starts_at": 0.1, "screen": "B"}]
+        self.assert_refused(self.run_check(more=two, files=["a.webm", "b.webm"]), "reported a second recording")
+
+    def test_a_demo_with_several_recordings_names_a_screen_on_each_and_marks_carry_text(self):
+        record, problems = self.assemble([
+            {"event": "check", "name": "pay", "reads": "state"},
+            {"event": "mark", "kind": "action", "label": "Waits", "at": 1.0, "caption": ""},
+            {"event": "recording", "video": "a.webm", "starts_at": 0.1},
+            {"event": "recording", "video": "b.webm", "starts_at": 0.1}], 0, files=["a.webm", "b.webm"])
+        self.assertIn("has mark 'Waits' whose caption is not text", problems)
+        problems = []
+        vf.assemble([{"event": "check", "name": "pay", "reads": "state"},
+                     {"event": "recording", "video": "a.webm", "starts_at": 0.1},
+                     {"event": "recording", "video": "b.webm", "starts_at": 0.1}], 0, self.project / "run", problems, demo=True)
+        self.assertIn("reported several recordings without a different screen named on each", problems)
+
+    def test_a_check_cannot_be_named_for_the_demos_folder(self):
+        self.assert_refused(self.run_check(name="demos"), "names check 'demos'", folder=".pending")
 
     def test_refuses_a_recording_or_snapshot_that_is_not_in_the_run_folder(self):
         self.assert_refused(self.run_check(more=[{"event": "recording", "video": "video.webm", "starts_at": 0.2}]),

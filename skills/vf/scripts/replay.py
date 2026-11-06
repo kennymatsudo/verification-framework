@@ -4,8 +4,8 @@
 Usage: replay.py EVIDENCE_FILE [--out PAGE]
        replay.py --recordings [HARNESS_DIR]
 
-Reads evidence files at evidence/<check>/<run>.json, in the format rules.md
-defines. The page goes in the run's folder beside the evidence file (the
+Reads evidence files at evidence/<check>/<run>.json, and demo runs at
+evidence/demos/<check>/<run>.json, in the format rules.md defines. The page goes in the run's folder beside the evidence file (the
 folder named like the file), as replay.html, unless --out names another path.
 It opens on each failed step with a button that plays the moment it was
 decided, marks every verdict on a strip under the video, captions each step
@@ -19,7 +19,10 @@ rewrites the harness's recordings.html, the page a person opens to see how the
 checks are doing. It gives each check one line for its latest run, naming its
 first problem and the code it ran on, and opens the rest on request: every
 step and behavior with the moment it was decided, the run's code, and earlier
-runs. Planned breaks are left out, since they fail on purpose. It builds the
+runs. Planned breaks are left out, since they fail on purpose. Demo runs get
+their own Demos section below the checks, each with its videos and any
+ordinary passing run on the same code of what it shows; they never count as
+a check's run. It builds the
 replay page of any run that lacks one or whose page predates this script's
 page format, since a run's evidence never changes. A search box narrows it to
 checks matching every typed word. --recordings writes that page alone, for the
@@ -33,6 +36,7 @@ Exits 0 when the pages are written, 2 when the evidence cannot be read or
 
 import argparse
 import html
+import importlib.util
 import json
 import os
 import re
@@ -95,9 +99,13 @@ def run_folder(evidence_path):
     return evidence_path.with_suffix("")
 
 
+DEMOS = "demos"
+
+
 def evidence_root(evidence_path):
-    """The evidence/ directory of an evidence/<check>/<run>.json path."""
-    return evidence_path.resolve().parent.parent
+    """The evidence/ directory of an evidence/<check>/<run>.json path, or of a demo run's evidence/demos/<check>/<run>.json."""
+    folder = evidence_path.resolve().parent.parent
+    return folder.parent if folder.name == DEMOS and folder.parent.name == "evidence" else folder
 
 
 def harness_of(evidence_path):
@@ -580,6 +588,55 @@ def listed_runs(evidence_dir):
     return sorted(runs, key=lambda run: str(run[1].get("started_at") or ""), reverse=True)
 
 
+def listed_demos(evidence_dir):
+    """Every readable demo run as (evidence path, record), newest first."""
+    runs = []
+    for path in (evidence_dir / DEMOS).glob("*/*.json"):
+        try:
+            record = load(path)
+        except ReplayError:
+            continue
+        if record.get("demo") is True:
+            runs.append((path, record))
+    return sorted(runs, key=lambda run: str(run[1].get("started_at") or ""), reverse=True)
+
+
+def demo_proof(record, evidence_dir):
+    """demo.py's answer to which ordinary passes prove a demo run; loaded only when a page lists demos."""
+    spec = importlib.util.spec_from_file_location("harness_demo", Path(__file__).with_name("demo.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.proof(record, evidence_dir)
+
+
+def demos_html(evidence_dir):
+    """The Demos section: each demo run with its videos, and any ordinary pass on the same code of what it shows."""
+    runs = listed_demos(evidence_dir)
+    if not runs:
+        return ""
+    items = []
+    for path, record in runs:
+        folder = run_folder(path)
+        base = path.relative_to(evidence_dir.parent).with_suffix("").as_posix()
+        videos = sorted(folder.glob("*.mp4"))
+        links = "".join(link_html(f"{base}/{video.name}", video.name, "primary") for video in videos)
+        if has_video(record):
+            links += link_html(f"{base}/replay.html", "Replay", "secondary")
+        proven = [f'<a href="{html.escape(cited)}">{html.escape(sub_id)}</a>'
+                  for sub_id, cited, reason in demo_proof(record, evidence_dir) if not reason]
+        proof_html = f'<p class="note">Ordinary passing runs on the same code: {", ".join(proven)}</p>' if proven else ""
+        result = "Passed" if record.get("passed") is True else "Did not pass"
+        if not videos:
+            links += '<span class="muted">No video made yet</span>'
+        items.append(
+            f'<article class="check demo"><div class="row"><span class="badge {"passed" if record.get("passed") is True else "failed"}">{result}</span>'
+            f'<div class="main"><h2>{html.escape(str(record.get("check") or path.parent.name))}</h2>{proof_html}'
+            f'<p class="note">{time_html(record)}</p></div><div class="actions">{links}</div></div></article>'
+        )
+    return ('<h2 class="section">Demos</h2><p class="meta">Paced reruns recorded for people to watch. A demo never '
+            "decides a result.</p>" + "".join(items))
+
+
 def has_video(record):
     """Whether the run names a recording."""
     return isinstance(record.get("recording"), dict) and bool(record["recording"].get("video"))
@@ -905,6 +962,7 @@ table.code-table { border-collapse: collapse; width: 100%; max-width: 640px; tab
 .empty { border: 1px dashed var(--line); padding: 36px 28px; text-align: center; color: var(--muted); margin-top: 8px; }
 .empty strong { display: block; color: var(--text); font-size: 17px; font-weight: 500; margin-bottom: 6px; }
 .footnote { color: var(--muted); font-size: 13px; margin-top: 28px; }
+h2.section { font-size: 20px; font-weight: 600; margin: 40px 0 4px; }
 code { font: 12.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--chip); padding: 1px 5px; border-radius: 3px; }
 @media (max-width: 760px) {
   main { padding: 0 16px 48px; }
@@ -956,6 +1014,10 @@ if (search) {
   });
 }
 """
+
+
+TWO_OUTPUTS = ('<p class="footnote">Check runs keep fast, raw recordings for diagnosing a run: a screen check keeps '
+               "its video when it fails. Videos for people come from separate demo runs, listed under Demos.</p>")
 
 
 def recordings_page(harness_dir):
@@ -1020,6 +1082,9 @@ def recordings_page(harness_dir):
         body = "".join(blocks)
         newest = max((runs[0][1] for runs in runs_by_check.values()), key=lambda record: str(record.get("started_at") or ""))
         intro = f'<p class="meta">{counted(len(blocks), "check")} · last run {time_html(newest)}</p>'
+    elif listed_demos(evidence_dir):
+        body = ""
+        intro = '<p class="meta">Check runs</p>'
     else:
         body = (
             '<div class="empty"><strong>No check has run yet.</strong>'
@@ -1062,8 +1127,10 @@ def recordings_page(harness_dir):
 </div>
 </div>
 <p id="no-match" class="empty" hidden>No check matches.</p>
+{TWO_OUTPUTS if blocks else ""}
 {body}
 {left_out}
+{demos_html(evidence_dir)}
 </main>
 <script>{TIME_SCRIPT}{RECORDINGS_SCRIPT}</script>
 </body>
@@ -1105,7 +1172,7 @@ def write_recordings(harness_dir):
     if not is_harness(harness_dir):
         return None
     features = feature_metadata(harness_dir)
-    for path, _ in listed_runs(harness_dir / "evidence"):
+    for path, _ in listed_runs(harness_dir / "evidence") + listed_demos(harness_dir / "evidence"):
         if not replay_is_current(run_folder(path) / "replay.html"):
             write_page(path, features=features)
     target = harness_dir / "recordings.html"

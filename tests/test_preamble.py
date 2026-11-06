@@ -29,6 +29,7 @@ FINDS_AND_GATES = [
     "vf/references/mode-add-tools.md",
     "vf/references/mode-audit-coverage.md",
     "vf/references/mode-explain.md",
+    "vf/references/mode-record-demo.md",
 ]
 # Modes that also work on a harness this framework did not build only gate on it.
 GATES = [
@@ -37,7 +38,7 @@ GATES = [
 ]
 # Modes a person starts by name open with this sentence; the others never carry it.
 PERSON_ONLY = "Run it only when the person asked for this job by name in this session; otherwise offer it in one line and stop."
-PERSON_ONLY_MODES = ["mode-setup", "mode-audit-coverage", "mode-audit-weak-checks", "mode-verify-pr"]
+PERSON_ONLY_MODES = ["mode-setup", "mode-audit-coverage", "mode-audit-weak-checks", "mode-verify-pr", "mode-record-demo"]
 AGENT_MODES = ["mode-verify", "mode-add-checks", "mode-add-tools", "mode-explain"]
 
 

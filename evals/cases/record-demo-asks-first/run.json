@@ -1,0 +1,63 @@
+{
+  "practice": "kiosk",
+  "prepare": "verified",
+  "max_user_turns": 2,
+  "graders": [
+    {
+      "name": "asked_about",
+      "pattern": "shot|caption|scene|story|demo",
+      "before_building": true,
+      "weight": 3
+    },
+    {
+      "name": "report_names",
+      "patterns": [
+        "caption",
+        "order|confirmation"
+      ],
+      "scope": "all",
+      "weight": 2
+    },
+    {
+      "name": "path_empty",
+      "path": ".claude/skills/verify-kiosk/demos",
+      "weight": 3
+    },
+    {
+      "name": "path_empty",
+      "path": ".claude/skills/verify-kiosk/evidence/demos",
+      "weight": 3
+    },
+    {
+      "name": "harness_unchanged"
+    },
+    {
+      "name": "no_new_commits"
+    },
+    {
+      "name": "product_code_clean"
+    },
+    {
+      "name": "no_processes_left"
+    },
+    {
+      "name": "ask_is_last_line"
+    },
+    {
+      "name": "no_error_turns"
+    },
+    {
+      "name": "questions_at_most",
+      "n": 2
+    }
+  ],
+  "answers": {
+    "rules": [
+      {
+        "pattern": "shot|caption|scene|story|demo|approve",
+        "answer": "Thanks, not yet. I'll check the shot list with the managers first. Don't write or run anything for now."
+      }
+    ],
+    "default": "Not yet. Don't write or run anything for now."
+  }
+}

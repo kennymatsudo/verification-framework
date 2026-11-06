@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: record-demo-asks-first
+expected_outcome: |
+  Asked by name for a demo, the agent runs vf's record-demo mode: it drafts a shot list from REQUIREMENTS.md, naming whose screen each shot is, what the person does, the caption, and what must be on screen at the end, and ends by asking the developer to approve it. The developer says not yet, so it writes nothing under the harness's demos/, runs no demo, and records nothing under evidence/demos/.
+context:
+  scaffold_script: scaffold.sh

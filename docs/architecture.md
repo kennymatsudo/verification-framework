@@ -21,7 +21,7 @@ flowchart LR
   entry -->|delegates to vf| skills
 ```
 
-This repo holds one skill, `skills/vf/`, with a mode for each job ([ADR 0014](adr/0014-one-skill.md)). Setup, the two audits, and verify-pr run only when the person asks for them by name; verify, add-checks, add-tools, and explain an agent may start for its own change or question. Each mode's procedure is one file in `references/`. The shared contract lives in the same `references/` and `scripts/`, because the setup mode is what copies it into a harness. Setup also commits a copy of the skill, without `scripts/`, beside the harness, so a clone of the app's repo is the install ([ADR 0007](adr/0007-the-framework-ships-inside-the-app-repo.md)).
+This repo holds one skill, `skills/vf/`, with a mode for each job ([ADR 0014](adr/0014-one-skill.md)). Setup, the two audits, verify-pr, and record-demo run only when the person asks for them by name; verify, add-checks, add-tools, and explain an agent may start for its own change or question. Each mode's procedure is one file in `references/`. The shared contract lives in the same `references/` and `scripts/`, because the setup mode is what copies it into a harness. Setup also commits a copy of the skill, without `scripts/`, beside the harness, so a clone of the app's repo is the install ([ADR 0007](adr/0007-the-framework-ships-inside-the-app-repo.md)).
 
 A harness is a `verify-<app>/` folder in one of the app's skills directories. The folder holding that skills directory is the **project root**: the repo's top folder for a single-repo app, or the app's own folder in a monorepo. Commands run from it and the manifest's paths resolve from it ([ADR 0001](adr/0001-one-harness-per-app.md)). One harness can cover an app that spans several repos.
 
@@ -44,7 +44,7 @@ Every harness gets an identical `rules.md`, so anyone can check it for edits, up
 
 Two terms used throughout: the **doctor** is the harness's readiness check, a command that confirms the app is up and running the requested code. A **planned break** is a deliberate bug, made in a scratch copy of the code, that a new check must catch before its passes count.
 
-Setup copies eight Python scripts unchanged into each harness's `scripts/framework/`: the ones a run, a verdict, a launch, or a replay needs, plus `trust_facts.py`. `vf.py` is the one command people and the skill call for runs and records; the scripts below sit behind it, and the explain mode runs `trust_facts.py` by path. The three audit scripts stay in the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)).
+Setup copies nine Python scripts unchanged into each harness's `scripts/framework/`: the ones a run, a verdict, a launch, or a replay needs, plus `trust_facts.py`. `vf.py` is the one command people and the skill call for runs and records; the scripts below sit behind it, and the explain mode runs `trust_facts.py` by path. The three audit scripts stay in the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)).
 
 | Script | Job |
 | --- | --- |
@@ -53,7 +53,8 @@ Setup copies eight Python scripts unchanged into each harness's `scripts/framewo
 | `code_state.py` | Reports each repo's commit, branch, and uncommitted changes, so every record means the same thing by "version" |
 | `break_session.py` | Runs planned breaks in a scratch copy of the code it keeps between sessions, or in place in a worktree the run made for a pull request, and restores the product code afterward ([ADR 0005](adr/0005-credit-a-planned-break-only-to-what-it-broke.md), [ADR 0015](adr/0015-break-in-the-runs-own-copy-and-credit-only-a-clean-catch.md)) |
 | `launch.py` | An optional launcher and doctor for an app that runs straight from its checkout |
-| `replay.py`, `clip.py` | Turn a run's evidence and video into a replay page, the recordings page, and clips |
+| `replay.py`, `clip.py` | Turn a run's evidence and video into a replay page, the recordings page, and clips and stills for diagnosis |
+| `demo.py` | Turns a demo run into a video for people, at real speed with nothing cut inside it, whether or not a check covers what it shows yet ([ADR 0016](adr/0016-videos-for-people-come-from-demo-runs.md)) |
 
 
 ## Who owns what
@@ -64,6 +65,7 @@ flowchart LR
     setup[setup] -->|creates, proves readiness| H[(Harness)]
     audit[audit-coverage, audit-weak-checks] -->|gaps and weak checks| H
     pr[verify-pr] --> H
+    demo[record-demo] -->|demo scenario, demo runs| H
   end
   subgraph agent[modes an agent may start too]
     app[verify-&lt;app&gt;] --> verify[verify]
@@ -75,6 +77,7 @@ flowchart LR
   build -->|adds proven checks| H
   tools -->|adds proven probes and actions| H
   pr -->|PR claims| build
+  pr -->|visible change| demo
   explain -->|how far can I trust it?| H
 ```
 
@@ -86,12 +89,17 @@ flowchart LR
 | add-checks | Feature checks, each agreed with the user and proven to fail on a planned break | Feature files, `scripts/`, tool entries |
 | add-tools | Probes and actions, each proven on the real app | `scripts/`, tool entries |
 | explain | Telling someone what the harness checks and how far to trust it | Nothing in the repo |
+| record-demo | A video of a feature for people, from a demo run on a shot list the person approved | `demos/`, `evidence/demos/` |
 
 Three hand-offs carry most of the design ([ADR 0002](adr/0002-three-skills.md), whose three-skill split [ADR 0014](adr/0014-one-skill.md) reversed):
 
 1. **Setup stops at readiness.** Proving the environment and building feature proof are separate jobs.
 2. **The app entry point stays thin.** It names the harness and delegates. The procedure lives once, in the verify mode, so a fix reaches every app.
 3. **Verification delegates missing proof.** The verify mode hands coverage it lacks to the add-checks mode, inside the agreed scope. A request for existing checks only turns missing coverage into reported gaps.
+
+### Demos never touch a verdict
+
+A demo is a scenario written for an audience, kept in the harness's `demos/` folder. That folder sits outside `scripts/`, so no check's `harness_code` fingerprint includes it, and writing or running a demo never makes a pass stale. `vf.py run --demo` saves the run under `evidence/demos/<check>/`, one folder deeper than every reader that computes a verdict looks (`evidence/*/*.json`), so `status.md` and a check's latest run ignore it with no special case. A demo needs no check, since its own reads fail a broken app; `demo.py` names any ordinary passing run on the same code of what it shows, for a reader who wants proof.
 
 The weak-checks audit and verify-pr also work on a harness this framework didn't create, so they carry the few rules they need instead of relying on `rules.md`. Where the weak-checks rubric states a rule `rules.md` already has, it repeats the sentence word for word, and `tests/test_rubric.py` keeps the copies identical.
 

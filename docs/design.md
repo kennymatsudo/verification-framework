@@ -56,12 +56,18 @@ Linking the ignored folders into the worktree made the first converted app's doc
 
 **What settles it:** the first converted app running one verify-pr from a linked worktree, with clean code state in its evidence and a restart through `start`, plus a second app whose stack runs outside its repo, where a worktree needs no links.
 
+### Show an actor that has no screen
+
+A demo shows an actor driven through an API, such as a support agent replying through a helpdesk's API, only as a banner over the screen that sees the result. The viewer never sees that person's own tool. Recording it would mean signing a browser into that tool, which a harness may avoid on purpose for credentials or shared-state reasons.
+
+**What settles it:** a harness that can sign a browser into the actor's tool without new credentials or side effects, recording that screen as one more `screen` in a demo run, plus a viewer telling us the banner wasn't enough.
+
 ### Exercise three pieces on a second app
 
 Three parts of the contract came from one Python harness and haven't run anywhere else:
 
 - The recommended code layout in the add-checks mode. Settled once a TypeScript harness fits it without forcing.
-- Recorded runs, the replay page, and the clip tool. Settled once a harness in another language records a run that replays and cuts cleanly.
+- Recorded runs, the replay page, the clip tool, and demo runs. Settled once a harness in another language records a run that replays and cuts cleanly, and records a demo through the record-demo mode.
 - The required Stop command. Settled once a practice run restarts its app between checks and every hidden break reaches a verdict.
 
 ## Decisions
@@ -81,14 +87,14 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0013: One manifest for everything a script reads; prose stays prose](adr/0013-one-manifest-for-what-scripts-read.md)
 - [0014: One skill, with a mode for each job](adr/0014-one-skill.md)
 - [0015: Break in the run's own copy, and credit only a clean catch](adr/0015-break-in-the-runs-own-copy-and-credit-only-a-clean-catch.md) (proposed)
+- [0016: Videos for people come from demo runs](adr/0016-videos-for-people-come-from-demo-runs.md) (proposed)
 
 ## Parked ideas
 
-Four pieces shipped before this redesign (commit f220499 on main) and were removed before any app used them. Each is still in that tree:
+Four pieces shipped before this redesign (commit f220499 on main) and were removed before any app used them; captioned video picked up again in a new form as demo runs ([ADR 0016](adr/0016-videos-for-people-come-from-demo-runs.md)). The rest are still in that tree:
 
 - **Exploratory testing with invariants.** Rounds of one kind of change on the real app, judged by always-true rules written as code. Pick it up when a team wants bug-hunting beyond its known behaviors and has three invariants worth writing.
 - **A requirements coverage map.** A clause-by-clause map from a written spec to behaviors. Pick it up when a project needs to show every clause has a check.
-- **Captioned clips.** A caption bar naming the step under each clip. Pick it up if reviewers can't follow an uncaptioned clip.
 - **Lanes.** Four levels of proof named in every result. The one fact that mattered, approval for a real system, now lives under Actions in `rules.md`.
 
 A redesign review on 2026-10-21 set these aside:

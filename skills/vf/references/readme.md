@@ -15,7 +15,7 @@ This folder proves changes to <app> work by driving the running <surface> and re
 - **See what's covered:** the feature files in `features/`, one per feature; [status.md](status.md) lists every behavior.
 - **Debug by hand:** [tools.md](tools.md) lists every command. Check the app is up with `<doctor command>`.
 
-Keep a passing run's video by running a check with `VERIFY_KEEP_RECORDING=1`. A failed run keeps its video on its own.
+Keep a passing run's video by running a check with `VERIFY_KEEP_RECORDING=1`. A failed run keeps its video on its own. A video for people comes from a demo run instead: ask vf to record a demo of the feature.
 
 Files in `scripts/framework/` and `rules.md`, and the `vf` folder beside this one, are copied from verification-framework and are never edited here; vf's update mode replaces them all. Nothing to install: your agent finds the skill in this repo.
 ```

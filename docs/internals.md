@@ -68,15 +68,18 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 ├── scripts/
 │   ├── framework/              framework copies, never edited
 │   │   ├── vf.py  validate.py  code_state.py  break_session.py
-│   │   ├── launch.py  replay.py  clip.py  trust_facts.py
+│   │   ├── launch.py  replay.py  clip.py  demo.py  trust_facts.py
 │   │   └── framework.sha256    hash of each framework file as copied
 │   ├── doctor.py               app's own tool, in the app's language
 │   └── check_pay_order.py      app's own check
+├── demos/
+│   └── <name>/                 a demo scenario and its pacing helpers, outside every fingerprint
 └── evidence/
     ├── checkout-pay/           one folder per check
     │   ├── 2026-10-03T14-02-11Z.json   record of one run
     │   ├── 2026-10-03T14-02-11Z.patch  on a planned break, the edit it made
     │   └── 2026-10-03T14-02-11Z/       that run's video, screenshots, logs, replay page
+    ├── demos/<check>/          demo runs, which no verdict reads
     ├── doctor/                 proof the app could be started
     ├── launch/                 the record of an instance vf.py start started
     ├── breaks.jsonl            one line per behavior a planned break caught
@@ -87,7 +90,7 @@ Times in file names are UTC, with dashes so they sort in order. These locations 
 
 Beside the harness, the same skills directory holds `vf/`: a copy of the framework skill without its `scripts/`, so a clone of the repo needs no install. `sync` writes it, records its hashes in `framework.sha256` under paths such as `../vf/SKILL.md`, and writes the same copy into every other known skills directory at the project root.
 
-The eight framework scripts are Python and identical in every harness, so a clone of the repo holds everything a run, a verdict, or a replay needs. Call the run and record scripts through `vf.py`: `validate`, `code-state`, `break`, `replay`, and `clip` run the script of that name; `start`, `stop`, and `doctor` run `launch.py`; `run`, `verify`, `status`, `not-verified`, and `sync` are its own. The explain mode runs `trust_facts.py` directly, by path. The three audit scripts of the weak-checks audit are not copied into a harness; they run from the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)). The app's tools are written in the app's language, so they can reuse its database drivers and settings.
+The nine framework scripts are Python and identical in every harness, so a clone of the repo holds everything a run, a verdict, or a replay needs. Call the run and record scripts through `vf.py`: `validate`, `code-state`, `break`, `replay`, `clip`, and `demo` run the script of that name; `start`, `stop`, and `doctor` run `launch.py`; `run`, `verify`, `status`, `not-verified`, and `sync` are its own. The explain mode runs `trust_facts.py` directly, by path. The three audit scripts of the weak-checks audit are not copied into a harness; they run from the installed vf ([ADR 0012](adr/0012-vendor-only-what-bears-trust.md)). The app's tools are written in the app's language, so they can reuse its database drivers and settings.
 
 **Who writes and reads each file:**
 
@@ -100,10 +103,12 @@ The eight framework scripts are Python and identical in every harness, so a clon
 | `features/` | add-checks mode; verify mode when a change alters a behavior; audit mode when a description drifts | `validate.py`, every mode |
 | `tools.md` | `vf.py tools`, from the manifest's tool entries, after setup adds the doctor and add-tools or add-checks each later tool | Skills, and agents debugging without a skill |
 | `scripts/` | Setup for the doctor, add-tools and add-checks for every later tool | `vf.py run`, the skills |
-| `evidence/<check>/<time>.json` | `vf.py run`, from the events the check reports | `validate.py`, `replay.py`, `clip.py`, agents diagnosing a failure |
+| `evidence/<check>/<time>.json` | `vf.py run`, from the events the check reports | `validate.py`, `replay.py`, `clip.py`, `demo.py` (to name a pass on the demo's code), agents diagnosing a failure |
 | `evidence/<check>/<time>.patch` | `vf.py break run`, on a planned break | `vf.py break replay` |
 | `evidence/breaks.jsonl` | `vf.py break run` | the explain mode's `trust_facts.py`, when the break's record isn't on this machine |
 | `evidence/not-verified.jsonl` | `vf.py not-verified` | `vf.py status`, `validate.py` |
+| `demos/<name>/` | The record-demo mode, from a shot list the person approved | `vf.py run --demo`, never a verdict |
+| `evidence/demos/<check>/<time>.json` | `vf.py run --demo` | `demo.py`, `replay.py`'s Demos section |
 | `README.md`, `recordings.html` | Setup; `replay.py` after every run | People |
 
 ### Keeping the copies current
@@ -191,8 +196,8 @@ Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id
 | --- | --- |
 | `check` | Once, best first: the check's name, whether it reads stored state or the screen, and optionally the behavior IDs it claims to prove |
 | `step` | A step's name, whether it passed, when it was decided, and optionally the behaviors it judges, a detail, evidence, and a snapshot |
-| `mark` | A point on the timeline: where a numbered step begins, or where a viewer would want to look |
-| `recording` | The kept video's file name and when it began |
+| `mark` | A point on the timeline: where a numbered step begins, or where a viewer would want to look; optionally a `caption` people read there in a demo, and the `screen` that shows from then on |
+| `recording` | The kept video's file name and when it began; a demo run may report one per screen, each naming its `screen` |
 | `created` | The IDs of things the run made, by kind |
 | `stopped` | Why the run couldn't reach a verdict |
 
@@ -224,8 +229,9 @@ A refused record is written as `<time>.json.refused`, so nothing can cite it but
 | `doctor` | The doctor's exit code and last lines | Verified needs exit 0 |
 | `started_at`, `finished_at` | UTC to the second. Both required | The most recent run by `finished_at` decides each verdict |
 | `steps` | Each step's name, `sub_features`, pass or fail, `at`, `detail`, and IDs read. A failed step in a browser check names a `snapshot` | In a one-behavior check, a step with no `sub_features` judges that one. In a multi-behavior check it judges none |
-| `marks` | The timeline: time, kind (`step` or `action`), label | Lines up the video |
+| `marks` | The timeline: time, kind (`step` or `action`), label, and optionally `caption` and `screen` | Lines up the video; captions and screen switches in a demo |
 | `recording` | The video's path inside `evidence/` and `starts_at` | Replay and clips |
+| `recordings`, `demo` | On a demo run only: `demo: true`, and every screen's recording when there are several, the first also being `recording` | `demo.py` |
 | `created` | IDs of things the run created | Cleanup deletes only these |
 | `stopped` | Why the run stopped early, or `null` | A stopped run has no verdict |
 | `accepted_by` | `"vf.py run"` once accepted | Verified and its break both need it |
@@ -393,7 +399,7 @@ It also fails any line in `harness.json` or `scripts/` (outside `scripts/framewo
 
 ## Replay pages and clips
 
-`replay.py` and `clip.py` read only a run's evidence file and video and never contact the app, so the same copy works in every harness.
+`replay.py`, `clip.py`, and `demo.py` read only evidence files and videos and never contact the app, so the same copy works in every harness.
 
 ### Replay page
 
@@ -407,7 +413,7 @@ Pages are written through a temporary file and an atomic replace, so overlapping
 
 ### Recordings page
 
-`recordings.html`, at the harness's top level, is how a person sees how the checks are doing without knowing a run's file name. Setup creates it with `vf.py replay --recordings`, every check run rebuilds it, and `clip.py` rebuilds it after cutting a clip. Each rebuild also builds any run's missing replay page and refreshes pages built in an older page format. Only a folder holding `rules.md` counts as a harness; given evidence elsewhere, `replay.py` writes the replay page alone.
+`recordings.html`, at the harness's top level, is how a person sees how the checks are doing without knowing a run's file name. Setup creates it with `vf.py replay --recordings`, every check run and demo run rebuilds it, and `clip.py` and `demo.py` rebuild it after making a video. Each rebuild also builds any run's missing replay page and refreshes pages built in an older page format. Only a folder holding `rules.md` counts as a harness; given evidence elsewhere, `replay.py` writes the replay page alone.
 
 The page shows one line per check for its latest run: failing first, then unfinished, then passing. A check is titled with the feature whose behaviors name it as their `check` most often, and the first sentence of that feature file says what it tests. The line gives the result (Failed, Didn't finish, Passed), the first failed step or stop reason, when it ran, each repo's branch and short commit, and a button that opens the replay page just before the failure.
 
@@ -421,12 +427,30 @@ Details list every step with its detail, the time in the video its verdict was d
 | --- | --- |
 | `vf.py clip <evidence file>` | Lists each step's number, time range, and label |
 | `... --steps 2-3` | A short MP4 of steps 2 and 3, starting half a second early, named for what it shows: `checkout-pay-steps-2-to-3-customer-pays-2026-10-03-1402.mp4` |
-| `... --steps 2-3 --demo` | A reviewer's demo: numbered captions from the step and action marks in the window, each shown until the next (of marks at the same moment, the last), centered above the bottom edge; each still stretch over a second cut to its first second, the last frame held 1.5 seconds, scaled to 1280 pixels wide, compressed to fit GitHub's 10 MB limit. Stops and says to cut fewer steps if it can't |
 | `... --frames failed` | Three stills per failed step: 3 seconds before, at, and 1 second after |
 | `... --frames 2` | Four stills spread across step 2 (the last step is assumed to last 10 seconds) |
 | `vf.py clip --check` | Whether this computer can make stills and clips, and how to install what's missing. Exit 1 when something is |
 
 Clips need ffmpeg and ffprobe. Replay pages, screenshots, and logs need neither. Agents never install them; they show the install command from `--check`.
+
+### Demo runs and demo videos
+
+A video for people comes from a demo run, never from a check run ([ADR 0016](adr/0016-videos-for-people-come-from-demo-runs.md)). `vf.py run --demo --user-approved -- <command>` refuses without `--user-approved` or in a planned break, sets `VERIFY_DEMO=1` and `VERIFY_KEEP_RECORDING=1`, and judges the record by the usual rules. It adds `"demo": true`, keeps several recordings when each names a different `screen`, saves the record as `evidence/demos/<check>/<time>.json`, and leaves `status.md` alone. Every ordinary run unsets `VERIFY_DEMO`, and a check named `demos` is refused, since that is the demos folder. Demo scenarios live in the harness's `demos/`, outside `scripts/`, so they appear in no check's `harness_code`.
+
+| Command | Makes |
+| --- | --- |
+| `vf.py demo <record>` | Lists each step with its caption, the screens, and any ordinary pass on the same code of a behavior the demo names |
+| `... --steps 3-6` | The MP4, named like `checkout-demo-demo-steps-3-to-6-2026-11-06-1402.mp4`, and a still a second after each caption and screen switch, plus the first and last frame, under `frames/` |
+| `... --max-mb N` | The size limit, default 10 (GitHub's free plan; paid plans allow 100) |
+| `vf.py demo --check` | Whether ffmpeg with libx264 and ffprobe are here. Exit 1 when not |
+
+- **Range.** From half a second before the first chosen step's mark to the next step mark after the last, or to where the first recording to end runs out. Every step mark in the range needs a `caption`; a missing one stops the video and names the step.
+- **Screens.** With one recording, it plays as recorded. With several, the output shows at each moment the screen the latest `screen` mark named, taken from that screen's video at the same moment of the run, so no time is lost at a switch. A screen mark naming an unrecorded screen, or no screen mark before the range, stops it.
+- **Encoding.** The recording's own size, H.264 at CRF 20, 25 frames a second, faststart. Over the limit it tries CRF 22, 24, and 26, then splits the range at the middle step mark into `part-1-of-2` and so on, recursively. One step over the limit at CRF 26 stops with its size. Each part's length must match the run time it covers to within a second.
+- **Proof.** For each behavior in the record's `sub_features`, the latest accepted ordinary run covering it (never a planned break) must have passed, on the same commit and `dirty_hash` for every repo it records, with every `harness_code` file both runs hold unchanged. Otherwise no video, and the listing says what's missing.
+- **Overlays.** `demo.py` draws nothing. The scenario draws captions, screen badges, and switch cards in the page with vf's `references/demo-overlay.js`; `references/demo-playwright.md` is an example scenario.
+
+`replay.py` builds a replay page for each demo run and lists demo runs in a Demos section under the checks on `recordings.html`, each with its MP4s and any ordinary passes on the same code of what it shows.
 
 **Diagnosing a failed step.** An agent reads the step's `detail`, the page text saved when it failed, and the browser's errors and failed requests from the seconds before. If those don't explain it, it looks at the stills from `--frames failed`. Agents don't watch the video.
 
@@ -454,5 +478,5 @@ Three scripts for harnesses whose checks are written in Python, run from the ins
 
 - Exit 0 means OK, 1 means it found a problem, 2 means it couldn't run, explained on a `STOPPED:` line.
 - `validate.py` prints one line per problem starting with `ERROR` or `WARN`, then a summary. `code_state.py` prints JSON. The audit scripts print one item per line.
-- They use only what comes with Python 3. ffmpeg is optional, and only `clip.py` uses it. A demo's captions use ffmpeg's `drawtext` filter when the build has it, else Pillow when it is installed; with neither, the demo has no captions, `clip.py` says so on stderr, and `--check` gives the install line. Pillow is imported only then, so no script depends on it.
+- They use only what comes with Python 3. ffmpeg is optional, and only `clip.py` and `demo.py` use it; each one's `--check` gives the install line.
 - Each script's unit tests live in `tests/test_<script>.py`, outside the skill folders. Run them with `python3 -m unittest discover -s tests`.

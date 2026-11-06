@@ -1,6 +1,6 @@
 # Verification rules
 
-Rules version: 8
+Rules version: 9
 
 Copy this file into the harness as `rules.md`, unchanged; app specifics live in `harness.json`. `scripts/framework/vf.py validate` fails a copy that differs from the one vf last synced, whose hash this harness's `framework.sha256` records with every other framework file's. A section applies once the harness has that kind of piece. A piece that cannot follow a rule names the exception in its own help text and in the feature file that uses it.
 
@@ -9,14 +9,16 @@ Copy this file into the harness as `rules.md`, unchanged; app specifics live in 
 Keep framework artifacts at fixed paths relative to this harness; nothing in the manifest can move them:
 
 - `README.md`: where a person starts.
-- `recordings.html`: each check's latest run and history, for people.
+- `recordings.html`: each check's latest run and history, and the demo runs, for people.
 - `harness.json`: the manifest, everything a script reads about this app: setup status, requirements source, repos, commands, and tools.
 - `features/<slug>.json`: one file per user-facing feature, its behaviors and how each is proven. A `features/<slug>.md` beside it may hold longer prose; scripts ignore it.
 - `status.md`: the latest result for every behavior, written by `vf.py status` and never by hand.
 - `tools.md`: the command guide, written by `vf.py tools` from the manifest's tools and never by hand.
 - `notes.md`: what people write beside the results, as free prose: how the app is started and what needs a person, known failing checks, where a pass can mislead, untested cases.
 - `scripts/`: the app's harness tools, with the framework scripts, copied unchanged, in its `framework/` folder.
+- `demos/`: demo scenarios and their pacing helpers, as the Demo runs section describes. Nothing here is part of any check's harness code.
 - `evidence/<check>/`: each check's runs.
+- `evidence/demos/<check>/`: each demo run, which no verdict reads.
 - `evidence/doctor/`: saved doctor output.
 - `evidence/launch/`: the launch record and output of an instance `vf.py start` started.
 - `evidence/not-verified.jsonl`: the Not verified records `vf.py not-verified` writes.
@@ -71,7 +73,7 @@ Keep a feature file about intended behavior and stable ways to prove it. A curre
 
 Tools are ordinary repo-local commands usable outside verification. Put new harness tools in this harness's `scripts/`, with each check's entry file or folder in its `checks/` folder; reuse existing project commands when they suffice. Use the project's language, third-party drivers, and connection settings. Python 3 is a fallback for standalone coordination when available. Keep command parsing separate from reusable reads and actions. No MCP server or universal CLI is required.
 
-Record each harness command as a tool in `harness.json`: `command`, `use_when` (when to use it and when to use another), `run_from` (a folder relative to the project root; absent means the root), `permissions` (read-only, or the side effects and the approval or ownership rules it enforces), `limits` (what this observation or action does not prove), and optionally `inputs`, `environment`, `result`, and `failure`. `vf.py tools` writes `tools.md` from these entries, and `validate.py` fails a `tools.md` that differs from what it writes now, checks each entry's fields, that `run_from` exists, and that a program the command names by path exists, and flags a credential written into `harness.json` or `scripts/`; `--run-help` also runs each `<command> --help`, which must work without connecting to services or acting. Redact secrets in help examples and output, and read credentials from the project's connection settings, never from a literal in a tool or its entry. A probe's help and entry describe observations, never promise a verified feature.
+Record each harness command as a tool in `harness.json`: `command`, `use_when` (when to use it and when to use another), `run_from` (a folder relative to the project root; absent means the root), `permissions` (read-only, or the side effects and the approval or ownership rules it enforces), `limits` (what this observation or action does not prove), and optionally `inputs`, `environment`, `result`, and `failure`. `vf.py tools` writes `tools.md` from these entries, and `validate.py` fails a `tools.md` that differs from what it writes now, checks each entry's fields, that `run_from` exists, and that a program the command names by path exists, and flags a credential written into `harness.json`, `scripts/`, or `demos/`; `--run-help` also runs each `<command> --help`, which must work without connecting to services or acting. Redact secrets in help examples and output, and read credentials from the project's connection settings, never from a literal in a tool or its entry. A probe's help and entry describe observations, never promise a verified feature.
 
 The entry and `--help` must agree. Project instructions may point at `tools.md`; the skills that build tools own that pointer and ask before editing an instruction file.
 
@@ -155,8 +157,8 @@ The check reports these events, one JSON object per line appended to the `VERIFY
 
 - `check`: once, anywhere in the report. `name` (the check, used as its folder: letters, digits, dots, dashes, underscores), `sub_features` (the IDs this run claims to prove; leave it out when the check can't know them up front, and `vf.py run` takes the IDs its steps name, or failing that the ones whose `check` in the feature map is this exact command, so a run that stops before judging anything is recorded as stopped rather than refused), `reads` (`state`, or what the user sees).
 - `step`: `name`, `passed` (true or false), `at`, and optionally `sub_features`, `detail`, `evidence`, and `snapshot` with file names in the run folder.
-- `mark`: `kind` (`step` or `action`), `label`, `at`.
-- `recording`: once, when the video was kept. `video`, a file name in the run folder, and `starts_at`.
+- `mark`: `kind` (`step` or `action`), `label`, `at`, and optionally `caption`, the sentence people read at that moment of a demo, and `screen`, the name of the screen showing from then on, as the Demo runs section describes.
+- `recording`: once, when the video was kept. `video`, a file name in the run folder, and `starts_at`. A demo run may report one per screen, each with its `screen`.
 - `created`: lists of IDs by kind, such as `{"event": "created", "orders": ["o_123"]}`; several events merge.
 - `stopped`: `reason`, when the run could not reach a verdict.
 
@@ -202,7 +204,17 @@ A run that drives a screen records it, keeping the video when the run fails or w
 
 A failed step in a check that drives a screen names a `snapshot` taken at its verdict, by file names in the run folder: `{"screenshot": "step-3-failed.png", "text": "step-3-failed.txt"}`, where the text is the page's accessibility tree or visible text; the evidence file names them by their paths from `evidence/`. The run's folder keeps console output as `console.json` and failed requests as `requests.json`, each a list of entries with `at` and `text`, kept whether or not the video is.
 
-People and agents read a run differently. A person finds runs and recordings on `recordings.html`, which `scripts/framework/vf.py replay` and `scripts/framework/vf.py clip --steps` rewrite, opens a run's replay page from `scripts/framework/vf.py replay`, and shares a clip from `scripts/framework/vf.py clip --steps`, named for its check, steps, and start time. An agent diagnosing a failure reads the step's detail, its snapshot text, and the console and request entries from the few seconds before its `at`, then looks at stills from `scripts/framework/vf.py clip --frames failed` if those don't explain it; it does not watch the video.
+People and agents read a run differently. A person finds runs, recordings, and demos on `recordings.html`, which `scripts/framework/vf.py replay` and `scripts/framework/vf.py clip --steps` rewrite, opens a run's replay page from `scripts/framework/vf.py replay`, and watches a video made for people only from a demo run, through `scripts/framework/vf.py demo`. An agent diagnosing a failure reads the step's detail, its snapshot text, and the console and request entries from the few seconds before its `at`, then looks at stills from `scripts/framework/vf.py clip --frames failed` if those don't explain it; it does not watch the video.
+
+## Demo runs
+
+A check run's recording is raw evidence for agents: fast, unpaced, kept when the run fails. A video for people comes only from a separate demo run, started with `scripts/framework/vf.py run --demo --user-approved -- <command>`, only after a person asked for that demo in this session. `vf.py run` refuses `--demo` without `--user-approved` and in a planned break. It sets `VERIFY_DEMO=1` and `VERIFY_KEEP_RECORDING=1` for the command, unsets `VERIFY_DEMO` for every ordinary run, judges the record by the same Evidence rules, adds `"demo": true`, and saves it as `evidence/demos/<check>/<time>.json`. Nothing that computes a verdict reads that folder, so a demo run never changes `status.md` or a check's latest run: pacing can hide a race. A demo run that fails is a finding about the app or the demo, investigated like any failed check; it makes no video.
+
+- **What runs.** A demo is a scenario written for an audience from a shot list a person approved, kept in the harness's `demos/<name>/`, outside `scripts/` so writing, editing, or running one changes no check's harness code. It reuses the harness's tools and helpers by importing them and never edits them. Each shot ends in a read of what the viewer was just shown, judged as a step, so a broken app fails the demo instead of filming it. A check that already reads as the story may run with `--demo` itself; it then paces only through the rules below.
+- **Proof.** A demo needs no check: it can show a feature before any check covers it, and its own reads still fail a broken app. It is never proof either. When a behavior the demo names in `sub_features` has an ordinary passing run on the same code as the demo, with every harness file both runs read unchanged, `vf.py demo` and `recordings.html` name that run, so a reader who wants proof knows where to look.
+- **Pacing.** A demo moves at a person's pace: the pointer visible, text typed a character at a time (about 45 ms each), a pause before each action (about 0.9 s), each caption held at least 4.5 s and each result 5 s, a full-screen card for about 4.5 s at each switch of screen. Pause before an action, never between an action and the read that times its result, and hold captions and results only after a step's verdict, so no pause sits inside a wait the run times. Every read keeps the timeout it has in an ordinary run. A scenario that cannot keep its pacing out of a timed wait, or whose behavior can't be seen, such as a race only a watcher in the page counts or a sound, refuses `VERIFY_DEMO=1` before it acts: it reports `stopped` with the reason and exits 2. With `VERIFY_DEMO` unset, nothing in the harness pauses or changes its timing.
+- **Captions and screens.** The scenario writes each caption for its audience on the mark where it appears, so the wording changes with the step that shows it. Every `step` mark a video shows has a `caption`; `vf.py demo` refuses a range with one missing and names the step. A wait gets an `action` mark whose caption says what is being waited for. The scenario draws the captions, a badge naming whose screen is showing, and the switch cards into the page itself, from the overlay template in vf's `references/demo-overlay.js`, so they survive page loads and need no video editing. A run with several people names each one's screen on the `screen` mark where it starts showing. It may switch one browser between them, or record each screen separately, each `recording` naming its `screen`; `vf.py demo` then shows, at each moment, the screen the latest `screen` mark named, from that screen's video at the same moment. An actor with no screen, such as one driven through an API, appears as a banner over the screen that sees the result, whose caption says where the action really happened.
+- **The video.** `scripts/framework/vf.py demo <record>` lists the steps with their captions and proof. `--steps <range>` makes the MP4: from just before the first chosen step's mark to the next step mark after the last, at real speed with nothing removed, at the recording's own size in H.264, then checks its length against the steps it covers. Over `--max-mb`, it is encoded smaller, then split at step marks, never inside a step. It also writes a still a second after each caption and screen switch, which an agent reads before anyone sees the video.
 
 ## Reporting
 
