@@ -49,9 +49,10 @@ class Report:
     def seconds(self):
         return round(time.monotonic() - self.started, 2)
 
-    def event(self, kind, **fields):
+    def event(self, event, /, **fields):
+        # The type is positional-only, since a mark has its own `kind` field.
         with self.path.open("a") as report:
-            report.write(json.dumps({"event": kind, **fields}) + "\n")
+            report.write(json.dumps({"event": event, **fields}) + "\n")
 
 
 class Pace:
