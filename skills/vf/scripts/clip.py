@@ -19,10 +19,12 @@ recordings.html so the clip is listed there.
 
 A clip is the recording as it was, cut to the steps asked for; the clip's name
 and the step list say what it shows. A demo shows a reviewer the behavior with
-nothing in the way: each stretch where the picture holds still cut to a second, the last frame
+nothing in the way: each stretch where the picture holds still cut to a second, plus a second
+after each caption that starts inside it, the last frame
 held so the result stays on screen, and scaled and compressed to fit GitHub's
 smallest video upload limit. A demo also carries numbered captions, one per
-step and action mark in the window, each shown until the next, so a reviewer
+step and action mark in the window (of marks under a second apart, the last),
+each shown until the next, so a reviewer
 can tell what the run did from what the app did on its own.
 
 Needs ffmpeg and ffprobe, from PATH or the FFMPEG and FFPROBE variables.
@@ -61,8 +63,11 @@ LEAD_SECONDS = 0.5
 # Stills around a failed step's verdict: the action that led to it, the verdict, and what settled after.
 FAILURE_OFFSETS = (-3.0, 0.0, 1.0)
 FRAMES_PER_STEP = 4
-# A demo keeps this much of each still stretch, so a result shows long enough to read without the wait around it.
+# A demo keeps this much of each still stretch, and of each caption that starts inside one, so a result shows long
+# enough to read without the wait around it.
 DEMO_STILL_SECONDS = 1.0
+# Marks closer together than this become one caption, the last of them, since the earlier ones would flash past.
+CAPTION_MERGE_SECONDS = 1.0
 # How different two frames may be and still count as still. Loose enough that a blinking text cursor holds still.
 DEMO_STILL_NOISE = 0.003
 DEMO_HOLD_SECONDS = 1.5
@@ -190,21 +195,33 @@ def still_stretches(ffmpeg, video, duration):
     return list(zip(starts, ends + [duration] * (len(starts) - len(ends))))
 
 
-def kept_spans(stills, duration):
-    """The parts of a clip a demo keeps: all of it, except each still stretch past its first DEMO_STILL_SECONDS."""
+def kept_spans(stills, duration, caption_starts=()):
+    """The parts of a clip a demo keeps: all of it, except each still stretch past its first DEMO_STILL_SECONDS.
+
+    A caption that starts inside a still stretch keeps DEMO_STILL_SECONDS from its start too. Checks often wait
+    for a state to hold and then mark the result, so without this the result's caption falls in the cut part."""
     spans, cursor = [], 0.0
     for still_start, still_end in stills:
         if still_end - still_start > DEMO_STILL_SECONDS:
             spans.append((cursor, still_start + DEMO_STILL_SECONDS))
+            for at in sorted(at for at in caption_starts if still_start < at < still_end):
+                spans.append((at, min(at + DEMO_STILL_SECONDS, still_end)))
             cursor = still_end
     spans.append((cursor, duration))
-    return [(start, end) for start, end in spans if end - start > 0.05]
+    merged = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return [(start, end) for start, end in merged if end - start > 0.05]
 
 
 def captions(record, start, end):
     """(from, until, text) for each step and action mark in the video window [start, end), in seconds into the
-    window, numbered in order. A mark repeating the one before it is dropped, and of marks at the same moment only
-    the last is kept, since the others would show for no time. The last caption runs to the end, shown as None."""
+    window, numbered in order. A mark repeating the one before it is dropped, and of marks less than
+    CAPTION_MERGE_SECONDS apart only the last is kept, since the others would flash past. The last caption runs to
+    the end, shown as None."""
     found = []
     for mark in sorted((mark for mark in record.get("marks") or [] if mark.get("kind") in ("step", "action")
                         and isinstance(mark.get("at"), (int, float)) and str(mark.get("label", "")).strip()),
@@ -213,7 +230,7 @@ def captions(record, start, end):
         label = str(mark["label"]).strip()
         if at < 0 or (end is not None and at >= end - start) or (found and found[-1][1] == label):
             continue
-        if found and found[-1][0] == max(at, 0.0):
+        if found and max(at, 0.0) - found[-1][0] < CAPTION_MERGE_SECONDS:
             found.pop()
         found.append((max(at, 0.0), label))
     return [(at, found[index + 1][0] if index + 1 < len(found) else None, f"{index + 1}. {label}")
@@ -394,7 +411,9 @@ def demo(evidence_path, spec):
             captioned = overlay_chain(caption_list)
         elif caption_list:
             note = f"no captions: this ffmpeg has no drawtext filter and Pillow is not installed. Install: {install_hint('pillow')}"
-        graph = demo_filter(kept_spans(still_stretches(ffmpeg, steps_video, duration), duration), captioned)
+        # Only captions the demo draws need their second kept.
+        caption_starts = [since for since, _, _ in caption_list] if captioned else []
+        graph = demo_filter(kept_spans(still_stretches(ffmpeg, steps_video, duration), duration, caption_starts), captioned)
         output = Path(scratch, "demo.mp4")
         for quality in DEMO_QUALITIES:
             run_ffmpeg(ffmpeg, [*inputs, "-filter_complex", graph, "-map", "[out]", *encode_at(quality), str(output)], scratch)

@@ -61,6 +61,12 @@ class StepsTest(unittest.TestCase):
         self.assertEqual(clip.kept_spans([(1.0, 4.0), (5.0, 5.8)], 8.0), [(0.0, 2.0), (4.0, 8.0)], "a short still stays whole")
         self.assertEqual(clip.kept_spans([(2.0, 8.0)], 8.0), [(0.0, 3.0)], "a still that runs to the end is cut after its first second")
 
+    def test_a_demo_keeps_a_second_of_each_caption_that_starts_inside_a_still_stretch(self):
+        self.assertEqual(clip.kept_spans([(2.0, 12.0)], 14.0, [0.5, 9.0]), [(0.0, 3.0), (9.0, 10.0), (12.0, 14.0)],
+                         "a result marked late in a wait keeps its second")
+        self.assertEqual(clip.kept_spans([(2.0, 12.0)], 14.0, [2.5, 11.6]), [(0.0, 3.5), (11.6, 14.0)],
+                         "a caption near either edge joins the span beside it")
+
     def test_demo_captions_number_each_mark_in_the_window_until_the_next(self):
         _, _, start, end = clip.step_window(clip.steps(RECORD), "2-3")
         self.assertEqual(clip.captions(RECORD, start, end), [
@@ -86,6 +92,17 @@ class StepsTest(unittest.TestCase):
             {"at": 6.0, "kind": "action", "label": "Clicks Pay"},
         ])
         self.assertEqual(clip.captions(record, 3.5, None), [(0.5, 1.5, "1. Goes to the payment page"), (1.5, None, "2. Clicks Pay")])
+
+    def test_demo_captions_keep_the_last_of_marks_under_a_second_apart(self):
+        record = dict(RECORD, marks=[
+            {"at": 5.0, "kind": "step", "label": "Step 2: Customer pays"},
+            {"at": 5.1, "kind": "action", "label": "Goes to the payment page"},
+            {"at": 6.1, "kind": "action", "label": "Clicks Pay"},
+        ])
+        found = clip.captions(record, 3.5, None)
+        self.assertEqual([text for _, _, text in found], ["1. Goes to the payment page", "2. Clicks Pay"])
+        self.assertAlmostEqual(found[0][0], 0.6)
+        self.assertAlmostEqual(found[1][0], 1.6)
 
     def test_a_captioned_demo_cuts_its_spans_from_the_captioned_video(self):
         graph = clip.demo_filter([(0.0, 1.0), (2.0, 3.0)], (["[0:v]drawtext=textfile=caption-0.txt[captioned]"], "[captioned]"))
