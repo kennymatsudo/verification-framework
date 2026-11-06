@@ -59,4 +59,6 @@ Done when the mode's procedure reached its last step or stopped with the reason 
 - Run a mode only from its file, read in full during this run, never from memory of what it says.
 - Outside a mode's steps, build no checks, start no app, and edit no harness file.
 
+These guardrails apply while running a vf job; ordinary debugging, triage, and implementation with shared developer tools follow the project's instructions and each tool's permissions without entering a vf mode.
+
 Reply: the mode's own reply, then at most one line offering the next step.
