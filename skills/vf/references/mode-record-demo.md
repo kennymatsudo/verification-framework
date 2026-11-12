@@ -20,6 +20,8 @@ Name what the video can't show, such as a sound or a race only a watcher in the 
 
 Show the shot list and wait for the person's yes or changes. Write nothing before then.
 
+To re-record a demo that already exists in `demos/`, take its shot list from its latest run instead of drafting one: `<harness>/scripts/framework/vf.py demo <record>` lists each step with its caption. Draft new rows only for shots the change alters. Show that shot list together with step 5's run and cost in one message, and wait for one yes, which covers both; then skip step 5.
+
 Done when the person approved a shot list in which every shot ends in something a read can judge.
 
 ## 3. Find or write the demo

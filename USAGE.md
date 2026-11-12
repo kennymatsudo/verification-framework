@@ -192,7 +192,7 @@ Everything on the bench lives in one folder:
 | File | What it holds |
 | --- | --- |
 | `README.md` | Where a person starts |
-| `recordings.html` | Each check's latest run, its history, and any videos |
+| `recordings.html` | The demo videos, then each check's latest run and its history |
 | `harness.json` | The manifest: this app's repositories, the commands that start, stop, check, and inspect it, and an entry for each instrument |
 | `status.md` | The latest result for each behavior, written by the framework |
 | `notes.md` | Setup notes, known failures, where a pass can mislead, untested cases |
@@ -268,7 +268,7 @@ With no change named, it lists what the harness can check, marks the behaviors y
 6. If your change alters a behavior, it updates that feature's file.
 7. It records each result with the version tested and stops only the processes it started.
 
-The report puts what went wrong before what passed. A Failed behavior that was recorded on video links its replay page. After a passing check that drove a screen, the agent offers to cut a short clip for your pull request.
+The report puts what went wrong before what passed. A Failed behavior that was recorded on video links its replay page. After a passing check that drove a screen, when your change is something a viewer can see, the agent offers to record a demo video of it, which runs only if you say yes.
 
 ## Ask how far to trust a pass
 
@@ -323,6 +323,8 @@ Ask with "/vf record a demo of checkout" when you want a video to show people: a
 
 The video plays the run as it happened: typing a character at a time, a pause before each click, each caption held long enough to read, and a full-screen card naming whose screen comes next at each switch between people. It is never sped up and nothing is cut inside it. One over the upload limit is encoded smaller, then split at step marks into parts. It shows; the ordinary passing run proves.
 
+A demo isn't redone when checks go stale; `recordings.html` says how many commits the code has moved since it was recorded. When you verify a change that touches what an existing demo shows, the agent offers to re-record it. Ask with "/vf re-record the checkout demo": the agent restates the demo's shots from its last run, changing only the ones your change alters, and asks once for both the shots and the run.
+
 ## Read results
 
 The bench's notebook is three things: `status.md` holds each behavior's verdict, `evidence/` holds every run, and `recordings.html` shows the runs that were recorded.
@@ -351,9 +353,9 @@ Three limits to keep in mind:
 
 ### Recorded runs
 
-A check that uses a screen records a video and keeps it when the run fails, or when you ask by setting `VERIFY_KEEP_RECORDING=1`. These are for diagnosing a run. Demo runs are listed separately, under Demos at the bottom of the page, each with its video and any ordinary pass on the same code of what it shows.
+A check that uses a screen records a video and keeps it when the run fails, or when you ask by setting `VERIFY_KEEP_RECORDING=1`. These are for diagnosing a run.
 
-Open `recordings.html` in the harness to see how the checks are doing. Each check gets one line for its latest run, failing checks first: the result (Failed, Passed, or Didn't finish), the first failed step or the reason it stopped, when it ran, and each repo's branch and commit. A Watch button opens the video a few seconds before the failure. Details show every step and every behavior with the moment in the video it was decided, each with its own Watch link, then the run's code, earlier runs, and the replay page. Filter or search at the top.
+Open `recordings.html` in the harness to see how the checks are doing. Demo videos come first, one per demo: the feature and behaviors it shows, any ordinary passing run on the same code, and how many commits the code has moved since it was recorded. A demo carries no verdict; the check runs below it decide whether the feature works. Each check gets one line for its latest run, failing checks first: the result (Failed, Passed, or Didn't finish), the first failed step or the reason it stopped, when it ran, and each repo's branch and commit. A Watch button opens a failed run's video a few seconds before the failure; a passing run's kept video opens from Details. Details show every step and every behavior with the moment in the video it was decided, each with its own Watch link, then the run's code, earlier runs, and the replay page. Filter or search at the top.
 
 Two commands work on a single run:
 

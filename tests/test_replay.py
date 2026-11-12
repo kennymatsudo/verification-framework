@@ -6,9 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
 
@@ -55,37 +53,6 @@ def data(page):
 
 
 class ReplayTest(unittest.TestCase):
-    def test_overlapping_page_writes_publish_complete_files_without_colliding(self):
-        with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "recordings.html"
-            target.write_text("previous page")
-            publishing = threading.Barrier(2)
-            replace = Path.replace
-
-            def publish_together(source, destination):
-                self.assertEqual(target.read_text(), "previous page")
-                publishing.wait(timeout=5)
-                return replace(source, destination)
-
-            pages = ["first complete page", "second complete page"]
-            with patch.object(Path, "replace", publish_together), ThreadPoolExecutor(max_workers=2) as writers:
-                list(writers.map(lambda text: replay.write_atomically(target, text), pages))
-
-            self.assertIn(target.read_text(), pages)
-            self.assertEqual(list(Path(directory).iterdir()), [target])
-
-    def test_failed_page_publication_keeps_the_previous_page_and_removes_its_temporary_file(self):
-        with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "recordings.html"
-            target.write_text("previous page")
-
-            with patch.object(Path, "replace", side_effect=OSError("cannot publish")):
-                with self.assertRaisesRegex(OSError, "cannot publish"):
-                    replay.write_atomically(target, "new page")
-
-            self.assertEqual(target.read_text(), "previous page")
-            self.assertEqual(list(Path(directory).iterdir()), [target])
-
     def test_page_sits_in_the_run_folder_and_times_entries_from_the_video(self):
         with tempfile.TemporaryDirectory() as directory:
             evidence = write(directory, RECORD)
@@ -164,6 +131,18 @@ class ReplayTest(unittest.TestCase):
             result = subprocess.run([sys.executable, str(SCRIPT), str(evidence)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("WARN the evidence names", result.stderr)
+
+    def test_recordings_page_waits_while_another_run_rewrites_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            write(directory, RECORD)
+            harness = Path(directory)
+            writer = threading.Thread(target=replay.write_recordings, args=(harness,))
+            with replay.sibling("lock_validate", "validate.py").refresh_lock(harness):
+                writer.start()
+                writer.join(0.5)
+                self.assertFalse((harness / "recordings.html").exists(), "the page was written while the lock was held")
+            writer.join(10)
+            self.assertTrue((harness / "recordings.html").exists())
 
     def test_recordings_page_lists_every_run_and_builds_each_ones_replay_page(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -478,40 +457,116 @@ process.stdout.write(JSON.stringify(answers));
         self.assertIn("replay page", result.stdout)
 
 
+def git(directory, *args):
+    return subprocess.run(["git", "-C", str(directory), *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
 class DemosSectionTest(unittest.TestCase):
-    def demo(self, directory, proven):
+    def harness(self, directory):
+        """A harness whose one repo is a Git checkout with two commits; returns (harness, first commit)."""
         root = Path(directory)
-        (root / "rules.md").write_text("# Verification rules\n")
-        code = {"app": {"commit": "abc", "dirty_hash": None}}
-        demo = root / "evidence" / "demos" / "checkout-demo" / "2026-11-06T14-00-00Z.json"
-        demo.parent.mkdir(parents=True)
-        (demo.with_suffix("")).mkdir()
-        (demo.with_suffix("") / "checkout-demo-demo-steps-1-to-2.mp4").write_bytes(b"x")
-        demo.write_text(json.dumps({"check": "checkout-demo", "demo": True, "accepted_by": "vf.py run", "passed": True,
-                                    "sub_features": ["checkout.pay"], "code": code, "harness_code": {}, "steps": [],
-                                    "started_at": "2026-11-06T14:00:00Z"}))
-        if proven:
-            check = root / "evidence" / "checkout-pay" / "1.json"
-            check.parent.mkdir(parents=True)
-            check.write_text(json.dumps({"check": "checkout-pay", "accepted_by": "vf.py run", "passed": True,
-                                         "planned_break": None, "sub_features": ["checkout.pay"], "code": code,
-                                         "harness_code": {}, "steps": [], "started_at": "2026-11-06T13:00:00Z"}))
-        return replay.recordings_page(root)
+        app = root / "app"
+        app.mkdir()
+        git(app, "init", "-q")
+        for message in ("first", "second"):
+            git(app, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", message)
+        harness = root / "verify-shop"
+        (harness / "features").mkdir(parents=True)
+        (harness / "rules.md").write_text("# Verification rules\n")
+        (harness / "harness.json").write_text(json.dumps({"repos": {"app": str(app)}}))
+        (harness / "features" / "checkout.json").write_text(json.dumps({
+            "name": "Checkout", "summary": "A shopper pays.",
+            "behaviors": {"checkout.pay": {"words": "paying charges the card", "check": "checkout-pay"}}}))
+        return harness, git(app, "rev-parse", "HEAD~1")
 
-    def test_a_demo_is_listed_apart_with_any_pass_on_its_code(self):
+    def run_record(self, harness, folder, name, **fields):
+        path = harness / "evidence" / folder / f"{name}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"accepted_by": "vf.py run", "planned_break": None, "harness_code": {}, "steps": [],
+                                    "sub_features": ["checkout.pay"], **fields}))
+        return path
+
+    def demo(self, harness, name, commit, passed=True, video=True):
+        path = self.run_record(harness, "demos/checkout-demo", name, check="checkout-demo", demo=True, passed=passed,
+                               code={"app": {"commit": commit, "dirty_hash": None}}, started_at=f"{name[:13]}:{name[14:16]}:{name[17:]}")
+        path.with_suffix("").mkdir()
+        if video:
+            (path.with_suffix("") / f"checkout-demo-{name}.mp4").write_bytes(b"x")
+        return path
+
+    def test_a_demo_leads_the_page_under_its_feature_with_any_pass_on_its_code(self):
         with tempfile.TemporaryDirectory() as directory:
-            page = self.demo(directory, proven=True)
-        self.assertIn('<h2 class="section">Demos</h2>', page)
-        self.assertIn('href="evidence/demos/checkout-demo/2026-11-06T14-00-00Z/checkout-demo-demo-steps-1-to-2.mp4"', page)
+            harness, first = self.harness(directory)
+            self.demo(harness, "2026-11-06T14-00-00Z", first)
+            self.run_record(harness, "checkout-pay", "1", check="checkout-pay", passed=True,
+                            code={"app": {"commit": first, "dirty_hash": None}}, started_at="2026-11-06T13:00:00Z")
+            page = replay.recordings_page(harness)
+        self.assertLess(page.index('<h2 class="section">Demos</h2>'), page.index('<h2 class="section">Check runs</h2>'))
+        self.assertIn('<h2>Checkout <span class="slug">checkout-demo</span></h2>', page)
+        self.assertIn("Shows: Paying charges the card", page)
+        self.assertIn('href="evidence/demos/checkout-demo/2026-11-06T14-00-00Z/checkout-demo-2026-11-06T14-00-00Z.mp4"', page)
         self.assertIn('Ordinary passing runs on the same code: <a href="evidence/checkout-pay/1.json">checkout.pay</a>', page)
-        self.assertIn("Videos for people come from separate demo runs", page)
 
-    def test_a_demo_no_check_covers_is_listed_with_no_warning(self):
+    def test_a_demo_offers_one_watch_button_and_replay_as_a_plain_link(self):
         with tempfile.TemporaryDirectory() as directory:
-            page = self.demo(directory, proven=False)
-        self.assertIn("checkout-demo-demo-steps-1-to-2.mp4", page)
-        self.assertNotIn("Ordinary passing runs", page)
-        self.assertNotIn("Not proven", page)
+            harness, first = self.harness(directory)
+            self.demo(harness, "2026-11-06T14-00-00Z", first)
+            page = replay.recordings_page(harness)
+        card = page[page.index('<article class="demo">'):page.index("</article>")]
+        self.assertIn('title="checkout-demo-2026-11-06T14-00-00Z.mp4">Watch</a>', card)
+        self.assertEqual(card.count('class="button'), 1)
+
+    def test_a_demo_split_into_parts_names_each_part(self):
+        # Names come from demo.py, which makes the videos, so the label follows the real file-name format.
+        video_name = replay.sibling("names_demo", "demo.py").video_name
+        record = {"check": "checkout-demo", "started_at": "2026-11-06T14:00:00Z"}
+        self.assertEqual(replay.demo_video_label(video_name(record, 1, 5, (2, 3)), 3), "Watch part 2 of 3")
+        self.assertEqual(replay.demo_video_label(video_name(record, 2, 4), 2), "Watch steps 2-4")
+
+    def test_a_demo_says_how_many_commits_its_repo_moved_since_it_was_recorded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness, first = self.harness(directory)
+            self.demo(harness, "2026-11-06T14-00-00Z", first)
+            page = replay.recordings_page(harness)
+        self.assertIn(f"on app {first[:7]}, 1 commit since", page)
+
+    def test_a_demo_recorded_off_the_checkouts_history_gives_no_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness, first = self.harness(directory)
+            side = git(harness.parent / "app", "-c", "user.name=t", "-c", "user.email=t@t",
+                       "commit-tree", "HEAD^{tree}", "-p", first, "-m", "side")
+            self.demo(harness, "2026-11-06T14-00-00Z", side)
+            page = replay.recordings_page(harness)
+        self.assertIn(f"on app {side[:7]}, not in the checkout&#x27;s history (rebased, or another branch)", page)
+
+    def test_a_demo_shows_no_verdict_for_what_it_shows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness, first = self.harness(directory)
+            self.demo(harness, "2026-11-06T14-00-00Z", first)
+            page = replay.recordings_page(harness)
+        card = page[page.index('<article class="demo">'):page.index("</article>")]
+        self.assertNotIn("Verified", card)
+        self.assertNotIn("Passed", card)
+        self.assertNotIn("Ordinary passing runs", card, "no ordinary run covers it, so nothing is named as proof")
+
+    def test_a_failed_demo_run_does_not_hide_the_last_video(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness, first = self.harness(directory)
+            self.demo(harness, "2026-11-06T14-00-00Z", first)
+            self.demo(harness, "2026-11-06T15-00-00Z", first, passed=False, video=False)
+            page = replay.recordings_page(harness)
+        self.assertIn("checkout-demo-2026-11-06T14-00-00Z.mp4", page)
+        self.assertIn("did not pass, so it made no video", page)
+        self.assertIn("1 earlier run in <code>evidence/demos/checkout-demo/</code>", page)
+
+    def test_a_passing_check_run_keeps_its_video_under_details_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = write(directory, dict(RECORD, passed=True, steps=[{"name": "order is paid", "passed": True, "at": 9.0}]))
+            path.with_suffix("").mkdir()
+            page = replay.recordings_page(Path(directory))
+        row = page[page.index('<div class="actions">', page.index('id="check-checkout-pay"')):page.index('<div class="details"')]
+        self.assertNotIn("replay.html", row)
+        self.assertIn("Open the replay</a>", page)
 
 
 if __name__ == "__main__":

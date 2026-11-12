@@ -242,7 +242,7 @@ class ScriptCommands(unittest.TestCase):
 
 # A check that reports its run as events in VERIFY_REPORT, shaped by the JSON spec in argv[1].
 CHECK = """
-import json, os, sys
+import json, os, sys, time
 from pathlib import Path
 spec = json.loads(sys.argv[1])
 if spec.get("touch"):
@@ -263,6 +263,7 @@ if events is None:
     events += spec.get("more", [])
 for name in spec.get("echo_env", []):
     events.append({"event": "step", "name": f"env {name}", "passed": True, "at": 1.5, "detail": os.environ.get(name, "")})
+time.sleep(spec.get("sleep", 0))
 if not spec.get("no_report"):
     with open(os.environ["VERIFY_REPORT"], "a") as report:
         for event in events:
@@ -728,6 +729,25 @@ class HarnessCommands(unittest.TestCase):
         self.assertFalse((self.harness / "evidence" / ".pending").exists())
         self.assertIn(f"Recording kept. Watch it at {self.harness / 'recordings.html'}", result.stdout)
 
+    def test_runs_started_in_the_same_second_each_keep_their_own_evidence(self):
+        command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", "--", sys.executable, "-c", CHECK]
+        names = ["pay", "refund", "ship", "track"]
+        runs = [subprocess.Popen([*command, json.dumps({"name": name, "sleep": 1})], stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True) for name in names]
+        outputs = [run.communicate(timeout=60)[0] for run in runs]
+        for name, run, output in zip(names, runs, outputs):
+            with self.subTest(check=name):
+                self.assertEqual(run.returncode, 0, output)
+                self.assertEqual(self.record(name)["check"], name)
+        self.assertFalse((self.harness / "evidence" / ".pending").exists())
+
+    def test_two_runs_claiming_the_same_second_get_separate_run_folders(self):
+        evidence = self.harness / "evidence"
+        first = vf.claim_run_folder(evidence, "2026-11-11T10-00-00Z")
+        second = vf.claim_run_folder(evidence, "2026-11-11T10-00-00Z")
+        self.assertEqual((first.name, second.name), ("2026-11-11T10-00-00Z", "2026-11-11T10-00-00Z-2"))
+        self.assertTrue(first.is_dir() and second.is_dir())
+
     def run_demo(self, options=("--demo", "--user-approved"), env=None, **spec):
         command = [sys.executable, str(self.harness / "scripts/framework/vf.py"), "run", *options, "--",
                    sys.executable, "-c", CHECK, json.dumps(spec)]
@@ -973,6 +993,18 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("status.md not written: fix the feature map first", result.stdout)
         self.assertEqual((self.harness / "status.md").read_text(), before)
+
+    def test_status_waits_while_another_run_rewrites_it(self):
+        self.write_map()
+        (self.harness / "status.md").unlink(missing_ok=True)
+        with vf.sibling("validate").refresh_lock(self.harness):
+            status = subprocess.Popen([sys.executable, str(self.harness / "scripts/framework/vf.py"), "status"],
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            time.sleep(2)
+            self.assertFalse((self.harness / "status.md").exists(), "status wrote while another run held the lock")
+        output = status.communicate(timeout=60)[0]
+        self.assertEqual(status.returncode, 0, output)
+        self.assertTrue((self.harness / "status.md").exists())
 
     def test_status_creates_the_first_status_md(self):
         # Setup runs status to create the file the harness README links.

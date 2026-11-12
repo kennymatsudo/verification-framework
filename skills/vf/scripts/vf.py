@@ -551,14 +551,25 @@ def mapped_to_command(harness, validate, command):
     return mapped
 
 
-def unique_stamp(evidence, stamp):
-    """The run's timestamp, suffixed when a run in the same second already left a record, so neither overwrites the other."""
-    candidate, attempt = stamp, 1
-    while ((evidence / PENDING / candidate).exists() or any(evidence.glob(f"*/{candidate}.json"))
-           or any(evidence.glob(f"{DEMOS}/*/{candidate}.json"))):
+def claim_run_folder(evidence, stamp):
+    """Create and return this run's folder under .pending, named for its timestamp, suffixed when a run in the same
+    second already claimed that name or left a record. Creating the folder is the claim, so two runs started together
+    never share one."""
+    attempt = 1
+    while True:
+        candidate = stamp if attempt == 1 else f"{stamp}-{attempt}"
         attempt += 1
-        candidate = f"{stamp}-{attempt}"
-    return candidate
+        if any(evidence.glob(f"*/{candidate}.json")) or any(evidence.glob(f"{DEMOS}/*/{candidate}.json")):
+            continue
+        (evidence / PENDING).mkdir(parents=True, exist_ok=True)
+        try:
+            (evidence / PENDING / candidate).mkdir()
+        except FileExistsError:
+            continue
+        except FileNotFoundError:  # another run removed the empty .pending between the two calls
+            attempt -= 1
+            continue
+        return evidence / PENDING / candidate
 
 
 def settle_run_folder(evidence, pending, stamp, name, kept, demo=False):
@@ -578,8 +589,11 @@ def settle_run_folder(evidence, pending, stamp, name, kept, demo=False):
             pending.replace(run_dir)
     else:
         pending.rmdir()
-    if name and not any((evidence / PENDING).iterdir()):
-        (evidence / PENDING).rmdir()
+    if name:
+        try:
+            (evidence / PENDING).rmdir()
+        except OSError:  # another run's folder is still in it, or that run already removed it
+            pass
     return folder / f"{stamp}.json"
 
 
@@ -617,9 +631,8 @@ def run_check(command, demo=False):
     harness_before = validate.harness_code(harness, command)
     evidence = harness / "evidence"
     started = utc_now()
-    stamp = unique_stamp(evidence, started.strftime("%Y-%m-%dT%H-%M-%SZ"))
-    pending = evidence / PENDING / stamp
-    pending.mkdir(parents=True, exist_ok=True)
+    pending = claim_run_folder(evidence, started.strftime("%Y-%m-%dT%H-%M-%SZ"))
+    stamp = pending.name
     report = pending.with_suffix(".jsonl")
     report.write_text("")
 
@@ -742,13 +755,14 @@ def evidence_warnings(harness, validate):
 
 def refresh_status(harness, validate):
     """Rewrite status.md's Latest results after a run; return the lines to print about it."""
-    try:
-        verdicts, errors = mapped_verdicts(harness, validate)
-    except Stopped as stopped:
-        return [f"status.md not refreshed: {stopped}"]
-    if errors:
-        return [f"status.md not refreshed: the feature map has {len(errors)} error{'s' if len(errors) != 1 else ''}; run vf.py validate"]
-    validate.render_status(harness, verdicts)
+    with validate.refresh_lock(harness):
+        try:
+            verdicts, errors = mapped_verdicts(harness, validate)
+        except Stopped as stopped:
+            return [f"status.md not refreshed: {stopped}"]
+        if errors:
+            return [f"status.md not refreshed: the feature map has {len(errors)} error{'s' if len(errors) != 1 else ''}; run vf.py validate"]
+        validate.render_status(harness, verdicts)
     return []
 
 
@@ -834,13 +848,14 @@ def tools(harness):
 def status(harness):
     """Compute every behavior's verdict and write status.md's Latest results; return the lines to print and the exit code."""
     validate = sibling("validate")
-    if not (harness / "status.md").exists():
-        # A first status.md, so the feature index's link to it resolves and setup can create it with this command.
-        validate.render_status(harness, {})
-    verdicts, errors = mapped_verdicts(harness, validate)
-    if errors:
-        return [f"ERROR {error}" for error in errors] + ["status.md not written: fix the feature map first"], 1
-    lines = validate.render_status(harness, verdicts)
+    with validate.refresh_lock(harness):
+        if not (harness / "status.md").exists():
+            # A first status.md, so the feature index's link to it resolves and setup can create it with this command.
+            validate.render_status(harness, {})
+        verdicts, errors = mapped_verdicts(harness, validate)
+        if errors:
+            return [f"ERROR {error}" for error in errors] + ["status.md not written: fix the feature map first"], 1
+        lines = validate.render_status(harness, verdicts)
     warnings = validate.standing_warnings(verdicts) + evidence_warnings(harness, validate)
     return lines + [f"WARN {warning}" for warning in warnings], 0
 
@@ -856,8 +871,9 @@ def not_verified(harness, sub_id, reason, until_break):
     if not reason.strip():
         raise Stopped("a Not verified record needs a reason")
     entry = validate.record_not_verified(harness, sub_id, reason, until_break)
-    verdicts, _ = mapped_verdicts(harness, validate)
-    lines = validate.render_status(harness, verdicts)
+    with validate.refresh_lock(harness):
+        verdicts, _ = mapped_verdicts(harness, validate)
+        lines = validate.render_status(harness, verdicts)
     recorded = f"Recorded {sub_id}: Not verified. {entry['reason']}"
     warnings = validate.standing_warnings(verdicts)
     return [recorded] + [line for line in lines if line.startswith(f"- {sub_id}: ")] + [f"WARN {w}" for w in warnings], 0

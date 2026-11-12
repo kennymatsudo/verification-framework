@@ -19,10 +19,12 @@ rewrites the harness's recordings.html, the page a person opens to see how the
 checks are doing. It gives each check one line for its latest run, naming its
 first problem and the code it ran on, and opens the rest on request: every
 step and behavior with the moment it was decided, the run's code, and earlier
-runs. Planned breaks are left out, since they fail on purpose. Demo runs get
-their own Demos section below the checks, each with its videos and any
-ordinary passing run on the same code of what it shows; they never count as
-a check's run. It builds the
+runs. Planned breaks are left out, since they fail on purpose. Demo runs lead
+the page in their own Demos section: each demo's latest passing run with its
+videos, the feature and behaviors it shows, any ordinary passing run on the
+same code, and how many commits each repo's checkout has moved since it was
+recorded. A demo shows no verdict and never counts as a check's run. A passing
+check run offers its kept video only under Details. It builds the
 replay page of any run that lacks one or whose page predates this script's
 page format, since a run's evidence never changes. A search box narrows it to
 checks matching every typed word. --recordings writes that page alone, for the
@@ -41,7 +43,6 @@ import json
 import os
 import re
 import sys
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -601,40 +602,105 @@ def listed_demos(evidence_dir):
     return sorted(runs, key=lambda run: str(run[1].get("started_at") or ""), reverse=True)
 
 
-def demo_proof(record, evidence_dir):
-    """demo.py's answer to which ordinary passes prove a demo run; loaded only when a page lists demos."""
-    spec = importlib.util.spec_from_file_location("harness_demo", Path(__file__).with_name("demo.py"))
+def sibling(name, filename):
+    """A framework script beside this one, loaded by path so this runs under `python3 -I`."""
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.proof(record, evidence_dir)
+    return module
 
 
-def demos_html(evidence_dir):
-    """The Demos section: each demo run with its videos, and any ordinary pass on the same code of what it shows."""
-    runs = listed_demos(evidence_dir)
-    if not runs:
+def demo_proof(record, evidence_dir):
+    """demo.py's answer to which ordinary passes prove a demo run; loaded only when a page lists demos."""
+    return sibling("harness_demo", "demo.py").proof(record, evidence_dir)
+
+
+def commits_since(validate, checkout, commit):
+    """How far a checkout's HEAD has moved past a recorded commit, as a phrase."""
+    if not checkout or not commit:
+        return "no checkout here to compare with"
+    state, _, since = validate.commit_position(checkout, commit)
+    if state == "missing":
+        return "commit not in this checkout"
+    if state == "head":
+        return "the checkout's current commit"
+    if state == "elsewhere":
+        return "not in the checkout's history (rebased, or another branch)"
+    return f"{since} commit{'' if since == 1 else 's'} since"
+
+
+def demo_code_age(record, harness_dir):
+    """Each repo the demo ran on, with its commit and how far that repo's checkout has moved since."""
+    validate = sibling("harness_validate", "validate.py")
+    repos = (validate.manifest(harness_dir) or {}).get("repos") or {}
+    phrases = []
+    for name, source in (record.get("code") or {}).items():
+        commit = source.get("commit")
+        locator = repos.get(name)
+        checkout = validate.repo_checkout(harness_dir, name, locator) if isinstance(locator, str) else None
+        edits = " with local edits" if source.get("dirty") else ""
+        phrases.append(f"{name} {str(commit or '?')[:7]}{edits}, {commits_since(validate, checkout, commit)}")
+    return "; ".join(phrases) or "code it didn't record"
+
+
+def demo_video_label(name, count):
+    """A demo video's button: "Watch", or which part or steps it is when the run has several videos."""
+    if count == 1:
+        return "Watch"
+    part = re.search(r"-part-(\d+)-of-(\d+)[-.]", name)
+    if part:
+        return f"Watch part {part.group(1)} of {part.group(2)}"
+    span = re.search(r"-steps?-(\d+)(?:-to-(\d+))?-", name)
+    if not span:
+        return "Watch"
+    return f"Watch steps {span.group(1)}-{span.group(2)}" if span.group(2) else f"Watch step {span.group(1)}"
+
+
+def demos_html(harness_dir, features):
+    """The Demos section: each demo's latest passing run with its videos, the feature and behaviors it shows, any
+    ordinary pass on the same code, and how far the code has moved since it was recorded. It shows no verdict, since
+    a demo never decides one; a newer run that failed, and so made no video, is named beside the one shown."""
+    evidence_dir = harness_dir / "evidence"
+    runs_by_demo = {}
+    for path, record in listed_demos(evidence_dir):
+        runs_by_demo.setdefault(str(record.get("check") or path.parent.name), []).append((path, record))
+    if not runs_by_demo:
         return ""
+    wording = behavior_wording(features)
+    feature_of = {sub_id: title for title, _, behaviors, _ in features for sub_id in behaviors}
     items = []
-    for path, record in runs:
+    for name, runs in runs_by_demo.items():
+        path, record = next((run for run in runs if run[1].get("passed") is True), runs[0])
         folder = run_folder(path)
         base = path.relative_to(evidence_dir.parent).with_suffix("").as_posix()
         videos = sorted(folder.glob("*.mp4"))
-        links = "".join(link_html(f"{base}/{video.name}", video.name, "primary") for video in videos)
+        links = "".join(
+            f'<a class="button primary" href="{html.escape(f"{base}/{video.name}")}" title="{html.escape(video.name)}">'
+            f'{html.escape(demo_video_label(video.name, len(videos)))}</a>' for video in videos)
+        if not videos:
+            links += '<span class="muted">No video made yet</span>'
         if has_video(record):
-            links += link_html(f"{base}/replay.html", "Replay", "secondary")
+            links += f'<a href="{html.escape(base)}/replay.html" title="The raw demo run, with each shot\'s check on a timeline">Replay</a>'
+        shown = [str(sub_id) for sub_id in record.get("sub_features") or []]
+        titles = list(dict.fromkeys(feature_of[sub_id] for sub_id in shown if sub_id in feature_of))
+        heading = f'{html.escape(", ".join(titles))} <span class="slug">{html.escape(name)}</span>' if titles else html.escape(name)
+        shows = ("Shows: " + "; ".join(html.escape(wording.get(sub_id) or sub_id) for sub_id in shown)) if shown \
+            else "Names no behavior it shows"
         proven = [f'<a href="{html.escape(cited)}">{html.escape(sub_id)}</a>'
                   for sub_id, cited, reason in demo_proof(record, evidence_dir) if not reason]
         proof_html = f'<p class="note">Ordinary passing runs on the same code: {", ".join(proven)}</p>' if proven else ""
-        result = "Passed" if record.get("passed") is True else "Did not pass"
-        if not videos:
-            links += '<span class="muted">No video made yet</span>'
+        newest = runs[0][1]
+        failed_note = "" if newest.get("passed") is True else (
+            f'<p class="note">The latest demo run, {time_html(newest)}, did not pass, so it made no video.</p>')
+        earlier = f' · {counted(len(runs) - 1, "earlier run")} in <code>evidence/demos/{html.escape(name)}/</code>' if len(runs) > 1 else ""
         items.append(
-            f'<article class="check demo"><div class="row"><span class="badge {"passed" if record.get("passed") is True else "failed"}">{result}</span>'
-            f'<div class="main"><h2>{html.escape(str(record.get("check") or path.parent.name))}</h2>{proof_html}'
-            f'<p class="note">{time_html(record)}</p></div><div class="actions">{links}</div></div></article>'
+            f'<article class="demo"><div class="row"><span class="badge">Demo</span>'
+            f'<div class="main"><h2>{heading}</h2><p class="purpose">{shows}</p>{failed_note}{proof_html}'
+            f'<p class="note">Recorded {time_html(record)} on {html.escape(demo_code_age(record, harness_dir))}{earlier}</p>'
+            f'</div><div class="actions">{links}</div></div></article>'
         )
-    return ('<h2 class="section">Demos</h2><p class="meta">Paced reruns recorded for people to watch. A demo never '
-            "decides a result.</p>" + "".join(items))
+    return ('<h2 class="section">Demos</h2><p class="meta">Videos for people to watch, paced and captioned. A demo shows '
+            "a feature; the check runs below decide whether it works.</p>" + "".join(items))
 
 
 def has_video(record):
@@ -910,7 +976,7 @@ h1 { font-size: 34px; margin: 0 0 4px; line-height: 1.15; }
 .filters button:hover { color: var(--text); }
 .filters button[aria-pressed="true"] { color: var(--text); font-weight: 600; box-shadow: 0 1px 0 var(--text); }
 .filters button[aria-pressed="true"] span { color: var(--muted); font-weight: 400; }
-article.check { border-bottom: 1px solid var(--line); }
+article.check, article.demo { border-bottom: 1px solid var(--line); }
 article.check:target .row { box-shadow: inset 3px 0 0 var(--accent); }
 .row { display: grid; grid-template-columns: 124px 1fr auto; gap: 20px; align-items: baseline; padding: 22px 0 20px; }
 .main { min-width: 0; }
@@ -1017,11 +1083,13 @@ if (search) {
 
 
 TWO_OUTPUTS = ('<p class="footnote">Check runs keep fast, raw recordings for diagnosing a run: a screen check keeps '
-               "its video when it fails. Videos for people come from separate demo runs, listed under Demos.</p>")
+               "its video when it fails, and Details opens any kept recording. Videos for people come from separate "
+               "demo runs, listed under Demos.</p>")
 
 
 def recordings_page(harness_dir):
-    """Build the runs page: one line per check for its latest run, the ones that need a look first.
+    """Build the runs page: demos for people first, then one line per check for its latest run, the ones that
+    need a look first.
 
     Each check shows its first problem and its code in one line; Details opens every step and behavior
     with the moment it was decided, the run's code, and earlier runs; the replay page holds the video
@@ -1052,7 +1120,7 @@ def recordings_page(harness_dir):
         title, purpose = check_feature(check, features)
         anchor = "check-" + re.sub(r"[^a-z0-9-]+", "-", check.lower())
         links = run_links(path, record, run_folder(path), evidence_dir)
-        actions = "".join(link_html(*link) for link in links if link[2] == "primary")
+        actions = "".join(link_html(*link) for link in links if link[2] == "primary") if status != "Passed" else ""
         if not links and status != "Passed":
             actions = '<span class="muted">No video kept</span>'
         lead = {"Failed": "Failed step: ", "Didn't finish": "Stopped: "}.get(status, "")
@@ -1078,13 +1146,14 @@ def recordings_page(harness_dir):
             "</article>"
         )
 
+    demos = demos_html(harness_dir, features)
     if blocks:
         body = "".join(blocks)
         newest = max((runs[0][1] for runs in runs_by_check.values()), key=lambda record: str(record.get("started_at") or ""))
         intro = f'<p class="meta">{counted(len(blocks), "check")} · last run {time_html(newest)}</p>'
-    elif listed_demos(evidence_dir):
+    elif demos:
         body = ""
-        intro = '<p class="meta">Check runs</p>'
+        intro = '<p class="meta">No check has run yet.</p>'
     else:
         body = (
             '<div class="empty"><strong>No check has run yet.</strong>'
@@ -1115,6 +1184,8 @@ def recordings_page(harness_dir):
 <h1>{html.escape(app)}</h1>
 {intro}
 </div>
+{demos}
+{'<h2 class="section">Check runs</h2>' if demos and blocks else ""}
 <div class="bar"{"" if blocks else " hidden"}>
 <div class="search">
 <input id="search" type="search" placeholder="Search checks, steps, branches, commits" aria-label="Search checks">
@@ -1130,26 +1201,11 @@ def recordings_page(harness_dir):
 {TWO_OUTPUTS if blocks else ""}
 {body}
 {left_out}
-{demos_html(evidence_dir)}
 </main>
 <script>{TIME_SCRIPT}{RECORDINGS_SCRIPT}</script>
 </body>
 </html>
 """
-
-
-def write_atomically(target, text):
-    """Write the page through a temporary file in the same folder, so a reader never opens a half-written one."""
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=target.parent, prefix=f".{target.name}.", suffix=".tmp", delete=False,
-    )
-    try:
-        with temporary:
-            temporary.write(text)
-        Path(temporary.name).replace(target)
-    finally:
-        Path(temporary.name).unlink(missing_ok=True)
 
 
 def is_harness(folder):
@@ -1171,12 +1227,14 @@ def write_recordings(harness_dir):
     page format. Evidence stays unchanged. Returns the page's path, or None, writing nothing, outside a harness."""
     if not is_harness(harness_dir):
         return None
-    features = feature_metadata(harness_dir)
-    for path, _ in listed_runs(harness_dir / "evidence") + listed_demos(harness_dir / "evidence"):
-        if not replay_is_current(run_folder(path) / "replay.html"):
-            write_page(path, features=features)
-    target = harness_dir / "recordings.html"
-    write_atomically(target, recordings_page(harness_dir))
+    validate = sibling("harness_validate", "validate.py")
+    with validate.refresh_lock(harness_dir):
+        features = feature_metadata(harness_dir)
+        for path, _ in listed_runs(harness_dir / "evidence") + listed_demos(harness_dir / "evidence"):
+            if not replay_is_current(run_folder(path) / "replay.html"):
+                write_page(path, features=features)
+        target = harness_dir / "recordings.html"
+        validate.write_atomically(target, recordings_page(harness_dir), "utf-8")
     return target
 
 
@@ -1205,7 +1263,7 @@ def write_page(evidence_path, out=None, features=None):
         features = feature_metadata(harness_of(evidence_path)) if is_harness(harness_of(evidence_path)) else []
     title = check_feature(str(record.get("check") or evidence_path.parent.name), features)[0]
     source = link(record["recording"]["video"]) if video else None
-    write_atomically(target, page(record, source, link, title))
+    sibling("harness_validate", "validate.py").write_atomically(target, page(record, source, link, title), "utf-8")
     return target, video
 
 

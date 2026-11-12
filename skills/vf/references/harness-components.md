@@ -16,7 +16,7 @@ Map it to the sub-feature IDs it proves, and in a check that proves several, giv
 
 Wait on a ready signal or a probe rather than a fixed sleep. Clean up when interrupted with SIGINT, and run the same way in a planned break as in a pass, as the Checks rules say. A check that drives a screen records it as the Evidence rules describe.
 
-With the first such check, publish the harness's `scripts/framework/vf.py replay` and `scripts/framework/vf.py clip` in the tool guide, noting that `VERIFY_KEEP_RECORDING=1` keeps a passing run's video, that `recordings.html` shows every check's latest run with a Watch button where a video was kept, and that clips and stills need the optional tools `vf.py clip --check` reports.
+With the first such check, publish the harness's `scripts/framework/vf.py replay` and `scripts/framework/vf.py clip` in the tool guide, noting that `VERIFY_KEEP_RECORDING=1` keeps a passing run's video, that `recordings.html` shows every check's latest run with a Watch button on a failed run's video and any other kept video under Details, and that clips and stills need the optional tools `vf.py clip --check` reports.
 
 **Proof, in order:**
 

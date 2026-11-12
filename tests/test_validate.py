@@ -9,7 +9,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -72,6 +74,56 @@ def run_check(harness, *flags):
             contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
         result = validate.main()
     return result, output.getvalue()
+
+
+class RefreshLockTest(unittest.TestCase):
+    def test_a_second_holder_waits_until_the_first_lets_go(self):
+        with tempfile.TemporaryDirectory() as directory:
+            acquired = threading.Event()
+
+            def second():
+                with validate.refresh_lock(directory):
+                    acquired.set()
+
+            with validate.refresh_lock(directory):
+                waiter = threading.Thread(target=second)
+                waiter.start()
+                self.assertFalse(acquired.wait(0.3), "the second holder got the lock while the first held it")
+            self.assertTrue(acquired.wait(5))
+            waiter.join()
+
+
+class AtomicWriteTest(unittest.TestCase):
+    def test_overlapping_writes_each_publish_a_complete_file_without_colliding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "recordings.html"
+            target.write_text("previous page")
+            publishing = threading.Barrier(2)
+            replace = Path.replace
+
+            def publish_together(source, destination):
+                self.assertEqual(target.read_text(), "previous page")
+                publishing.wait(timeout=5)
+                return replace(source, destination)
+
+            pages = ["first complete page", "second complete page"]
+            with patch.object(Path, "replace", publish_together), ThreadPoolExecutor(max_workers=2) as writers:
+                list(writers.map(lambda text: validate.write_atomically(target, text), pages))
+
+            self.assertIn(target.read_text(), pages)
+            self.assertEqual(list(Path(directory).iterdir()), [target])
+
+    def test_a_failed_write_keeps_the_previous_file_and_removes_its_temporary_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "recordings.html"
+            target.write_text("previous page")
+
+            with patch.object(Path, "replace", side_effect=OSError("cannot publish")):
+                with self.assertRaisesRegex(OSError, "cannot publish"):
+                    validate.write_atomically(target, "new page")
+
+            self.assertEqual(target.read_text(), "previous page")
+            self.assertEqual(list(Path(directory).iterdir()), [target])
 
 
 class RulesCopyTest(unittest.TestCase):

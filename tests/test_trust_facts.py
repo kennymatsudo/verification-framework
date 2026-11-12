@@ -146,6 +146,14 @@ class TrustFacts(unittest.TestCase):
         tally = trust_facts.gather(self.harness)["tally"]
         self.assertEqual((tally["verified"], tally["not_verified"], tally["no_result"], tally["behind_head"]), (1, 1, 3, 1))
 
+    def test_result_on_a_commit_off_heads_history_gives_no_count(self):
+        # After a rebase, tested..HEAD would count every rewritten commit, so no count is honest.
+        git(self.repo, "checkout", "-q", "--orphan", "rebuilt")
+        git(self.repo, "commit", "-qm", "rebuilt")
+        behavior = self.behaviors()["checkout.pay"]
+        self.assertIsNone(behavior["result"]["code"]["app"]["behind_head"])
+        self.assertIn("not in HEAD's history", trust_facts.result_cell(behavior))
+
     def test_result_finds_checkout_from_monorepo_env_locator(self):
         project = self.repo / "shop"
         project.mkdir()

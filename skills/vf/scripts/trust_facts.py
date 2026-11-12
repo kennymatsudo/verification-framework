@@ -26,7 +26,8 @@ prints one JSON object:
     code maps each repo to {"commit", "dirty", "dirty_hash", "dirty_files", "on_main",
     "behind_head"}; dirty_files is the evidence's list, null when it has none;
     behind_head counts commits between the tested commit and the checkout's
-    HEAD, null when the checkout or commit can't be found.
+    HEAD, null when the checkout can't find the commit or it is not in HEAD's
+    history (rebased, or another branch), where a count would mislead.
   - caveats: lines under notes.md's "Where a pass can mislead" that start with this id.
 - may_mislead, untested, known_failing: the other lines of those notes.md sections.
 - tally: counts across behaviors (see TALLY below).
@@ -155,9 +156,9 @@ def code_facts(validate, record, checkouts):
         source = source or {}
         commit = source.get("commit")
         checkout = checkouts.get(repo)
-        behind = validate.git(checkout, "rev-list", "--count", f"{commit}..HEAD") if checkout and commit else None
+        state, _, behind = validate.commit_position(checkout, commit) if checkout and commit else (None, None, None)
         facts[repo] = {"commit": commit, "dirty": source.get("dirty"), "dirty_hash": source.get("dirty_hash"), "dirty_files": source.get("dirty_files"),
-                       "on_main": source.get("on_main"), "behind_head": int(behind) if behind is not None else None}
+                       "on_main": source.get("on_main"), "behind_head": 0 if state == "head" else behind}
     return facts
 
 
@@ -270,7 +271,7 @@ def result_cell(behavior):
     for repo, code in result["code"].items():
         commit = (code["commit"] or "unknown")[:7]
         behind = code["behind_head"]
-        where = ("on HEAD" if behind == 0 else f"{behind} commits behind HEAD" if behind else "commit not in this checkout")
+        where = ("on HEAD" if behind == 0 else f"{behind} commits behind HEAD" if behind else "commit not in HEAD's history")
         dirty = f", uncommitted: {', '.join(code['dirty_files'])}" if code["dirty_files"] else ", uncommitted changes"
         parts.append(f"{repo} {commit}, {where}" + (dirty if code["dirty"] else ""))
     if result["finished_at"]:

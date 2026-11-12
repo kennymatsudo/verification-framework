@@ -56,13 +56,14 @@ A harness is a folder named `verify-<app>` in one of the folders where the proje
 ```text
 .agents/skills/verify-shop/     or under .claude/, .pi/, .cursor/
 ├── README.md                   where a person starts
-├── recordings.html             each check's latest run and history
+├── recordings.html             demo videos, then each check's latest run and history
 ├── SKILL.md                    tells an agent to verify through this harness
 ├── rules.md                    the shared rules, copied unchanged
 ├── harness.json                the manifest: setup status, repos, commands, tool entries
 ├── status.md                   the latest results, written by vf.py status
 ├── notes.md                    setup notes and caveats, written by people and agents
 ├── tools.md                    guide to every command, written by vf.py tools
+├── .refresh.lock               held while a run rewrites status.md or recordings.html, so runs take turns
 ├── features/
 │   └── <feature>.json          one per feature users see
 ├── scripts/
@@ -450,7 +451,7 @@ A video for people comes from a demo run, never from a check run ([ADR 0016](adr
 - **Proof.** For each behavior in the record's `sub_features`, the latest accepted ordinary run covering it (never a planned break) must have passed, on the same commit and `dirty_hash` for every repo it records, with every `harness_code` file both runs hold unchanged. Otherwise no video, and the listing says what's missing.
 - **Overlays.** `demo.py` draws nothing. The scenario draws captions, screen badges, and switch cards in the page with vf's `references/demo-overlay.js`; `references/demo-playwright.md` is an example scenario.
 
-`replay.py` builds a replay page for each demo run and lists demo runs in a Demos section under the checks on `recordings.html`, each with its MP4s and any ordinary passes on the same code of what it shows.
+`replay.py` builds a replay page for each demo run and lists demos in a Demos section at the top of `recordings.html`: one card per demo, from its latest passing run, titled by the features its `sub_features` belong to, with its MP4s, the behaviors it shows in their feature-map wording, any ordinary passes on the same code (`demo.py`'s `proof`), and, per repo, how many commits that repo's checkout has moved since (`git rev-list --count <commit>..HEAD`, or a note when the commit is not in HEAD's history). A newer failed demo run is named on the card. The card shows no verdict.
 
 **Diagnosing a failed step.** An agent reads the step's `detail`, the page text saved when it failed, and the browser's errors and failed requests from the seconds before. If those don't explain it, it looks at the stills from `--frames failed`. Agents don't watch the video.
 

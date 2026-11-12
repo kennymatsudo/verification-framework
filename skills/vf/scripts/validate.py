@@ -24,6 +24,7 @@ harness.json or a harness script is an error: tools read credentials from the pr
 """
 
 import argparse
+import contextlib
 import datetime
 import hashlib
 import json
@@ -33,7 +34,13 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 # Written by vf.py sync: the SHA-256 of every framework file it copied, so an edit made since shows.
 FRAMEWORK_LOCK = Path("scripts") / "framework" / "framework.sha256"
@@ -489,11 +496,23 @@ def render_tools(data):
 def write_tools(harness_dir):
     """Write tools.md from harness.json through a temporary file; returns the rendered text."""
     text = render_tools(manifest(harness_dir) or {})
-    target = harness_dir / "tools.md"
-    temporary = target.with_name(target.name + ".tmp")
-    temporary.write_text(text)
-    temporary.replace(target)
+    write_atomically(harness_dir / "tools.md", text)
     return text
+
+
+def write_atomically(target, text, encoding=None):
+    """Replace target with text through a temporary file unique to this call, in the same folder, so a reader never
+    opens a half-written file and two runs writing at once never share one. No encoding means the platform default."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = tempfile.NamedTemporaryFile(
+        mode="w", encoding=encoding, dir=target.parent, prefix=f".{target.name}.", suffix=".tmp", delete=False,
+    )
+    try:
+        with temporary:
+            temporary.write(text)
+        Path(temporary.name).replace(target)
+    finally:
+        Path(temporary.name).unlink(missing_ok=True)
 
 
 def credential_errors(harness_dir):
@@ -755,21 +774,60 @@ def latest_passing_records(evidence_dir):
     return latest
 
 
+@contextlib.contextmanager
+def refresh_lock(harness_dir):
+    """Hold the harness's lock while recomputing and rewriting status.md or recordings.html, waiting for it if another
+    run holds it. Runs that finish together then take turns, so the last one to write has read every accepted record."""
+    with open(Path(harness_dir) / ".refresh.lock", "a") as handle:
+        if os.name == "nt":
+            handle.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:  # LK_LOCK gives up after ten seconds; keep waiting
+                    continue
+        else:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def commit_position(checkout, commit):
+    """Where a recorded commit sits against the checkout's HEAD, as (state, full commit, commits since). The state is
+    "missing" when the checkout can't find either, "head", "elsewhere" when the commit is not in HEAD's history, or
+    "behind"; only "behind" carries a count."""
+    head = git(checkout, "rev-parse", "HEAD")
+    recorded = git(checkout, "rev-parse", commit) if commit else None
+    if head is None or recorded is None:
+        return "missing", None, None
+    if recorded == head:
+        return "head", recorded, None
+    # After a rebase, commit..HEAD also counts the rebased copies of the recorded commits, so the count
+    # only means "behind" when the recorded commit is still in HEAD's history.
+    in_history = subprocess.run(["git", "-C", str(checkout), "merge-base", "--is-ancestor", recorded, head], capture_output=True)
+    if in_history.returncode != 0:
+        return "elsewhere", recorded, None
+    since = git(checkout, "rev-list", "--count", f"{recorded}..HEAD")
+    return ("behind", recorded, int(since)) if since is not None else ("missing", None, None)
+
+
 def stale_commit_warning(name, checkout, commit):
     """Why a pass on the commit is not a pass on the checkout's HEAD, or None when the commit is HEAD."""
-    head = git(checkout, "rev-parse", "HEAD")
-    tested = git(checkout, "rev-parse", commit) if commit else None
-    behind = git(checkout, "rev-list", "--count", f"{commit}..HEAD") if commit else None
-    if behind is None or head is None or tested is None:
+    state, tested, behind = commit_position(checkout, commit)
+    if state == "missing":
         return f"{name} last pass ran on {commit or 'an unknown commit'}, which this checkout cannot find"
-    if tested == head:
+    if state == "head":
         return None
-    # After a rebase, commit..HEAD also counts the rebased copies of the tested commits, so the count
-    # only means "behind" when the tested commit is still in HEAD's history.
-    in_history = subprocess.run(["git", "-C", str(checkout), "merge-base", "--is-ancestor", tested, head], capture_output=True)
-    if in_history.returncode != 0:
+    if state == "elsewhere":
         return f"{name} last pass ran on {tested[:12]}, which is not in HEAD's history (rebased, or another branch)"
-    return f"{name} last pass is {behind} commit{'' if behind == '1' else 's'} behind HEAD"
+    return f"{name} last pass is {behind} commit{'' if behind == 1 else 's'} behind HEAD"
 
 
 def evidence_warnings(evidence_dir, check_proofs, repos):
@@ -1218,9 +1276,7 @@ def render_status(harness_dir, verdicts):
     lines = [render_line(sub_id, computed) for sub_id, computed in verdicts.items()]
     body = ["# Verification status", "", f"## {RESULTS_HEADING}", "", RENDERED_NOTE, ""]
     body += lines or ["No behaviors in the feature map yet."]
-    temporary = status.with_name(status.name + ".tmp")
-    temporary.write_text("\n".join(body) + "\n")
-    temporary.replace(status)
+    write_atomically(status, "\n".join(body) + "\n")
     return lines
 
 
