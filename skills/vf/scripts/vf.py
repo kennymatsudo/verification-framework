@@ -264,7 +264,11 @@ def parse_planned_break(planned, repo):
     if not planned:
         return None
     ids, _, what = planned.partition(": ")
-    return {"what": what.strip(), "sub_features": [item.strip() for item in ids.split(",") if item.strip()], "repo": repo}
+    parsed = {"what": what.strip(), "sub_features": [item.strip() for item in ids.split(",") if item.strip()], "repo": repo}
+    if switch := os.environ.get("VERIFY_BREAK_SWITCH"):
+        # The break was one of several gated ones in the copy's edit, live only while its switch was on.
+        parsed["switch"] = switch
+    return parsed
 
 
 def report_events(report):
@@ -615,8 +619,11 @@ def run_check(command, demo=False):
     planned = os.environ.get("VERIFY_PLANNED_BREAK")
     if demo and planned:
         raise Stopped("a demo run never runs in a planned break; unset VERIFY_PLANNED_BREAK")
+    control = bool(os.environ.get("VERIFY_BREAK_CONTROL")) and not planned
+    if demo and control:
+        raise Stopped("a demo run never runs as a break session's control; unset VERIFY_BREAK_CONTROL")
     try:
-        broken_repo, session_folder = code_state.open_break_session(harness) if planned else (None, None)
+        broken_repo, session_folder = code_state.open_break_session(harness) if planned or control else (None, None)
     except code_state.StateError as error:
         raise Stopped(str(error)) from error
     needed = needed_repos(harness, validate, command)
@@ -683,6 +690,9 @@ def run_check(command, demo=False):
                   finished_at=finished.strftime(validate.TIME_FORMAT), planned_break=planned_break)
     if ended_early:
         record["ended_early"] = ended_early
+    if control:
+        # A pass on a break session's edited code with every switch off; it decides no verdict by itself.
+        record["break_control"] = {"repo": broken_repo}
     if demo:
         record["demo"] = True
     name = (record["check"] if isinstance(record["check"], str) and CHECK_NAME.fullmatch(record["check"])

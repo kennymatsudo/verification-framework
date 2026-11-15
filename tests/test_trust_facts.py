@@ -89,10 +89,10 @@ class TrustFacts(unittest.TestCase):
 
     AIMED_AT_PAY = {"what": "capture skipped", "sub_features": ["checkout.pay"]}
 
-    def write_evidence(self, name, passed, steps, planned_break=None):
+    def write_evidence(self, name, passed, steps, planned_break=None, **fields):
         record = {"check": "pay", "planned_break": planned_break, "sub_features": ["checkout.pay"], "passed": passed, "reads": "state",
                   "code": {"app": {"commit": self.tested, "dirty": True, "dirty_hash": "d" * 64, "dirty_files": ["README.md"], "on_main": True}},
-                  "finished_at": "2026-10-03T14:02:40Z", "steps": steps, "accepted_by": "vf.py run"}
+                  "finished_at": "2026-10-03T14:02:40Z", "steps": steps, "accepted_by": "vf.py run", **fields}
         (self.harness / "evidence" / "pay" / name).write_text(json.dumps(record))
 
     def behaviors(self):
@@ -127,6 +127,27 @@ class TrustFacts(unittest.TestCase):
         saved = behaviors["checkout.saved-card"]
         self.assertEqual((saved["break"]["what"], saved["break"]["on_hand"], saved["break"]["failed_steps"]), ("card lookup skipped", True, []))
         self.assertEqual(trust_facts.gather(self.harness)["tally"]["caught_a_break"], 0)
+
+    def test_switched_break_counts_as_caught_only_beside_its_control(self):
+        switched = dict(self.AIMED_AT_PAY, switch="capture")
+        harness_code = {"scripts/checks/pay.py": "a" * 64}
+        self.write_evidence("break-pay.json", passed=False, steps=[
+            {"name": "order is created", "passed": True}, {"name": "order is paid", "passed": False}], planned_break=switched,
+            harness_code=harness_code)
+        pay = self.behaviors()["checkout.pay"]
+        self.assertEqual(pay["break"]["switch"], "capture")
+        self.assertIn("no control shows the check passing", pay["break"]["control_problem"])
+        self.assertIn("nothing shows the check passing on that edit with every break off", trust_facts.caught_cell(pay))
+        self.assertEqual(trust_facts.gather(self.harness)["tally"]["caught_a_break"], 0)
+
+        self.write_evidence("control-pay.json", passed=True, steps=[
+            {"name": "order is created", "passed": True, "at": 1.0}, {"name": "order is paid", "passed": True, "at": 2.0}],
+            break_control={"repo": "app"}, doctor={"exit_code": 0, "output": "ready"}, started_at="2026-10-03T14:01:40Z",
+            harness_code=harness_code)
+        pay = self.behaviors()["checkout.pay"]
+        self.assertIsNone(pay["break"]["control_problem"])
+        self.assertEqual(trust_facts.caught_cell(pay), "Failed when we broke it (2026-10-03): capture skipped")
+        self.assertEqual(trust_facts.gather(self.harness)["tally"]["caught_a_break"], 1)
 
     def test_each_kind_of_proof_is_tallied(self):
         tally = trust_facts.gather(self.harness)["tally"]

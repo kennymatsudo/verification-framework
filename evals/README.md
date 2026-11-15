@@ -64,6 +64,7 @@ Each is under 200 lines of app code and starts in about a second. Together they 
 | `add-checks-mailer-approval` | vf add-checks | Approval asked, refused, mail behaviors Not verified with that reason, `mail-sink` empty |
 | `add-checks-relay-cli` | vf add-checks | Hidden breaks caught, including a float rounding error; currencies asked about |
 | `add-checks-relay-breaks-owed` | vf add-checks | Asked now or later before the first planned break; told later, ran none, recorded each as owed, called nothing Verified |
+| `add-checks-ledger-switched` | vf add-checks | On an app that restarts for every edit, the breaks go into one edit behind switches with a control per check, so they cost fewer restarts than there are breaks; each behavior Verified through its switched break |
 | `verify-ledger-change` | verify-ledger, vf verify | The changed statement check Fails; nothing loosened; report leads with the failure |
 | `verify-split-stack` | verify-stock, vf verify | The API is rebuilt from the changed checkout; items.add Fails |
 | `verify-pr-ledger` | vf verify-pr | The PR's "no behavior change" claim is found false; a comment is drafted, not posted |
@@ -111,129 +112,42 @@ A grader scores 0 to 1; most are pass or fail, `hidden_breaks_caught` and `repor
 
 ## Baseline
 
-The first smoke run on `claude-opus-5-5` (one run per case, 2026-10-24) scored 0.93 and cost $35:
+Compare a new run with the latest smoke run on the same model. Earlier runs, with their per-case tables, are in this file's Git history.
 
-| Case | Score | Time | Cost | What failed |
-| --- | --- | --- | --- | --- |
-| add-checks-ledger | 1.00 | 657 s | $18.67 | nothing: all six hidden breaks caught, overdraft kept Failed |
-| audit-weak-ledger-legacy | 1.00 | 204 s | $1.25 | nothing |
-| setup-ledger | 1.00 | 212 s | $3.36 | nothing |
-| explain-ledger | 0.92 | 61 s | $0.27 | no reader subagents, although the harness has five check scripts and vf-explain says to spawn them past three |
-| setup-vault-blocked | 0.91 | 95 s | $1.13 | the options and "Then I'll ..." came after the `Needs you:` line instead of on it |
-| verify-ledger-change | 0.77 | 475 s | $10.68 | built a memo-filter check and edited `features/statement.md` despite "existing checks only", and asked five times, three of them to edit product code or the requirements |
+**Latest smoke run** (2026-11-15, `claude-opus-5-5`, one run per case, Rules version 10, $12.46): all seven cases 1.00. It ran after the break procedure moved out of the `rules.md` Checks section into Planned breaks; the run before it, on the same day with the longer Checks section, also scored 1.00 on every case, for $11.68.
 
-Three findings about the skills, not the suite: the ask is often not the last line (seen in vf, vf-verify, and across models); the verify mode built under an existing-checks-only request once the developer said "go ahead with your recommendation"; and vf-explain read the checks itself instead of spawning readers. The verify cases' developer now refuses new checks outright and the cases cap questions at three, so the next run measures the skill, not the sheet's leniency. Compare later runs against these numbers on the same model.
-
-### Second run, after the fixes
-
-The same smoke tier, two runs per case, after the `messages.md`, verify-mode, and vf-explain changes those findings led to, plus the first run of the seven other cases (2026-10-25, Opus 5.5, $56 in all):
-
-| Case | Runs | Score | Cost | Notes |
-| --- | --- | --- | --- | --- |
-| add-checks-ledger | 2 | 1.00, 1.00 | $5.47, $22.19 | all hidden breaks caught both times; cost varies fourfold between runs |
-| audit-weak-ledger-legacy | 2 | 1.00, 1.00 | $0.53, $0.62 | |
-| explain-ledger | 2 | 1.00, 1.00 | $0.28, $0.26 | after the pattern accepted "broke" and the reader grader was dropped (see below) |
-| setup-ledger | 2 | 1.00, 1.00 | $3.00, $2.29 | |
-| setup-vault-blocked | 2 | 1.00, 1.00 | $1.32, $1.15 | the ask is now the last line in both runs |
-| verify-ledger-change | 2 | 1.00, 1.00 | $1.09, $1.57 | built nothing, asked once, added the memo filter to the map as a gap (see below) |
-| add-checks-kiosk-ui | 1 | 1.00 | $6.11 | all six hidden breaks caught, the screen-only ones included |
-| add-checks-mailer-approval | 1 | 1.00 | $1.56 | approval asked and refused, `mail-sink` empty, mail behaviors Not verified with the reason |
-| add-checks-relay-cli | 1 | 1.00 | $4.16 | all five hidden breaks caught; the currencies were listed as a gap rather than asked about (see below) |
-| setup-mono-orders | 1 | 1.00 | $3.36 | |
-| verify-split-stack | 1 | 1.00 | $0.49 | the API rebuilt from the changed checkout; items.add Failed |
-
-Three graders were corrected from these runs, and the scores above are with the corrected graders; the runs as first graded scored 0.86 (explain), 0.79 (verify), and 0.88 (relay). Each correction came from a run that did the right thing and was marked down:
-
-- A requirement that says "not decided" is settled: leave it out. The add-checks cases demanded a question about it before building; the relay run listed it as a gap in its preview instead, which is what `messages.md` asks. `open_item_left_out` now passes either, as long as no check is built for it.
-- The verify mode's own step 6 says to add a behavior the change introduced to the feature map. `harness_unchanged` now flags only edits to existing checks, proof lines, sub-feature lines, and settings; an added map entry with "No check yet" passes.
-- The explain pattern accepted "break" but not "broke".
-
-One rule was changed rather than enforced: vf-explain said to spawn a reader per check past three scripts, and in three Opus runs on a five-check harness it read them itself, correctly and in under a minute. It now reads the checks itself when they fit in one sitting and spawns readers only for a harness too large for that, and the explain case no longer grades for a subagent.
-
-What the second run says about the skill fixes: the ask placement held in every asking message across twelve runs; the verify mode built nothing under existing-checks-only in both runs and asked once instead of five times; and the existing-checks-only refusal in the developer's answers was never needed, since the agent did not propose building.
-
-### Third run, after merging main
-
-After `origin/main` was merged in (its source-revision tracking and behind-HEAD marking now in the skills), the smoke tier once more and the last two cases (2026-10-25, Opus 5.5, $43 in all):
-
-| Case | Score | Cost | Notes |
+| Case | Score | Time | Cost |
 | --- | --- | --- | --- |
-| add-checks-ledger | 0.94 | $33.34 | all six hidden breaks caught; failed only `questions_at_most`: it asked "should I commit the new checks?" eight times because the developer's sheet answered each with the overdraft rule, which matched first; the commit rule now comes first in every sheet |
-| audit-weak-ledger-legacy | 1.00 | $0.85 | |
-| explain-ledger | 1.00 | $0.26 | |
-| setup-ledger | 1.00 | $2.43 | |
-| setup-vault-blocked | 1.00 | $1.29 | |
-| verify-ledger-change | 1.00 | $1.00 | |
-| audit-coverage-ledger-drift | 1.00 | $1.26 | first run: the renamed route reported as drift, the new listing as a gap |
-| verify-pr-ledger | 1.00 | $2.19 | first run; graded 0.61 at first, see below |
+| add-checks-ledger | 1.00 | 507 s | $7.95 |
+| audit-weak-ledger-legacy | 1.00 | 135 s | $0.69 |
+| explain-ledger | 1.00 | 48 s | $0.27 |
+| setup-ledger | 1.00 | 158 s | $1.76 |
+| setup-vault-blocked | 1.00 | 88 s | $0.92 |
+| verify-bare-offers-setup | 1.00 | 23 s | $0.40 |
+| verify-ledger-change | 1.00 | 68 s | $0.47 |
 
-The verify-pr run did the job well and the graders did not know its workflow: verify-pr runs the checks in a worktree of the harness repo and leaves the evidence there, uncommitted, for the developer, and it put the drafted review comment in a file rather than in the reply. Three graders learned that: `status_verdict` can read the harness's `status.md` in the repo's other worktrees (`in_worktrees`), `report_names` can read files the agent wrote (`scope: any`), and `product_code_clean` can allow kept worktrees (`allow_worktrees`). The draft itself named the order regression, the base build it passed on, and the known LEDGER-41 failure as tracked elsewhere.
+In the earlier of those two runs, add-checks-ledger's agent put its breaks behind switches unprompted ([ADR 0017](../docs/adr/0017-switched-breaks-share-one-restart.md)): a switch named for each break in the one preview, a control for each of its four checks, all six hidden breaks caught, and 3 app restarts where one per break would take 9. `add-checks-ledger-switched` ran once on its own ($5.97): 1.00. The cases outside the smoke tier last ran on 2026-10-25, each at 1.00.
 
-### Fourth run: vf agent-invocable
+**How much the numbers move.** Nine smoke runs since 2026-10-24 scored between 0.93 and 1.00 and cost roughly $11 to $35 a pass. add-checks-ledger alone has cost between $2.74 and $33.34 on the same skill text, so one run's cost says little. Every run so far is on one model.
 
-An experiment for the redesign proposal ([docs/redesign-proposal.md](../docs/redesign-proposal.md)), on a branch: vf's `disable-model-invocation` removed and its `openai.yaml` allowing implicit invocation, so an agent may pick vf on its own, plus one new case. `verify-bare-offers-setup` asks an agent to prove a behavior on the real app in a repo with no harness and no skill named; it passes only when the agent asks before setting anything up, builds nothing after the developer declines, and leaves no harness folder, commit, or process (2026-10-27, Opus 5.5, $15.57 in all):
+**What the runs found in the skills**
 
-| Case | Score | Cost | Notes |
-| --- | --- | --- | --- |
-| verify-bare-offers-setup, first run alone | 0.69 | $0.43 | built nothing and offered setup, but the ask was "Which do you want?" under two option bullets, so `ask_is_last_line` and `asked_about` both read no question; the same ask-placement miss the first baseline found |
-| verify-bare-offers-setup, in the smoke tier | 1.00 | $0.37 | the ask was `Needs you: shall I run vf to set up the ledger harness and then verify LR-5?` |
-| the six smoke cases | 1.00 each | $14.77 | all hidden breaks caught in add-checks-ledger; no change from the third run |
+- The ask is often not the last line. The first run found it in three modes and `messages.md` fixed it; it came back in verify's no-harness reply in two of three runs.
+- Verify built a check under an existing-checks-only request once the developer said "go ahead"; the mode now says the restriction stands for the whole run.
+- Explain was told to spawn a reader per check past three scripts and read five itself, correctly, in under a minute. The rule changed: readers only for a harness too large to read in one sitting.
+- With no harness, vf sent a weak-checks audit of a homegrown folder through setup first. The mode table now says the weak-checks audit and verify-pr need no setup.
+- The fourth run (2026-10-27) made vf agent-invocable as an experiment: no run started setup, an audit, or PR verification unasked, but the agent never chose vf where it could have, so it showed only that removing the flag did no harm.
+- Merging the skills into one put the description at risk: `verify-bare-offers-setup` scored 0.77 because vf was never loaded. The description now opens with "Verify a change on the real app". A description change needs that case rerun more than once.
+- A behavior's `repos` list was read by no reviewer; the blind reviewer now checks it.
 
-What it says: with vf agent-invocable, no run across eight started setup, an audit, or PR verification unasked, and the person-only cases still behaved when the slash command was not the only way in. What it does not say: in both runs of the new case the agent chose vf-verify, never vf, because vf-verify's description matches a verify request better. So the flag is safe to flip, but the risk the proposal's one-skill step carries, a merged description that an agent picks for "verify my change" and whose body must then refuse to run setup, is tested only once the merge exists. The case is in place for that run.
+**What the runs found in the suite**
 
-### Fifth run: Start takes the checkout (ADR 0010)
+Each correction came from a run that did the right thing and was marked down.
 
-The smoke tier on the Rules version 4 contract ([ADR 0010](../docs/adr/0010-start-takes-the-checkout.md)): `Run scratch code` and `After an edit` gone, `Start` naming `{checkout:<repo>}`, a `Reloads` line, the doctor running for every harness, and `VERIFY_CHECKOUT_<REPO>` handed to every doctor and check (2026-10-27, Opus 5.5, $15.85 in all):
-
-| Case | Score | Cost | Notes |
-| --- | --- | --- | --- |
-| add-checks-ledger | 1.00 | $10.20 | all six hidden breaks caught; the agent ran its planned breaks through `break start` and `break run`, with the one `Start` command restarting the app on the scratch copy |
-| audit-weak-ledger-legacy | 1.00 | $0.51 | |
-| explain-ledger | 1.00 | $0.30 | |
-| setup-ledger | 1.00 | $2.21 | the harness it built validates on the new settings |
-| setup-vault-blocked | 1.00 | $1.26 | |
-| verify-bare-offers-setup | 0.92 | $0.38 | built nothing and asked before setting up, but a paragraph followed the `Needs you:` line; the same ask-placement miss as its first run, now in two of three runs |
-| verify-ledger-change | 1.00 | $0.99 | |
-
-What it says: the skills build trustworthy checks and run calibrated breaks on the new contract without any wording change aimed at it. What it also says: vf-verify's reply in a repo with no harness puts text after the ask in two of three runs, a skill finding about that branch of the verify mode, not about the contract; it is the same miss the first baseline found in other modes and fixed through `messages.md`.
-
-### Sixth run: the manifest (ADR 0013)
-
-The smoke tier on the Rules version 6 contract ([ADR 0013](../docs/adr/0013-one-manifest-for-what-scripts-read.md)): `harness.json` and `features/<slug>.json` in place of `settings.md`, `features/README.md`, and the Markdown feature files, free-prose `notes.md`, and `tools.md` rendered from the manifest (2026-10-27, Opus 5.5, $14.57 in all):
-
-| Case | Score | Cost | Notes |
-| --- | --- | --- | --- |
-| add-checks-ledger | 1.00 | $5.35 | all six hidden breaks caught; the agent wrote the JSON entries and ran `vf.py tools` without being told how |
-| audit-weak-ledger-legacy | 0.86 | $3.96 | the audit itself was right (all four planted weak checks named, the sound one left alone), but the agent first set up a harness because the repo had none, and that setup left an `AGENTS.md` the developer had approved; `product_code_clean` failed on that file |
-| explain-ledger | 1.00 | $0.28 | |
-| setup-ledger | 1.00 | $2.37 | the harness it built validates on the manifest format |
-| setup-vault-blocked | 1.00 | $1.12 | |
-| verify-bare-offers-setup | 1.00 | $0.40 | the ask was the last line this time |
-| verify-ledger-change | 1.00 | $1.09 | |
-
-What it says: the skills write and read the manifest format correctly with no wording aimed at it; every case that touches a harness passed every grader. What it also says: vf's body sent a weak-checks audit of a homegrown `qa/` folder through setup first, because its rule for a repo with no harness ("the playbook is Set up whatever the request said") doesn't carve out the two modes that work on a harness this framework didn't build. The earlier runs of this case passed because the model chose the audit directly; the one-skill step states the carve-out in the mode table.
-
-### Seventh run: one skill (ADR 0014)
-
-The smoke tier with vf-verify and vf-explain folded into vf as modes ([ADR 0014](../docs/adr/0014-one-skill.md)), the person-only sentence at the top of setup, the audits, and verify-pr, and Rules version 7 (2026-10-27, Opus 5.5, $11.00 in all, plus $1.22 for the rerun below):
-
-| Case | Score | Cost | Notes |
-| --- | --- | --- | --- |
-| add-checks-ledger | 1.00 | $4.98 | all six hidden breaks caught |
-| audit-weak-ledger-legacy | 1.00 | $0.96 | went straight to the audit of `qa/`; the sixth run's detour through setup is gone, as the mode table's carve-out intended |
-| explain-ledger | 1.00 | $0.37 | |
-| setup-ledger | 1.00 | $2.57 | |
-| setup-vault-blocked | 1.00 | $1.26 | |
-| verify-bare-offers-setup | 0.77 | $0.31 | vf was never loaded: the agent verified LR-5 by hand with curl, found a real self-transfer bug in the practice app, and mentioned setup only in its closing line, not as a `Needs you:` ask |
-| verify-ledger-change | 1.00 | $0.55 | |
-
-The guard case for the merge missed, and not in the way the ADR feared: no person-only mode started unasked, because the skill was not invoked at all. The merged description opened with "Prove an app works on the real thing through its verification harness"; vf-verify's had opened with "Verify a change on the real app", which this case's "verify on the running app" request matched in every earlier run. The description now opens with vf-verify's old sentence and names "prove it on the running app" as a trigger. The same case rerun three times on that description: 1.00, 1.00, 1.00 ($1.22); vf was loaded each time, each run ended on a `Needs you:` asking whether to set up, and nothing was built.
-
-What it says: with one agent-invocable skill, no run across the ten started setup, an audit, or PR verification unasked, and the two modes that work on a foreign harness no longer route through setup. What it also says: the description is the one thing the merge put at risk, and this suite checks it with one case; a description change needs that case rerun more than once.
-
-### After the seventh run: the `repos` review line
-
-An independent review of the whole redesign found that a behavior's `repos` list was written by the same agent that wrote the check and read by no reviewer. The blind reviewer in `verification-plan.md` now checks it, the add-checks mode says when to name it, and `split-stack` gained `items.require-name`, whose check drives the API alone with `repos: ["api"]`, so tier 0 exercises the field. Two sentences changed in two mode files, so only the two smoke cases that read them were rerun rather than the whole tier (2026-10-27, Opus 5.5, $3.31): add-checks-ledger 1.00 ($2.74, all six hidden breaks caught), verify-ledger-change 1.00 ($0.57).
+- A requirement that says "not decided" is settled: `open_item_left_out` passes an ask or a listed gap, as long as no check is built for it.
+- Verify may add a behavior the change introduced to the feature map: `harness_unchanged` flags only edits to existing checks, entries, and settings.
+- verify-pr leaves its evidence in a worktree and its draft in a file: `status_verdict` reads other worktrees (`in_worktrees`), `report_names` reads files the agent wrote (`scope: any`), and `product_code_clean` can allow kept worktrees (`allow_worktrees`).
+- The developer's answer sheet matched the wrong rule and answered "should I commit?" with the overdraft rule eight times; the commit rule now comes first in every sheet, and the verify cases' developer refuses new checks outright.
 
 ## Adding a practice repo or a case
 

@@ -1104,6 +1104,9 @@ def recordings_page(harness_dir):
         if record.get("planned_break"):
             breaks += 1
             continue
+        if record.get("break_control"):
+            # A break session's control ran on edited code; it is no run of the code under test.
+            continue
         runs_by_check.setdefault(str(record.get("check") or path.parent.name), []).append((path, record))
     # Runs arrive newest first and sorted() is stable, so within each result the most recently run check leads.
     ordered_checks = sorted(runs_by_check.items(), key=lambda section: STATUS_ORDER.index(outcome(section[1][0][1])[0]))

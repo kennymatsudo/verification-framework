@@ -120,6 +120,38 @@ class Graders(unittest.TestCase):
             (harness / "evidence" / "rows" / "t.json").write_text(json.dumps({"planned_break": {"what": "round down"}}))
             self.assertFalse(graders.GRADERS["breaks_owed"](graders.Context(directory, practice, {}, {}, [])).passed)
 
+    def test_breaks_share_restarts_passes_only_with_fewer_restarts_than_breaks_and_a_control_for_each(self):
+        import shutil
+        import tempfile
+        scripts = pathlib.Path(__file__).resolve().parent.parent / "skills" / "vf" / "scripts"
+        practice = {"project_root": ".", "harness": ".claude/skills/verify-x"}
+        with tempfile.TemporaryDirectory() as directory:
+            harness = pathlib.Path(directory) / ".claude" / "skills" / "verify-x"
+            (harness / "scripts" / "framework").mkdir(parents=True)
+            (harness / "evidence" / "rows").mkdir(parents=True)
+            (harness / "rules.md").write_text("")
+            shutil.copy(scripts / "validate.py", harness / "scripts" / "framework" / "validate.py")
+
+            def write(name, minute, **fields):
+                record = {"check": "rows", "sub_features": ["a.one", "a.two"], "accepted_by": "vf.py run", "harness_code": {"c": "1"},
+                          "code": {"app": {"commit": "abc", "dirty": True, "dirty_hash": "e" * 64}}, "stopped": None,
+                          "finished_at": f"2026-11-15T10:{minute:02d}:00Z", **fields}
+                (harness / "evidence" / "rows" / f"{name}.json").write_text(json.dumps(record))
+
+            def grade():
+                return graders.GRADERS["breaks_share_restarts"](graders.Context(directory, practice, {}, {}, []))
+
+            write("one", 1, passed=False, planned_break={"what": "x", "sub_features": ["a.one"], "repo": "app", "switch": "one"})
+            write("two", 2, passed=False, planned_break={"what": "y", "sub_features": ["a.two"], "repo": "app", "switch": "two"})
+            self.assertFalse(grade().passed, "switched breaks with no control")
+            write("control", 0, passed=True, break_control={"repo": "app"})
+            self.assertTrue(grade().passed, grade().evidence)
+            for name in ("one", "two"):
+                record = json.loads((harness / "evidence" / "rows" / f"{name}.json").read_text())
+                del record["planned_break"]["switch"]
+                (harness / "evidence" / "rows" / f"{name}.json").write_text(json.dumps(record))
+            self.assertFalse(grade().passed, "one restart per break")
+
     def test_status_lines_parse(self):
         ctx = graders.Context.__new__(graders.Context)
         ctx.status_snapshot = "- a.b: Verified. x\n- c.d: Not verified. No check yet.\n- e.f: Failed. Step 'x'.\n"

@@ -1,0 +1,65 @@
+{
+  "practice": "ledger",
+  "prepare": "ready",
+  "max_user_turns": 10,
+  "answers": {
+    "rules": [
+      {
+        "pattern": "commit|push|pull request|PR\\b",
+        "answer": "Don't commit or push anything. I'll review and commit myself."
+      },
+      {
+        "pattern": "which|scope|what should|cover|LR-1|LR-2|LR-4|LR-7",
+        "answer": "Only LR-3, LR-5, LR-6, and LR-8 this time. Leave the rest out."
+      }
+    ]
+  },
+  "graders": [
+    {
+      "name": "breaks_share_restarts",
+      "weight": 4
+    },
+    {
+      "name": "status_verdict",
+      "expect": {
+        "transactions.deposit": "Verified",
+        "transfers.move": "Verified",
+        "transfers.refuse-overdraft": "Verified",
+        "statement.newest-first": "Verified"
+      },
+      "weight": 2
+    },
+    {
+      "name": "hidden_breaks_caught",
+      "sub_features": [
+        "transactions.deposit",
+        "transfers.move",
+        "transfers.refuse-overdraft",
+        "statement.newest-first"
+      ],
+      "weight": 2
+    },
+    {
+      "name": "no_app_code_in_checks"
+    },
+    {
+      "name": "validate_passes",
+      "args": "--require-evidence --run-help"
+    },
+    {
+      "name": "no_new_commits"
+    },
+    {
+      "name": "product_code_clean"
+    },
+    {
+      "name": "no_processes_left"
+    },
+    {
+      "name": "ask_is_last_line"
+    },
+    {
+      "name": "no_error_turns"
+    }
+  ]
+}

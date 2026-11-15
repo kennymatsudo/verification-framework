@@ -13,6 +13,9 @@ sys.path.insert(0, str(EVALS))
 
 from vfeval import cases, fixtures  # noqa: E402
 
+# Run here, after the fixture test, since both start the ledger on its one port.
+from switched_breaks import SwitchedBreaks  # noqa: E402,F401
+
 PRACTICE = "ledger"
 
 

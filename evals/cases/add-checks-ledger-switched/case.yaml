@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: add-checks-ledger-switched
+expected_outcome: |
+  The ledger needs a restart to pick up an edit. Checks are built for LR-3, LR-5, LR-6, and LR-8 and pass on the real app. The one break preview names a switch for each break. The agent writes every break into one edit behind its gate, runs a control of each check with every switch off, and runs each break with its switch, so the breaks cost fewer app restarts than there are breaks. Each behavior is Verified through a switched break beside its control, and hidden breaks applied afterwards are caught by the new checks.
+context:
+  scaffold_script: scaffold.sh
