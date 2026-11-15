@@ -114,21 +114,21 @@ A grader scores 0 to 1; most are pass or fail, `hidden_breaks_caught` and `repor
 
 Compare a new run with the latest smoke run on the same model. Earlier runs, with their per-case tables, are in this file's Git history.
 
-**Latest smoke run** (2026-11-15, `claude-opus-5-5`, one run per case, Rules version 10, $11.68): all seven cases 1.00.
+**Latest smoke run** (2026-11-15, `claude-opus-5-5`, one run per case, Rules version 10, $12.46): all seven cases 1.00. It ran after the break procedure moved out of the `rules.md` Checks section into Planned breaks; the run before it, on the same day with the longer Checks section, also scored 1.00 on every case, for $11.68.
 
 | Case | Score | Time | Cost |
 | --- | --- | --- | --- |
-| add-checks-ledger | 1.00 | 537 s | $6.30 |
-| audit-weak-ledger-legacy | 1.00 | 156 s | $1.06 |
-| explain-ledger | 1.00 | 45 s | $0.25 |
-| setup-ledger | 1.00 | 155 s | $1.89 |
-| setup-vault-blocked | 1.00 | 106 s | $1.25 |
-| verify-bare-offers-setup | 1.00 | 30 s | $0.40 |
-| verify-ledger-change | 1.00 | 77 s | $0.53 |
+| add-checks-ledger | 1.00 | 507 s | $7.95 |
+| audit-weak-ledger-legacy | 1.00 | 135 s | $0.69 |
+| explain-ledger | 1.00 | 48 s | $0.27 |
+| setup-ledger | 1.00 | 158 s | $1.76 |
+| setup-vault-blocked | 1.00 | 88 s | $0.92 |
+| verify-bare-offers-setup | 1.00 | 23 s | $0.40 |
+| verify-ledger-change | 1.00 | 68 s | $0.47 |
 
-In add-checks-ledger the agent put its breaks behind switches unprompted ([ADR 0017](../docs/adr/0017-switched-breaks-share-one-restart.md)): a switch named for each break in the one preview, a control for each of its four checks, all six hidden breaks caught, and 3 app restarts where one per break would take 9. `add-checks-ledger-switched` ran once on its own ($5.97): 1.00. The cases outside the smoke tier last ran on 2026-10-25, each at 1.00.
+In the earlier of those two runs, add-checks-ledger's agent put its breaks behind switches unprompted ([ADR 0017](../docs/adr/0017-switched-breaks-share-one-restart.md)): a switch named for each break in the one preview, a control for each of its four checks, all six hidden breaks caught, and 3 app restarts where one per break would take 9. `add-checks-ledger-switched` ran once on its own ($5.97): 1.00. The cases outside the smoke tier last ran on 2026-10-25, each at 1.00.
 
-**How much the numbers move.** Eight smoke runs since 2026-10-24 scored between 0.93 and 1.00 and cost roughly $11 to $35 a pass. add-checks-ledger alone has cost between $2.74 and $33.34 on the same skill text, so one run's cost says little. Every run so far is on one model.
+**How much the numbers move.** Nine smoke runs since 2026-10-24 scored between 0.93 and 1.00 and cost roughly $11 to $35 a pass. add-checks-ledger alone has cost between $2.74 and $33.34 on the same skill text, so one run's cost says little. Every run so far is on one model.
 
 **What the runs found in the skills**
 
