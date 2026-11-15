@@ -5,7 +5,8 @@ Usage:
   break_session.py worktree REPO PATH COMMIT [--branch NAME]
   break_session.py worktree --clear REPO
   break_session.py start REPO
-  break_session.py run REPO "IDS: WHAT WAS BROKEN" -- CHECK COMMAND...
+  break_session.py run REPO "IDS: WHAT WAS BROKEN" [--switch NAME] -- CHECK COMMAND...
+  break_session.py control REPO -- CHECK COMMAND...
   break_session.py replay EVIDENCE_FILE -- CHECK COMMAND...
   break_session.py status
   break_session.py end REPO
@@ -58,9 +59,25 @@ run, it appends one line per targeted sub-feature the break caught cleanly to ev
 harness's record of what was broken and when; vf.py status reads the break's evidence itself, so nothing
 is written in the feature file.
 
+Switched breaks let one restart serve every break in a session. start prints the session's switch file,
+which holds `off` or the name of the one break that is live. The copy's one edit holds every break, each
+behind a gate that reads that file when the behavior runs and breaks it only while the file holds the
+gate's own name. `run --switch NAME` restarts the app only when the copy's product code differs from the
+code the last switched run or control ran on, writes NAME to the switch file, runs the check, writes `off`
+again, and leaves the edit in place, so the next switched break runs on the same running app. `control`
+runs a check to its end on that same code with the switch `off` and records it with break_control; a
+switched break counts only beside an accepted passing control of the same check on the same code and
+harness code, which shows the edit breaks nothing until its switch is on. A session of N switched breaks
+restarts the app once for the edit, however many breaks it holds, plus the restarts start and end already
+make. A run without --switch is refused once a switched run or control has run, since it would restore the
+copy and discard the other breaks; run those breaks first, or in another session. The file always exists
+while the session is open, so a gate that only tests for the file is live during the control and earns
+nothing.
+
 replay applies the patch saved beside EVIDENCE_FILE to the repo its planned_break names and runs it as
 run does, aimed at the same sub-features, to re-prove a check after its code changes. The repo's
-session must be open.
+session must be open. A switched break is replayed with its switch, on a copy that is clean or already
+holds that same edit, and needs a new control when the check's code changed.
 
 end refuses while the copy's HEAD differs from the session's commit, since a commit there may hold a break
 or someone's work. It then marks the session ending. For a scratch copy it points the app back at the
@@ -307,6 +324,18 @@ def require_session_repo(session, repo):
     if owner != repo:
         raise GuardError(f"{repo} shares its Git checkout with {owner}, and the break session there is open for {owner}; "
                          f"name {owner} in `vf.py break` commands, or close it with `vf.py break end {owner}`")
+
+
+SWITCH_FILE = "switch"
+SWITCH_OFF = "off"
+SWITCH_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
+
+
+def set_switch(folder, name):
+    """Make name the one live break, or SWITCH_OFF for none. Replaced in one step, so a gate never reads half a name."""
+    path = folder / SWITCH_FILE
+    path.with_suffix(".tmp").write_text(name)
+    path.with_suffix(".tmp").replace(path)
 
 
 def load_session(checkout, repo, harness):
@@ -561,6 +590,8 @@ def start(harness, repo):
         "in_place": in_place,
         # end sets ending before it points the app back or restarts it; held names why run must wait for end.
         "ending": False, "held": None,
+        # The copy's product code as the last switched break or control ran it; None before the first.
+        "armed_tree": None,
     }
     # Written before the worktree exists, so a crash from here on leaves a session that blocks ordinary runs and that end can clean up.
     save_session(folder, session)
@@ -575,6 +606,7 @@ def start(harness, repo):
         if code_identity(code_state.checkout_state(scratch, harness)) != code_identity(under_test):
             raise GuardError(f"the scratch copy at {scratch} doesn't match {checkout}'s code after replaying its changes; run `vf.py break end {repo}`")
     session["start_tree"] = snapshot_tree(worktree, harness)
+    set_switch(folder, SWITCH_OFF)
     save_session(folder, session)
 
     if in_place:
@@ -586,6 +618,10 @@ def start(harness, repo):
         point_app(harness, session, repo, scratch=True)
     print(f"Make the break as an uncommitted edit in {scratch}, then run:")
     print(f'  vf.py break run {repo} "<sub-feature IDs>: <what was broken>" -- <check command>')
+    print(f"To run several breaks on one restart, put them all in that one edit, each behind a gate that reads "
+          f"{folder / SWITCH_FILE} when the behavior runs and breaks it only while the file holds the gate's own name, then run:")
+    print(f"  vf.py break control {repo} -- <check command>")
+    print(f'  vf.py break run {repo} "<sub-feature IDs>: <what was broken>" --switch <name> -- <check command>')
     return 0
 
 
@@ -594,22 +630,30 @@ def evidence_files(harness):
     return set((harness / "evidence").glob("*/*.json"))
 
 
-def planned_break_runs(paths):
-    """The evidence files among paths that record a planned break run, in path order."""
+def planned_break_runs(paths, field="planned_break"):
+    """The evidence files among paths that record a planned break run, or with field="break_control" a control, in path order."""
     found = []
     for path in sorted(paths):
         record = validate.read_record(path)
-        if record and record.get("planned_break"):
+        if record and record.get(field):
             found.append(path)
     return found
 
 
-def run_break(harness, repo, planned, command, patch=None):
+def run_break(harness, repo, planned, command, patch=None, switch=None):
     """Run the check against the copy's edit, or against a saved patch, then restore the copy.
-    Saves the edit as <time>.patch beside the evidence the check wrote and logs what the break caught."""
-    ids, sep, what = planned.partition(": ")
-    if not sep or not ids.strip() or not what.strip():
+    Saves the edit as <time>.patch beside the evidence the check wrote and logs what the break caught.
+
+    With switch, the edit holds several gated breaks: the check runs with only that one live and the edit
+    stays for the next. With planned None, the run is the control: every switch off, the check run to its end."""
+    control = planned is None
+    switched = control or switch is not None
+    if switch is not None and (not SWITCH_NAME.fullmatch(switch) or switch == SWITCH_OFF):
+        raise StateError(f"a switch name is lowercase letters, digits, and hyphens, and never '{SWITCH_OFF}'; got {switch!r}")
+    ids, sep, what = (planned or "").partition(": ")
+    if not control and (not sep or not ids.strip() or not what.strip()):
         raise StateError(f"expected \"<sub-feature IDs>: <what was broken>\", got {planned!r}")
+    field = "break_control" if control else "planned_break"
     located, _ = locate(harness, repo)
     session, folder = load_session(located, repo, harness)
     stop_leftover_check(folder)
@@ -629,10 +673,15 @@ def run_break(harness, repo, planned, command, patch=None):
     if validate.git(worktree, "rev-parse", "HEAD") != session["commit"]:
         raise GuardError(f"a commit was made in {worktree}; a break must be an uncommitted edit. Move HEAD back to "
                          f"{session['commit'][:12]} once anything in the commit is saved, then run `vf.py break end {repo}`")
+    if not switched and session.get("armed_tree"):
+        raise GuardError(f"{session['scratch']} holds switched breaks, and a run without --switch would restore it and discard "
+                         f"them; name this break's switch, or run it in another session")
     if patch is not None:
-        if edit_since_start(session, harness):
+        held_edit = edit_since_start(session, harness)
+        if held_edit and not (switched and held_edit == patch):
             raise GuardError(f"{session['scratch']} already holds an edit; replay applies its break to a clean copy")
-        git_output(worktree, "apply", "--binary", data=patch)
+        if not held_edit:
+            git_output(worktree, "apply", "--binary", data=patch)
     before = snapshot_tree(worktree, harness)
     edit = product_diff(session, harness, session["start_tree"], before, *DIFF)
     if not edit:
@@ -642,20 +691,37 @@ def run_break(harness, repo, planned, command, patch=None):
     before_evidence = evidence_files(harness)
     runs, target = [], folder / "last-break.patch"
     try:
-        if not reloads(harness):
+        # A switched edit is loaded once: the app restarts only when the copy's code differs from what it last ran.
+        if not reloads(harness) and not (switched and session.get("armed_tree") == before):
             point_app(harness, session, repo, scratch=True)
-        print(f"Running the check with VERIFY_PLANNED_BREAK={planned}", flush=True)
-        exit_code = subprocess.run(command, cwd=project, env={**os.environ, "VERIFY_PLANNED_BREAK": planned}).returncode
-        runs = planned_break_runs(evidence_files(harness) - before_evidence)
+        if switched:
+            session["armed_tree"] = before
+            save_session(folder, session)
+            set_switch(folder, switch or SWITCH_OFF)
+        if control:
+            print("Running the control: every switch off, so the check must pass on the edited code", flush=True)
+            env = {**os.environ, "VERIFY_BREAK_SESSION": repo, "VERIFY_BREAK_CONTROL": "1"}
+            env.pop("VERIFY_PLANNED_BREAK", None)
+        else:
+            print(f"Running the check with VERIFY_PLANNED_BREAK={planned}" + (f" and switch {switch} on" if switch else ""), flush=True)
+            env = {**os.environ, "VERIFY_PLANNED_BREAK": planned}
+            env.pop("VERIFY_BREAK_CONTROL", None)
+            env.pop("VERIFY_BREAK_SWITCH", None)
+            if switch:
+                env["VERIFY_BREAK_SWITCH"] = switch
+        exit_code = subprocess.run(command, cwd=project, env=env).returncode
+        runs = planned_break_runs(evidence_files(harness) - before_evidence, field)
         if len(runs) == 1:
             target = runs[0].with_suffix(".patch")
         target.write_bytes(edit)
     finally:
+        if switched:
+            set_switch(folder, SWITCH_OFF)
         moved = moved_since(session, harness, before)
         if moved:
             # Restoring would erase what moved, and the check didn't run on the break alone, so its
             # evidence is renamed out of what validate reads: it must never count as a break.
-            held = planned_break_runs(evidence_files(harness) - before_evidence)
+            held = planned_break_runs(evidence_files(harness) - before_evidence, field)
             for path in held:
                 path.rename(path.with_suffix(".held"))
             if held:
@@ -670,20 +736,32 @@ def run_break(harness, repo, planned, command, patch=None):
                                f"which resets the copy's product code")
             save_session(folder, session)
             raise GuardError(f"The break run is not usable: {session['held']}")
-        restore(session, folder, harness)
-        try:
-            require_restored(session, harness, f"fix it there, then run `vf.py break end {repo}`")
-        except GuardError as error:
-            session["held"] = str(error)
-            save_session(folder, session)
-            raise
+        if not switched:
+            restore(session, folder, harness)
+            try:
+                require_restored(session, harness, f"fix it there, then run `vf.py break end {repo}`")
+            except GuardError as error:
+                session["held"] = str(error)
+                save_session(folder, session)
+                raise
 
-    print(f"Check exited {exit_code}. The copy is back at its starting state.")
+    if switched:
+        print(f"Check exited {exit_code}. The edit stays in the copy with every switch off.")
+    else:
+        print(f"Check exited {exit_code}. The copy is back at its starting state.")
     if len(runs) != 1:
         found = ", ".join(str(path) for path in runs) or "none"
-        raise GuardError(f"expected the check to write one planned break evidence file, found {found}; the break is saved at {target}")
+        kind = "control" if control else "planned break"
+        raise GuardError(f"expected the check to write one {kind} evidence file, found {found}; the edit is saved at {target}")
     print(f"Evidence: {runs[0]}")
     print(f"Break saved: {target}")
+    if control:
+        record = validate.read_record(runs[0]) or {}
+        if record.get("accepted_by") != validate.ACCEPTED_BY or record.get("passed") is not True:
+            print("No control recorded: the check did not pass with every switch off, so a gate breaks the app while off; fix the edit")
+        else:
+            print(f"Control recorded for {record.get('check')}: it passes on the edited code with every switch off")
+        return 0
     for line in record_breaks(harness, runs[0]):
         print(line)
     return 0
@@ -739,7 +817,7 @@ def replay(harness, evidence, command):
     if not patch.is_file():
         raise StateError(f"{evidence} has no saved break at {patch}")
     planned = f"{','.join(planned_break['sub_features'])}: {planned_break['what']}"
-    return run_break(harness, planned_break["repo"], planned, command, patch.read_bytes())
+    return run_break(harness, planned_break["repo"], planned, command, patch.read_bytes(), planned_break.get("switch"))
 
 
 def status(harness):
@@ -850,11 +928,13 @@ def main():
     run = actions.add_parser("run")
     run.add_argument("repo")
     run.add_argument("planned_break", metavar='"IDS: WHAT WAS BROKEN"')
+    run.add_argument("--switch", metavar="NAME", help="the edit holds several gated breaks; run with only this one live and keep the edit")
+    actions.add_parser("control").add_argument("repo")
     actions.add_parser("replay").add_argument("evidence", type=Path)
     actions.add_parser("status")
     actions.add_parser("end").add_argument("repo")
     args = parser.parse_args(argv)
-    if args.action in ("run", "replay") and not command:
+    if args.action in ("run", "replay", "control") and not command:
         parser.error(f"{args.action} needs the check command after --")
     if args.action == "worktree" and (args.clear != (args.path is None) or args.clear != (args.commit is None)
                                       or (args.clear and args.branch)):
@@ -868,7 +948,9 @@ def main():
         if args.action == "start":
             return start(harness, args.repo)
         if args.action == "run":
-            return run_break(harness, args.repo, args.planned_break, command)
+            return run_break(harness, args.repo, args.planned_break, command, switch=args.switch)
+        if args.action == "control":
+            return run_break(harness, args.repo, None, command)
         if args.action == "replay":
             return replay(harness, args.evidence.resolve(), command)
         if args.action == "status":

@@ -12,6 +12,19 @@ The check reviewer and the weak-checks verifiers are independent judges: each ge
 
 A change to a check after its review, including an expectation changed after a failed run, now goes back for review as a diff before the next run, to the same reviewer when the session can resume it (vf's `references/verification-plan.md`).
 
+### Accept switched breaks, or leave them a prototype
+
+[ADR 0017](adr/0017-switched-breaks-share-one-restart.md) is proposed and built into `vf.py break`, but no skill tells an agent to use it. On the ledger practice repo, six breaks took 3 restarts where one restart per break takes 8, and two failure cases earned nothing: no control, and gates that only test whether the switch file exists. That is one small Python app, with gates written by hand.
+
+**Still open:**
+
+- Whether an agent writes a correct gate unprompted in a language other than Python, and what share of real breaks can be gated at all (boot-time code, migrations, and browser bundles can't).
+- A saved break holds the switch file's path on the machine that made it, so `break replay` on another machine misses. A missed break earns nothing, but the replay is wasted.
+- A gate is more code than a deleted line, so the edit the reviewer reads is longer.
+- Nothing measures where a break session's time goes. Printing restart time against check time at `break end` would say, for the next slow app, whether restarts are still the cost.
+
+**What settles it:** the smoke tier with the add-checks mode told to gate its breaks, on a practice repo in another language, plus one session on the converted app with its real boot time.
+
 ### Support more break-session setups
 
 - **A person-only switch.** Where only a person can point the app at another checkout, `start` and `end` could print the step for the person to do and exit, and a second command could record that it was done. Agents have no terminal to wait on, so the script can't simply pause.
@@ -88,6 +101,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0014: One skill, with a mode for each job](adr/0014-one-skill.md)
 - [0015: Break in the run's own copy, and credit only a clean catch](adr/0015-break-in-the-runs-own-copy-and-credit-only-a-clean-catch.md) (proposed)
 - [0016: Videos for people come from demo runs](adr/0016-videos-for-people-come-from-demo-runs.md) (proposed)
+- [0017: Breaks behind a switch share one restart](adr/0017-switched-breaks-share-one-restart.md) (proposed)
 
 ## Parked ideas
 
@@ -101,7 +115,7 @@ A redesign review on 2026-10-21 set these aside:
 
 - **Readiness proven by `vf.py`.** The doctor already runs before every verification, and the up/down proof is a procedure in vf's `references/doctor.md`. Pick it up if a harness is ever marked ready without the doctor having run.
 - **Breaks in the developer's checkout** instead of a scratch worktree. Rejected: a crash or a second agent could lose uncommitted work. The rebuild cost it aimed at is now met by keeping the scratch worktree between sessions, so its build artifacts survive and a restart rebuilds incrementally.
-- **Several breaks in one run** (`planned_break` as a list, clean-catch widened so another break's failed step doesn't spoil a target). Built and rejected 2026-11-01 after review. In a journey, once any step has failed every later failure is causally ambiguous, and the only thing deciding whether it counts as "another break's catch" or a knock-on is the label the agent writes: the same edit labelled as two breaks earns credit it is denied as one. That hands the ADR 0015 guarantee to the agent. A batch that keeps the rule across the whole run credits only the first failing break, which saves nothing. Make the restart cheap instead: the kept scratch worktree, `reloads`, `start: none`, or an idempotent `start` that restarts one service.
+- **Several breaks in one run** (`planned_break` as a list, clean-catch widened so another break's failed step doesn't spoil a target). Built and rejected 2026-11-01 after review. In a journey, once any step has failed every later failure is causally ambiguous, and the only thing deciding whether it counts as "another break's catch" or a knock-on is the label the agent writes: the same edit labelled as two breaks earns credit it is denied as one. That hands the ADR 0015 guarantee to the agent. A batch that keeps the rule across the whole run credits only the first failing break, which saves nothing. Make the restart cheap instead: the kept scratch worktree, `reloads`, `start: none`, or an idempotent `start` that restarts one service. [ADR 0017](adr/0017-switched-breaks-share-one-restart.md) proposes the other way out: several breaks in one edit, one live per run.
 - **A single packed `vf.pyz` with no `rules.md` copy.** Rejected: an archive can't be reviewed in a diff, and the rules copy is what reviewers and vf-explain read.
 - **Blind breaks in place of the weak-checks audit.** Worth adding beside the audit's scripts, not instead of them. This is the independent-judges question above.
 

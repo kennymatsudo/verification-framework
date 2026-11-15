@@ -764,7 +764,7 @@ def latest_passing_records(evidence_dir):
     for path in sorted(evidence_dir.glob("*/*.json")):
         record = read_record(path)
         if (record is None or record.get("passed") is not True or not isinstance(record.get("sub_features"), list)
-                or record.get("planned_break") is not None):
+                or record.get("planned_break") is not None or record.get("break_control") is not None):
             continue
         for sub_id in record.get("sub_features", []):
             if not isinstance(sub_id, str):
@@ -962,6 +962,14 @@ def record_problems(record, repos):
             problems.append("has a planned_break whose sub_features are not among the run's")
         elif planned.get("repo") not in repos:
             problems.append("has a planned_break whose repo is not one the behavior's check runs")
+        elif "switch" in planned and (not isinstance(planned["switch"], str) or not planned["switch"].strip()):
+            problems.append("has a planned_break whose switch is not a name")
+    control = record.get("break_control")
+    if control is not None:
+        if planned is not None:
+            problems.append("is both a planned break and a break session's control")
+        elif not isinstance(control, dict) or control.get("repo") not in repos:
+            problems.append("has a break_control whose repo is not one the behavior's check runs")
     if "ended_early" in record and planned is None:
         problems.append("was ended early by vf.py run but is not a planned break")
     steps = record.get("steps")
@@ -1142,7 +1150,9 @@ def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
     if kind == "unreachable":
         return verdict("Not verified", unreachable_text(proof), ["the map says it is unreachable"])
 
-    runs = [(path, record) for path, record in records if sub_id in record["sub_features"] and record.get("planned_break") is None]
+    # A break session's control ran on edited code, so it is neither a run of the code under test nor a break.
+    runs = [(path, record) for path, record in records
+            if sub_id in record["sub_features"] and record.get("planned_break") is None and record.get("break_control") is None]
     breaks = aimed_breaks(records, sub_id)
     latest = runs[-1] if runs else None
 
@@ -1187,7 +1197,7 @@ def compute_verdict(harness_dir, sub_id, proof, records, entries, repos):
         return verdict("Not verified", f"Passed but not break-tested: {sentence(note)} {code}. Evidence: {cite}",
                        ["its check is not break-tested"], cite)
     if not problems:
-        check_break(harness_dir, sub_id, record, broken, required, problems)
+        check_break(harness_dir, sub_id, record, broken, required, problems, records)
     if problems:
         return verdict("Not verified", f"Pass not proven: {sentence(problems[0])} {code}. Evidence: {cite}", problems, cite,
                        absent_video=absent_video)
@@ -1305,7 +1315,23 @@ def check_status(harness_dir, verdicts, require_evidence, errors, warnings):
             errors.append(f"{label}, but the line is not what vf.py status writes now; run it to refresh status.md")
 
 
-def check_break(harness_dir, sub_id, record, break_run, repos, errors):
+def switch_control(records, broken):
+    """The newest accepted passing control for a switched break: the same check, run to its end with every
+    switch off on the same code and harness code the break ran on. None when there is none.
+
+    The break and its control then differ only in the switch, so the control shows the edit breaks nothing
+    until its switch is on, and the failure belongs to that one switch."""
+    code = {repo: code_identity(source) for repo, source in (broken.get("code") or {}).items()}
+    for path, record in reversed(records or []):
+        if (isinstance(record.get("break_control"), dict) and record.get("check") == broken.get("check")
+                and record.get("passed") is True and record.get("stopped") is None
+                and record.get("harness_code") == broken.get("harness_code")
+                and {repo: code_identity(source) for repo, source in (record.get("code") or {}).items()} == code):
+            return path, record
+    return None
+
+
+def check_break(harness_dir, sub_id, record, break_run, repos, errors, records=None):
     """A planned break proves a sub-feature only when it was aimed at that sub-feature, a step judging
     it failed, and every step that failed before the first of those also judges it, as break_catch decides. Those steps must still be in the Verified run, judging the same sub-feature,
     and every harness file the break ran must be unchanged in the pass. Steps added since only make
@@ -1330,6 +1356,17 @@ def check_break(harness_dir, sub_id, record, break_run, repos, errors):
     for name in caught:
         if name not in judging:
             errors.append(f"step '{name}' caught its planned break and does not judge it in this run")
+    if "switch" in broken["planned_break"]:
+        control = switch_control(records, broken)
+        if control is None:
+            errors.append(f"{where} was switched on beside other breaks, and no control shows the check passing on that same code "
+                          "with every switch off; run `vf.py break control` in the session")
+        else:
+            control_path, control_record = control
+            control_cite = control_path.relative_to(harness_dir).as_posix()
+            errors.extend(f"the control {control_cite} for {where} {problem}" for problem in accepted_run_problems(control_record, repos))
+            passed = {step["name"] for step in steps_judging(control_record, sub_id)}
+            errors.extend(f"step '{name}' caught {where} and did not run in its control {control_cite}" for name in caught if name not in passed)
     errors.extend(harness_code_problems(broken, record))
 
 

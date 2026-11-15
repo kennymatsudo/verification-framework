@@ -145,6 +145,7 @@ def proof(record, evidence_dir):
         except (OSError, json.JSONDecodeError):
             continue
         if (not isinstance(other, dict) or other.get("accepted_by") != ACCEPTED_BY or other.get("planned_break")
+                or other.get("break_control")
                 or not isinstance(other.get("sub_features"), list)):
             continue
         for sub_id in other["sub_features"]:
