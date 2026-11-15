@@ -495,6 +495,39 @@ def breaks_owed(ctx):
     return Result(len(owed) / len(checked), "\n".join(notes))
 
 
+def _harness_validate(harness):
+    """The harness's own validate.py, loaded by path, so the grader judges controls by the rule the harness runs."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("grader_harness_validate", harness / "scripts" / "framework" / "validate.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@grader
+def breaks_share_restarts(ctx):
+    """Breaks behind a switch shared the app's restarts: fewer restarts for breaks than breaks, each switched one beside its control.
+
+    Counted from the evidence: each break run without a switch restarted the app once (the practice does not reload),
+    and the switched breaks and controls restarted it once for each distinct code they ran on."""
+    if missing := _harness_missing(ctx):
+        return missing
+    validate = _harness_validate(ctx.harness)
+    records = validate.accepted_records(ctx.harness / "evidence")
+    breaks = [(path, record) for path, record in records if isinstance(record.get("planned_break"), dict)]
+    switched = [(path, record) for path, record in breaks if record["planned_break"].get("switch")]
+    controls = [record for _, record in records if isinstance(record.get("break_control"), dict)]
+    loaded = {tuple(sorted((repo, validate.code_identity(source)) for repo, source in (record.get("code") or {}).items()))
+              for record in [r for _, r in switched] + controls}
+    restarts = len(breaks) - len(switched) + len(loaded)
+    lacking = [path.relative_to(ctx.harness).as_posix() for path, record in switched if validate.switch_control(records, record) is None]
+    notes = [f"planned breaks: {len(breaks)}, switched: {len(switched)}, controls: {len(controls)}",
+             f"restarts the breaks cost: {restarts} ({len(breaks) - len(switched)} unswitched, {len(loaded)} for switched code)",
+             f"switched breaks with no control on the same code: {lacking or 'none'}"]
+    passed = len(breaks) >= 2 and bool(switched) and not lacking and restarts < len(breaks)
+    return Result(passed, "\n".join(notes))
+
+
 def _planned_break(path):
     try:
         return isinstance(json.loads(path.read_text()).get("planned_break"), dict)

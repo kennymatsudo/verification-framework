@@ -14,11 +14,14 @@ prints one JSON object:
   - command: the check's command, or null.
   - reads: what the entry says the check reads, such as "state", or null.
   - break: the newest planned break aimed at this behavior, or null when none is recorded:
-    {"date", "what", "evidence", "on_hand", "aimed_at", "failed_steps"}. It comes from
-    the accepted break runs in evidence/, or, when none is here, from the harness's
-    evidence/breaks.jsonl log with on_hand false; aimed_at lists the sub-features the
-    break run says it broke; failed_steps lists the steps judging this behavior that
-    failed in it, empty when none did.
+    {"date", "what", "evidence", "on_hand", "aimed_at", "failed_steps", "switch",
+    "control_problem"}. It comes from the accepted break runs in evidence/, or, when none
+    is here, from the harness's evidence/breaks.jsonl log with on_hand false; aimed_at
+    lists the sub-features the break run says it broke; failed_steps lists the steps
+    judging this behavior that failed in it, empty when none did; switch names the gate
+    that made it live when it was one of several breaks in one edit, else null; and
+    control_problem says why such a break has no usable control, as validate.py judges
+    it, or null when it has one or was not switched.
   - not_break_tested: the stated reason, or null.
   - unreachable: the blocker and route tried, or null.
   - result: the last Latest results line for this behavior, or null:
@@ -53,7 +56,7 @@ from pathlib import Path
 TALLY = {
     "behaviors": "sub-features in the map",
     "checked": "have a check",
-    "caught_a_break": "check failed on a planned break whose evidence is here",
+    "caught_a_break": "check failed on a planned break whose evidence is here, beside its control when it was switched",
     "break_not_on_hand": "a planned break is recorded, but its evidence is not in this checkout",
     "never_broken": "check has no recorded planned break",
     "no_check": "no check yet",
@@ -94,7 +97,7 @@ def feature_files(features_dir):
     return sorted(features_dir.glob("*.json")) if features_dir.is_dir() else []
 
 
-def parse_proof(validate, harness_dir, sub_id, entry, records):
+def parse_proof(validate, harness_dir, sub_id, entry, records, repos=()):
     """The proof facts for one behavior from its entry: proof kind, command, what it reads,
     its newest planned break, and any not_break_tested or unreachable reason."""
     kind = validate.behavior_kind(entry)
@@ -107,15 +110,16 @@ def parse_proof(validate, harness_dir, sub_id, entry, records):
     facts["command"] = entry.get("check")
     facts["reads"] = entry.get("reads") or None
     facts["not_break_tested"] = validate.not_break_tested_reason(entry)
-    facts["break"] = break_facts(validate, harness_dir, sub_id, records)
+    facts["break"] = break_facts(validate, harness_dir, sub_id, records, validate.behavior_repos(entry, repos))
     return facts
 
 
-def break_facts(validate, harness_dir, sub_id, records):
+def break_facts(validate, harness_dir, sub_id, records, repos=()):
     """The newest planned break aimed at sub_id: from an accepted run on this machine, else from evidence/breaks.jsonl."""
     aimed = validate.aimed_breaks(records, sub_id)
     if aimed:
         path, record = aimed[-1]
+        problems = validate.control_problems(harness_dir, sub_id, aimed[-1], records, repos)
         return {
             "date": str(record.get("finished_at") or "")[:10],
             "what": record["planned_break"].get("what"),
@@ -124,12 +128,14 @@ def break_facts(validate, harness_dir, sub_id, records):
             "aimed_at": record["planned_break"].get("sub_features"),
             "failed_steps": [step.get("name") for step in validate.steps_judging(record, sub_id) if step.get("passed") is False]
             if record.get("passed") is False else [],
+            "switch": record["planned_break"].get("switch"),
+            "control_problem": problems[0] if problems else None,
         }
     logged = [entry for entry in break_log(harness_dir) if entry.get("sub_feature") == sub_id]
     if logged:
         entry = logged[-1]
         return {"date": str(entry.get("at") or "")[:10], "what": entry.get("what"), "evidence": entry.get("evidence"),
-                "on_hand": False, "aimed_at": [sub_id], "failed_steps": []}
+                "on_hand": False, "aimed_at": [sub_id], "failed_steps": [], "switch": None, "control_problem": None}
     return None
 
 
@@ -204,7 +210,7 @@ def gather(harness_dir):
         for sub_id, spec in (data.get("behaviors") or {}).items():
             spec = spec if isinstance(spec, dict) else {}
             entry = {"id": sub_id, "feature": title, "behavior": str(spec.get("words", "")), "plan": spec.get("plan")}
-            entry.update(parse_proof(validate, harness_dir, sub_id, spec, records))
+            entry.update(parse_proof(validate, harness_dir, sub_id, spec, records, repos))
             entry["result"] = results.get(sub_id)
             entry["caveats"] = [line[len(sub_id) + 2:] for line in bullets["may_mislead"] if line.startswith(sub_id + ": ")]
             behaviors.append(entry)
@@ -224,7 +230,7 @@ def tally(behaviors):
             counts["checked"] += 1
             if not behavior["break"]:
                 counts["never_broken"] += 1
-            elif behavior["break"]["on_hand"] and behavior["break"]["failed_steps"]:
+            elif behavior["break"]["on_hand"] and behavior["break"]["failed_steps"] and not behavior["break"]["control_problem"]:
                 counts["caught_a_break"] += 1
             elif not behavior["break"]["on_hand"]:
                 counts["break_not_on_hand"] += 1
@@ -259,6 +265,9 @@ def caught_cell(behavior):
         return f"Break on {planned_break['date']} was aimed at something else: {planned_break['what']}"
     if not planned_break["failed_steps"]:
         return f"Break on {planned_break['date']} did not fail a step that checks this: {planned_break['what']}"
+    if planned_break["control_problem"]:
+        return (f"Break on {planned_break['date']} was one of several in one edit, and nothing shows the check passing "
+                f"on that edit with every break off: {planned_break['what']}")
     return f"Failed when we broke it ({planned_break['date']}): {planned_break['what']}"
 
 

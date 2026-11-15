@@ -8,7 +8,9 @@ Each hit is a lead, not a verdict: the agent reads the code and decides. Kinds:
   self-compare   an assertion comparing an expression with itself, or asserting a constant
   skip           a skip or xfail; each one hides a test until someone removes it
   swallow        a broad except in harness code that neither re-raises nor records a failure
-  break-aware    a harness script, in any language, that reads VERIFY_PLANNED_BREAK or VERIFY_BREAK_SESSION
+  break-aware    a harness script, in any language, that reads VERIFY_PLANNED_BREAK, VERIFY_BREAK_SESSION,
+                 VERIFY_BREAK_SWITCH, or VERIFY_BREAK_CONTROL, or names the verify-break-session folder that
+                 holds a break session's switch file
 
 Understands unittest (self.assert*, self.fail, skipTest) and pytest (assert, pytest.raises,
 pytest.fail, pytest.skip, @pytest.mark.skip/skipif/xfail). break-aware looks at every file under
@@ -26,8 +28,9 @@ import sys
 EXISTENCE_ONLY = {"assertIsNotNone", "assertTrue", "assertIsInstance"}
 SKIPS = {"skip", "skipIf", "skipUnless", "expectedFailure", "skipTest", "skipif", "xfail"}
 FAILURE_WORDS = ("fail", "problem", "violation", "error", "raise")
-# A check that can tell it is in a planned break can take a different path there than in a pass.
-BREAK_VARIABLES = ("VERIFY_PLANNED_BREAK", "VERIFY_BREAK_SESSION")
+# A check that can tell it is in a planned break, or which break's switch is on, can take a different path there
+# than in a pass or in its control. Only the gates in the break's own edit read the switch file.
+BREAK_VARIABLES = ("VERIFY_PLANNED_BREAK", "VERIFY_BREAK_SESSION", "VERIFY_BREAK_SWITCH", "VERIFY_BREAK_CONTROL", "verify-break-session")
 
 
 def is_test_file(path: Path) -> bool:
@@ -159,7 +162,7 @@ def is_harness_script(path: Path, root: Path) -> bool:
 
 
 def scan_break_aware(path: Path) -> list[str]:
-    """The break-aware hits in one harness script: each line naming a variable that says a planned break is on."""
+    """The break-aware hits in one harness script: each line naming a variable or folder that says a planned break is on."""
     try:
         text = path.read_text()
     except UnicodeDecodeError:

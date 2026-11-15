@@ -1001,6 +1001,67 @@ class VerifiedResultsTest(unittest.TestCase):
                     self.assertEqual(result, 1, output)
                     self.assertIn(expected, output)
 
+    def write_control(self, harness, **changes):
+        """A break session's control: the check passing on the break's edited code with every switch off."""
+        record = {
+            "check": "checkout-pay",
+            "sub_features": ["checkout.pay"],
+            "passed": True,
+            "reads": "state",
+            "code": {"app": {"commit": self.COMMIT, "dirty": True, "dirty_hash": "a" * 64}},
+            "harness_code": dict(self.CODE),
+            "doctor": dict(self.DOCTOR),
+            "break_control": {"repo": "app"},
+            "started_at": "2026-10-09T09:57:00Z",
+            "finished_at": "2026-10-09T09:58:00Z",
+            "steps": [self.STEP],
+            "accepted_by": "vf.py run",
+        }
+        record.update(changes)
+        (harness / "evidence" / "checkout-pay" / "control.json").write_text(json.dumps(record))
+
+    def test_a_switched_break_counts_only_beside_a_passing_control_on_the_same_code(self):
+        switched = {"what": "payment capture skipped", "sub_features": ["checkout.pay"], "repo": "app", "switch": "capture"}
+        no_control = ("its planned break in evidence/checkout-pay/break.json was switched on beside other breaks, and no control "
+                      "shows the check passing on that same code with every switch off; run `vf.py break control` in the session")
+        cases = (
+            ("a matching control", {}, None),
+            ("no control", None, no_control),
+            ("a control on other code", {"code": {"app": {"commit": self.COMMIT, "dirty": True, "dirty_hash": "b" * 64}}}, no_control),
+            ("a control on other harness code", {"harness_code": dict(self.CODE, **{"ok/reads.py": "c" * 64})}, no_control),
+            ("a control that failed", {"passed": False, "steps": [dict(self.STEP, passed=False)]}, no_control),
+            ("a control without the catching step", {"steps": [dict(self.STEP, name="checkout.pay: order exists")]},
+             "step 'checkout.pay: order is paid' caught its planned break in evidence/checkout-pay/break.json and did not run "
+             "in its control evidence/checkout-pay/control.json"),
+            ("a control the doctor did not pass", {"doctor": {"exit_code": 1, "output": "not ready"}},
+             "the control evidence/checkout-pay/control.json for its planned break in evidence/checkout-pay/break.json ran "
+             "without the doctor reporting the app ready"),
+            # A control is never the run of the code under test, even when it is the newest.
+            ("a control newer than the pass", {"started_at": "2026-10-14T09:00:00Z", "finished_at": "2026-10-14T09:01:00Z"}, None),
+        )
+        for label, control, expected in cases:
+            with self.subTest(label), tempfile.TemporaryDirectory() as directory:
+                harness = self.make_verified_harness(Path(directory), with_break=False)
+                self.write_break(harness, planned_break=switched)
+                if control is not None:
+                    self.write_control(harness, **control)
+                line = self.render(harness)[0]
+                if expected is None:
+                    self.assertEqual(line, self.LINE)
+                else:
+                    self.assertEqual(line, f"- checkout.pay: Not verified. Pass not proven: {expected}. app a1b2c3d. "
+                                           "Evidence: evidence/checkout-pay/run.json")
+
+        # An unswitched break needs no control.
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(self.render(self.make_verified_harness(Path(directory)))[0], self.LINE)
+
+    def test_a_record_cannot_be_both_a_planned_break_and_a_control(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = self.make_verified_harness(Path(directory))
+            self.write_break(harness, break_control={"repo": "app"})
+            self.assertIn("is both a planned break and a break session's control", self.render(harness)[0])
+
     def test_only_a_planned_break_may_be_ended_early(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = self.make_verified_harness(Path(directory))

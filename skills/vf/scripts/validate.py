@@ -1356,18 +1356,30 @@ def check_break(harness_dir, sub_id, record, break_run, repos, errors, records=N
     for name in caught:
         if name not in judging:
             errors.append(f"step '{name}' caught its planned break and does not judge it in this run")
-    if "switch" in broken["planned_break"]:
-        control = switch_control(records, broken)
-        if control is None:
-            errors.append(f"{where} was switched on beside other breaks, and no control shows the check passing on that same code "
-                          "with every switch off; run `vf.py break control` in the session")
-        else:
-            control_path, control_record = control
-            control_cite = control_path.relative_to(harness_dir).as_posix()
-            errors.extend(f"the control {control_cite} for {where} {problem}" for problem in accepted_run_problems(control_record, repos))
-            passed = {step["name"] for step in steps_judging(control_record, sub_id)}
-            errors.extend(f"step '{name}' caught {where} and did not run in its control {control_cite}" for name in caught if name not in passed)
+    errors.extend(control_problems(harness_dir, sub_id, break_run, records, repos))
     errors.extend(harness_code_problems(broken, record))
+
+
+def control_problems(harness_dir, sub_id, break_run, records, repos):
+    """Why a switched break has no usable control for sub_id; empty when it has one or was not switched.
+
+    A usable control is the newest accepted passing control switch_control finds, in which every step that
+    caught the break for sub_id ran."""
+    path, broken = break_run
+    if "switch" not in (broken.get("planned_break") or {}):
+        return []
+    where = f"its planned break in {path.relative_to(harness_dir).as_posix()}"
+    control = switch_control(records, broken)
+    if control is None:
+        return [f"{where} was switched on beside other breaks, and no control shows the check passing on that same code "
+                "with every switch off; run `vf.py break control` in the session"]
+    control_path, control_record = control
+    control_cite = control_path.relative_to(harness_dir).as_posix()
+    problems = [f"the control {control_cite} for {where} {problem}" for problem in accepted_run_problems(control_record, repos)]
+    caught, _ = break_catch(broken, sub_id)
+    ran = {step["name"] for step in steps_judging(control_record, sub_id)}
+    problems.extend(f"step '{name}' caught {where} and did not run in its control {control_cite}" for name in caught if name not in ran)
+    return problems
 
 
 def harness_code_problems(broken, record):

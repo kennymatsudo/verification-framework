@@ -44,6 +44,19 @@ class BreakAware(unittest.TestCase):
             "so a check must do the same in a break as in a pass",
         ])
 
+    def test_flags_a_check_that_can_tell_which_switch_is_on_or_that_it_is_a_control(self):
+        code, output = self.scan({
+            "scripts/checks/pay.py": "import os\nlive = os.environ.get('VERIFY_BREAK_SWITCH')\n",
+            "scripts/checks/refund.sh": "[ -n \"$VERIFY_BREAK_CONTROL\" ] && exit 0\n",
+            "scripts/reads.py": "SWITCH = '.git/verify-break-session/switch'\n",
+        })
+        self.assertEqual(code, 1, output)
+        self.assertEqual(sorted(line.split(";")[0] for line in output.splitlines()), [
+            "break-aware scripts/checks/pay.py:2 reads VERIFY_BREAK_SWITCH",
+            "break-aware scripts/checks/refund.sh:1 reads VERIFY_BREAK_CONTROL",
+            "break-aware scripts/reads.py:1 reads verify-break-session",
+        ])
+
     def test_leaves_alone_a_clean_check_the_framework_copies_and_files_outside_scripts(self):
         code, output = self.scan({
             "scripts/checks/pay.py": "import os\nreport = os.environ['VERIFY_REPORT']\n",

@@ -8,7 +8,7 @@ You own one video a person can show other people: the feature at real speed, at 
 
 Find the harness: the one the user or a calling skill named, or else `verify-*/rules.md` in the skills directories (`.claude/skills/`, `.agents/skills/`, `.pi/skills/`, `.cursor/skills/`) of the current folder and each folder above it up to the repo's top level, nearest first. Ask which when several match; with none, stop and name vf to set one up.
 
-Run `<harness>/scripts/framework/vf.py validate --written-for 9` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
+Run `<harness>/scripts/framework/vf.py validate --written-for 10` before anything else. When it stops on incomplete setup, report its blocker and next action, name vf to resume setup, and stop; when `vf.py` is missing or doesn't know `validate`, the harness predates the installed framework, so name vf to update it and stop; when it reports a Rules version mismatch, relay which side it says to update, and stop.
 
 Done when you have the harness path and have read its `rules.md`, `harness.json`, `notes.md`, the feature files the request names, and every existing demo in its `demos/`.
 

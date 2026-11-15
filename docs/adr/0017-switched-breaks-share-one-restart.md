@@ -1,6 +1,6 @@
 # ADR 0017: Breaks behind a switch share one restart
 
-Status: Proposed. 2026-11-15. Prototyped in `vf.py break` and run on the ledger practice repo; no skill tells an agent to use it yet.
+Status: Accepted. 2026-11-15. Proposed and prototyped in `vf.py break` on the ledger practice repo; accepted the same day (2026-11-15) and wired into the contract (Rules version 10) and the add-checks and verify-pr modes.
 
 ## Problem
 
@@ -29,6 +29,9 @@ N switched breaks cost one restart for the edit, plus the session's own: 2 in pl
 
 ## What changes
 
-Done in the prototype: `break_session.py` (`run --switch`, `control`, the switch file, `armed_tree` in the session), `vf.py run` (`planned_break.switch`, `break_control`), `validate.py` (`switch_control`, the control rule in `check_break`, controls left out of passing runs), `replay.py` and `demo.py` (controls left out), `tests/switched_breaks.py`, run by `tests/test_practice_ledger.py` on the ledger practice repo, `docs/internals.md`.
-
-On acceptance: `rules.md` (Checks, Evidence, Reporting; Rules version 10) and every mode's `--written-for`; `references/harness.md`; the add-checks and verify-pr modes, whose one break preview names each break's switch or says why it can't be gated; `smells.py` (a harness script that reads the switch file); `trust_facts.py`; USAGE.md and `docs/architecture.md`; an eval case that fails when an agent restarts a slow app once per gateable break.
+- `rules.md`, Rules version 10: the Checks section states the switch, the gate, the control, and when to run a break without one; Evidence adds `planned_break.switch` and `break_control`; Reporting credits a switched break only beside its control. Every mode's `--written-for` is 10.
+- `break_session.py` (`run --switch`, `control`, the switch file, `armed_tree`), `vf.py run` (`planned_break.switch`, `break_control`), and `validate.py` (`switch_control`, `control_problems`, controls left out of passing runs); `replay.py` and `demo.py` leave controls out.
+- `references/harness.md` leads its restart-cost advice with switched breaks; `harness-components.md` and the add-checks mode name each break's switch, or why it has none, in the one preview, and run unswitched breaks first, then one control per check and one switched run per break; verify-pr plans its breaks that way.
+- `smells.py` flags a harness script that reads the switch variables or the session folder; `trust_facts.py` says when a switched break has no usable control.
+- Unit tests in `test_validate.py`, `test_smells.py`, and `test_trust_facts.py`; `tests/switched_breaks.py` on the ledger practice repo; the eval case `add-checks-ledger-switched`, which fails when an agent restarts the app once per break that a gate could reach.
+- USAGE.md, `docs/internals.md`, `docs/architecture.md`, and `docs/design.md`.

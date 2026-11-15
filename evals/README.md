@@ -64,6 +64,7 @@ Each is under 200 lines of app code and starts in about a second. Together they 
 | `add-checks-mailer-approval` | vf add-checks | Approval asked, refused, mail behaviors Not verified with that reason, `mail-sink` empty |
 | `add-checks-relay-cli` | vf add-checks | Hidden breaks caught, including a float rounding error; currencies asked about |
 | `add-checks-relay-breaks-owed` | vf add-checks | Asked now or later before the first planned break; told later, ran none, recorded each as owed, called nothing Verified |
+| `add-checks-ledger-switched` | vf add-checks | On an app that restarts for every edit, the breaks go into one edit behind switches with a control per check, so they cost fewer restarts than there are breaks; each behavior Verified through its switched break |
 | `verify-ledger-change` | verify-ledger, vf verify | The changed statement check Fails; nothing loosened; report leads with the failure |
 | `verify-split-stack` | verify-stock, vf verify | The API is rebuilt from the changed checkout; items.add Fails |
 | `verify-pr-ledger` | vf verify-pr | The PR's "no behavior change" claim is found false; a comment is drafted, not posted |

@@ -1,4 +1,4 @@
-"""Switched breaks on the ledger practice repo (ADR 0017, proposed): one edit holds every hidden break behind a
+"""Switched breaks on the ledger practice repo (ADR 0017): one edit holds every hidden break behind a
 gate, the app restarts once for all of them, and a break counts only beside a passing control on the same code.
 No agent runs. Skipped when a tool the practice needs is not installed.
 
