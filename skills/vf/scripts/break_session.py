@@ -914,7 +914,8 @@ def main():
     if "--" in argv:
         split = argv.index("--")
         argv, command = argv[:split], argv[split + 1:]
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # The whole docstring: rules.md points here for what each command does to the copy, the app, and the session.
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--harness", type=Path, default=Path(__file__).resolve().parents[2])
     actions = parser.add_subparsers(dest="action", required=True)
     worktree = actions.add_parser("worktree")
