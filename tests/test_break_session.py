@@ -337,6 +337,23 @@ sys.exit(0 if record["passed"] else 1)
             self.assertIn("app.txt", errors)
             self.assertIsNone(code_state.open_session(project))
 
+    def test_start_gets_a_folder_holding_only_the_switch_while_it_points_the_app_at_the_copy(self):
+        # Start records the folder it was given, so a test can see what an app in a container would mount.
+        with tempfile.TemporaryDirectory() as directory:
+            mounts = Path(directory) / "mounts.txt"
+            start = f'echo {{checkout:app}} > pointed.txt && echo "${{VERIFY_BREAK_SWITCH_DIR:-none}}" >> {mounts}'
+            project, harness = make_project(directory, start=start)
+            result, output, errors = run(harness, "start", "app")
+            self.assertEqual(result, 0, errors)
+            mounted = Path(mounts.read_text().split()[0])
+            # The folder holds the switch file and nothing else, and start prints that file as the gate's path.
+            self.assertEqual(sorted(path.name for path in mounted.iterdir()), ["switch"])
+            self.assertEqual((mounted / "switch").read_text(), "off")
+            self.assertIn(f"reads {mounted / 'switch'} when", output)
+
+            self.assertEqual(run(harness, "end", "app")[0], 0)
+            self.assertEqual(mounts.read_text().split()[1:], ["none"])
+
     def test_a_kept_copy_is_reused_and_its_build_artifacts_survive(self):
         with tempfile.TemporaryDirectory() as directory:
             project, harness = make_project(directory)
@@ -407,6 +424,35 @@ sys.exit(0 if record["passed"] else 1)
             self.assertEqual((project / "local.env").read_text().strip(), f"SERVICE_DIR={service}")
             self.assertEqual(Path((project / "pointed.txt").read_text().strip()), service.resolve())
             self.assertTrue(scratch.exists())
+
+    def test_end_points_back_at_the_developer_even_when_start_rewrote_the_env_locator(self):
+        # Some Starts record the checkout they were given in the env file the locator reads, so
+        # during a session the locator names the scratch copy; end must still restart on the developer's.
+        with tempfile.TemporaryDirectory() as directory:
+            service = Path(directory) / "service"
+            service.mkdir()
+            git(service, "init", "-q", "-b", "main")
+            (service / "app.txt").write_text("first\n")
+            git(service, "add", ".")
+            git(service, "commit", "-qm", "first")
+            start = "echo {checkout:service} > pointed.txt && echo SERVICE_DIR={checkout:service} > local.env"
+            project, harness = make_project(directory, start=start)
+            (project / ".gitignore").write_text("pointed.txt\nlocal.env\n")
+            git(project, "commit", "-qam", "ignore local.env")
+            (project / "local.env").write_text(f"SERVICE_DIR={service}\n")
+            data = json.loads((harness / "harness.json").read_text())
+            data["repos"]["service"] = "env:local.env:SERVICE_DIR"
+            (harness / "harness.json").write_text(json.dumps(data))
+
+            self.assertEqual(run(harness, "start", "service")[0], 0)
+            scratch = Path((project / "pointed.txt").read_text().strip())
+            self.assertIn(str(scratch), (project / "local.env").read_text())
+
+            result, _, errors = run(harness, "end", "service")
+
+            self.assertEqual(result, 0, errors)
+            self.assertEqual(Path((project / "pointed.txt").read_text().strip()), service.resolve())
+            self.assertEqual((project / "local.env").read_text().strip(), f"SERVICE_DIR={service.resolve()}")
 
     def test_one_session_serves_every_repo_in_a_shared_checkout(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as cleanup:

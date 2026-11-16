@@ -14,15 +14,16 @@ A change to a check after its review, including an expectation changed after a f
 
 ### How far switched breaks reach
 
-[ADR 0017](adr/0017-switched-breaks-share-one-restart.md) is accepted: on an app that doesn't reload, the add-checks mode puts every break it can gate in one edit and runs them on one restart. The evidence so far is one small Python app, the ledger practice repo, where six breaks took 3 restarts instead of 8 with gates written by hand.
+[ADR 0017](adr/0017-switched-breaks-share-one-restart.md) is accepted: on an app that doesn't reload, the add-checks mode puts every break it can gate in one edit and runs them on one restart. The evidence so far is one small Python app, the ledger practice repo, where six breaks took 3 restarts instead of 8 with gates written by hand, and two sessions on the converted app: the larger held six breaks across three checks, in Python on the host and in Docker, on one restart of about 12 minutes, with each break run taking 2 to 4.5 minutes.
 
 **Still open:**
 
-- Whether an agent writes a correct gate unprompted in a language other than Python, and what share of real breaks can be gated at all (code that runs only at startup, migrations, and browser bundles can't).
+- Whether an agent writes a correct gate unprompted in a language other than Python, and what share of real breaks can be gated at all (code that runs only at startup, migrations, and browser bundles can't). On the converted app, about a quarter of its recorded breaks could be gated: most are in a browser bundle, and URL routes and settings load at startup.
 - A saved break holds the switch file's path on the machine that made it, so `break replay` on another machine misses. A missed break earns nothing, but the replay is wasted.
 - A gate is more code than a deleted line, so the edit the reviewer reads is longer.
 - Nothing measures where a break session's time goes. Printing restart time against check time at `break end` would say, for the next slow app, whether restarts are still the cost.
-- No slow real app has run a switched session yet.
+- A gate in a container reads the switch through a mount Start makes ([ADR 0018](adr/0018-start-mounts-the-switch-for-a-container.md)); one harness has, and a session open on two repos at once hands Start only the folder of the session it runs for.
+- Each check needs one control run. Time is rarely the issue, since the session's one restart is shared, but a check whose runs spend something scarce, such as tickets in a shared sandbox, spends it on the control too. For a check with one break, that can cost more than the restart it saves.
 
 **What settles it:** the `add-checks-ledger-switched` eval case on more than one model, a practice repo in another language, and one session on the converted app with its real boot time.
 
@@ -103,6 +104,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0015: Break in the run's own copy, and credit only a clean catch](adr/0015-break-in-the-runs-own-copy-and-credit-only-a-clean-catch.md) (proposed)
 - [0016: Videos for people come from demo runs](adr/0016-videos-for-people-come-from-demo-runs.md) (proposed)
 - [0017: Breaks behind a switch share one restart](adr/0017-switched-breaks-share-one-restart.md)
+- [0018: Start mounts the switch for an app in a container](adr/0018-start-mounts-the-switch-for-a-container.md)
 
 ## Parked ideas
 

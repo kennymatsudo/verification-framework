@@ -74,6 +74,12 @@ copy and discard the other breaks; run those breaks first, or in another session
 while the session is open, so a gate that only tests for the file is live during the control and earns
 nothing.
 
+The switch file sits alone in a folder, and Stop and Start get that folder as VERIFY_BREAK_SWITCH_DIR
+whenever they point the app at the session's copy. An app that runs in a container can't see the host's
+files, so its Start mounts that folder read-only at the same absolute path inside the container: the
+gate then reads the path start printed, wherever the code runs. Mount the folder, not the file, since
+the file is replaced on every switch. No other command gets the variable.
+
 replay applies the patch saved beside EVIDENCE_FILE to the repo its planned_break names and runs it as
 run does, aimed at the same sub-features, to re-prove a check after its code changes. The repo's
 session must be open. A switched break is replayed with its switch, on a copy that is clean or already
@@ -201,37 +207,47 @@ def session_checkouts(harness, session, scratch):
             # A repo this machine lacks; Start naming its {checkout:<repo>} fails when filled, and a check that runs it stops.
             continue
         located = located.resolve()
+        # A Start may record the checkout it was given in the file an env locator reads, so during a
+        # session the locator can name the copy; map it back, or pointing back would restart on the copy.
+        if located.is_relative_to(worktree.resolve()) and worktree.resolve() != top:
+            located = top / located.relative_to(worktree.resolve())
         if scratch and located.is_relative_to(top):
             located = worktree / located.relative_to(top)
         checkouts[name] = located
     return checkouts
 
 
-def run_command(harness, command, checkouts, repo):
-    """Run a harness.json command from the project root with its {checkout:<repo>} placeholders filled; StateError when it fails."""
+def run_command(harness, command, checkouts, repo, switches=None):
+    """Run a harness.json command from the project root with its {checkout:<repo>} placeholders filled; StateError when it fails.
+    switches, the session's switch folder, is passed as VERIFY_BREAK_SWITCH_DIR when the app is pointed at the copy."""
     try:
         text = validate.fill_checkouts(command, checkouts)
     except ValueError as error:
         raise StateError(f"harness.json: {error}") from error
     print(f"Running: {text}", flush=True)
     env = {**os.environ, "VERIFY_BREAK_SESSION": repo, **code_state.checkout_env(checkouts)}
+    env.pop("VERIFY_BREAK_SWITCH_DIR", None)
+    if switches:
+        env["VERIFY_BREAK_SWITCH_DIR"] = str(switches)
     result = subprocess.run(text, shell=True, cwd=validate.project_root(harness), env=env)
     if result.returncode:
         raise StateError(f"`{text}` exited {result.returncode}")
 
 
-def point_app(harness, session, repo, scratch):
+def point_app(harness, session, repo, scratch, folder=None):
     """Make the app load the scratch copy, or the developer's checkouts again: Stop, then Start with the
     checkouts filled in. Nothing runs when Start is `none`, since the checks then read VERIFY_CHECKOUT_<REPO>.
-    In place the copy is the developer's checkout, so either way this restarts the app on the same worktree."""
+    In place the copy is the developer's checkout, so either way this restarts the app on the same worktree.
+    Pointed at the copy, both get the session folder's switch folder as VERIFY_BREAK_SWITCH_DIR."""
     start = command_setting(harness, "start")
     if start.lower() in (validate.START_NONE, validate.START_USER):
         return
     checkouts = session_checkouts(harness, session, scratch)
     stop = command_setting(harness, "stop")
+    switches = switch_dir(folder) if scratch and folder else None
     if stop.lower() != "none":
-        run_command(harness, stop, checkouts, repo)
-    run_command(harness, start, checkouts, repo)
+        run_command(harness, stop, checkouts, repo, switches)
+    run_command(harness, start, checkouts, repo, switches)
 
 
 def locate(harness, repo):
@@ -326,14 +342,22 @@ def require_session_repo(session, repo):
                          f"name {owner} in `vf.py break` commands, or close it with `vf.py break end {owner}`")
 
 
+SWITCH_DIR = "gate"
 SWITCH_FILE = "switch"
 SWITCH_OFF = "off"
 SWITCH_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
+def switch_dir(folder):
+    """The folder holding only the session's switch file, which Start may mount into a container. A mount of
+    the folder, unlike one of the file, sees each replacement set_switch makes."""
+    return folder / SWITCH_DIR
+
+
 def set_switch(folder, name):
     """Make name the one live break, or SWITCH_OFF for none. Replaced in one step, so a gate never reads half a name."""
-    path = folder / SWITCH_FILE
+    path = switch_dir(folder) / SWITCH_FILE
+    path.parent.mkdir(exist_ok=True)
     path.with_suffix(".tmp").write_text(name)
     path.with_suffix(".tmp").replace(path)
 
@@ -615,11 +639,11 @@ def start(harness, repo):
     else:
         where = "the kept scratch worktree" if reused else "a new scratch worktree"
         print(f"Break session open for {repo} in {where} at {worktree}.")
-        point_app(harness, session, repo, scratch=True)
+        point_app(harness, session, repo, scratch=True, folder=folder)
     print(f"Make the break as an uncommitted edit in {scratch}, then run:")
     print(f'  vf.py break run {repo} "<sub-feature IDs>: <what was broken>" -- <check command>')
     print(f"To run several breaks on one restart, put them all in that one edit, each behind a gate that reads "
-          f"{folder / SWITCH_FILE} when the behavior runs and breaks it only while the file holds the gate's own name, then run:")
+          f"{switch_dir(folder) / SWITCH_FILE} when the behavior runs and breaks it only while the file holds the gate's own name, then run:")
     print(f"  vf.py break control {repo} -- <check command>")
     print(f'  vf.py break run {repo} "<sub-feature IDs>: <what was broken>" --switch <name> -- <check command>')
     return 0
@@ -693,7 +717,7 @@ def run_break(harness, repo, planned, command, patch=None, switch=None):
     try:
         # A switched edit is loaded once: the app restarts only when the copy's code differs from what it last ran.
         if not reloads(harness) and not (switched and session.get("armed_tree") == before):
-            point_app(harness, session, repo, scratch=True)
+            point_app(harness, session, repo, scratch=True, folder=folder)
         if switched:
             session["armed_tree"] = before
             save_session(folder, session)

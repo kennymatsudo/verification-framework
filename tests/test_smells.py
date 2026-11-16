@@ -60,6 +60,7 @@ class BreakAware(unittest.TestCase):
     def test_leaves_alone_a_clean_check_the_framework_copies_and_files_outside_scripts(self):
         code, output = self.scan({
             "scripts/checks/pay.py": "import os\nreport = os.environ['VERIFY_REPORT']\n",
+            "scripts/start": "[ -n \"$VERIFY_BREAK_SWITCH_DIR\" ] && mount=\"-v $VERIFY_BREAK_SWITCH_DIR:$VERIFY_BREAK_SWITCH_DIR:ro\"\n",
             "scripts/framework/vf.py": "planned = os.environ.get('VERIFY_PLANNED_BREAK')\n",
             "rules.md": "sets `VERIFY_PLANNED_BREAK=<sub-feature IDs>: <what was broken>`\n",
         })

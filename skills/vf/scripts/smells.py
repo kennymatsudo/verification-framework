@@ -10,7 +10,8 @@ Each hit is a lead, not a verdict: the agent reads the code and decides. Kinds:
   swallow        a broad except in harness code that neither re-raises nor records a failure
   break-aware    a harness script, in any language, that reads VERIFY_PLANNED_BREAK, VERIFY_BREAK_SESSION,
                  VERIFY_BREAK_SWITCH, or VERIFY_BREAK_CONTROL, or names the verify-break-session folder that
-                 holds a break session's switch file
+                 holds a break session's switch file; VERIFY_BREAK_SWITCH_DIR, which only Stop and Start
+                 receive so a container can mount the switch, is not a hit
 
 Understands unittest (self.assert*, self.fail, skipTest) and pytest (assert, pytest.raises,
 pytest.fail, pytest.skip, @pytest.mark.skip/skipif/xfail). break-aware looks at every file under
@@ -23,6 +24,7 @@ from __future__ import annotations
 import argparse
 import ast
 from pathlib import Path
+import re
 import sys
 
 EXISTENCE_ONLY = {"assertIsNotNone", "assertTrue", "assertIsInstance"}
@@ -31,6 +33,8 @@ FAILURE_WORDS = ("fail", "problem", "violation", "error", "raise")
 # A check that can tell it is in a planned break, or which break's switch is on, can take a different path there
 # than in a pass or in its control. Only the gates in the break's own edit read the switch file.
 BREAK_VARIABLES = ("VERIFY_PLANNED_BREAK", "VERIFY_BREAK_SESSION", "VERIFY_BREAK_SWITCH", "VERIFY_BREAK_CONTROL", "verify-break-session")
+# Whole names only, so VERIFY_BREAK_SWITCH_DIR, which Start reads to mount the switch, isn't VERIFY_BREAK_SWITCH.
+BREAK_NAME = {name: re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])") for name in BREAK_VARIABLES}
 
 
 def is_test_file(path: Path) -> bool:
@@ -169,7 +173,7 @@ def scan_break_aware(path: Path) -> list[str]:
         return []
     return [f"break-aware {path}:{number} reads {name}; vf.py run ends a planned break's run, so a check must do the same "
             "in a break as in a pass"
-            for number, line in enumerate(text.splitlines(), 1) for name in BREAK_VARIABLES if name in line]
+            for number, line in enumerate(text.splitlines(), 1) for name in BREAK_VARIABLES if BREAK_NAME[name].search(line)]
 
 
 def main() -> int:
