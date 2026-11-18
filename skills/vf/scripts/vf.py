@@ -537,13 +537,15 @@ def judged_by_steps(steps):
 
 
 def mapped_to_command(harness, validate, command):
-    """The behaviors whose check in the feature map is this exact command, in map order.
+    """The behaviors this exact command judges, including its declared additional coverage.
 
     A check that stops, or judges nothing, still covers what the map says its command proves,
     so the stop is recorded against them instead of refused."""
     try:
-        _, proofs, _ = feature_map(harness, validate)
+        _, proofs, errors = feature_map(harness, validate)
     except Stopped:
+        return []
+    if errors:
         return []
     mapped = []
     for sub_id, entry in validate.command_proofs(proofs).items():
@@ -552,6 +554,11 @@ def mapped_to_command(harness, validate, command):
                 mapped.append(sub_id)
         except ValueError:
             continue
+    coverage = (validate.manifest(harness) or {}).get("check_coverage", {})
+    if isinstance(coverage, dict):
+        for recipe, ids in coverage.items():
+            if shlex.split(recipe) == list(command) and isinstance(ids, list):
+                mapped.extend(sub_id for sub_id in ids if sub_id not in mapped)
     return mapped
 
 
@@ -607,7 +614,7 @@ def build_pages(*arguments):
     return (built.stderr or built.stdout).strip() if built.returncode != 0 else ""
 
 
-def run_check(command, demo=False):
+def run_check(command, demo=False, required_ids=()):
     """Run a check, build its evidence file from the events it reports, and accept or refuse it.
 
     A demo run sets VERIFY_DEMO=1 and VERIFY_KEEP_RECORDING=1 for the check, is saved under evidence/demos/, and
@@ -686,6 +693,10 @@ def run_check(command, demo=False):
         if record["stopped"] is not None or not judged:
             judged += [sub_id for sub_id in mapped_to_command(harness, validate, command) if sub_id not in judged]
         record["sub_features"] = judged
+    scoped_steps = [{**step, "sub_features": validate.judged_by(step, record)} for step in record["steps"]]
+    missing = set(required_ids) - set(judged_by_steps(scoped_steps))
+    if missing:
+        problems.append(f"did not judge assigned behaviors: {', '.join(sorted(missing))}")
     record.update(code=code_before, harness_code=harness_before, doctor=doctor, started_at=started.strftime(validate.TIME_FORMAT),
                   finished_at=finished.strftime(validate.TIME_FORMAT), planned_break=planned_break)
     if ended_early:
@@ -777,7 +788,7 @@ def refresh_status(harness, validate):
 
 
 def proof_commands(harness, validate, ids):
-    """Each named behavior's check command from the feature map, as {command: [ids]}, in map order,
+    """Selected check commands after grouping and declared coverage, as {command: [requested IDs]},
     and the IDs with no command. Raises Stopped for an ID the map lacks or a map with errors."""
     seen_ids, proofs, errors = feature_map(harness, validate)
     if errors:
@@ -792,6 +803,14 @@ def proof_commands(harness, validate, ids):
             uncovered.append(sub_id)
             continue
         commands.setdefault(proof["check"], []).append(sub_id)
+    declared = (validate.manifest(harness) or {}).get("check_coverage", {})
+    coverage = {command: set(group) | set(declared.get(command, [])) for command, group in commands.items()}
+    for command in list(commands):
+        replacement = next((other for other in commands if other != command
+                            and set(commands[command]) <= coverage[other]), None)
+        if replacement is not None:
+            commands[replacement].extend(sub_id for sub_id in commands.pop(command)
+                                         if sub_id not in commands[replacement])
     return commands, uncovered
 
 
@@ -822,11 +841,15 @@ def start_app(harness, validate, code_state, env):
         time.sleep(3)
 
 
-def verify(harness, ids, start):
-    """Run each named sub-feature's check through vf.py run and report its computed result; the lines and exit code."""
+def verify(harness, ids, start, plan=False):
+    """Run the selected checks through vf.py run and report each requested behavior; the lines and exit code."""
     validate, code_state = sibling("validate"), sibling("code_state")
     commands, uncovered = proof_commands(harness, validate, ids)
     lines = []
+    if plan:
+        lines += [f"Would run `{command}` for {', '.join(group)}" for command, group in commands.items()]
+        lines += [f"No check for {sub_id}" for sub_id in uncovered]
+        return lines, 0
     if commands and start:
         env = checkout_env(harness, validate, code_state, None, "skip")
         if not ready(run_doctor(harness, validate, env)):
@@ -834,7 +857,9 @@ def verify(harness, ids, start):
     for command in commands:
         lines.append(f"Running `{command}` for {', '.join(commands[command])}")
         try:
-            run_lines, _ = run_check(shlex.split(command))
+            run_lines, code = run_check(shlex.split(command), required_ids=commands[command])
+            if code == 2:
+                return lines + run_lines, 2
         except Stopped as stopped:
             return lines + [f"STOPPED: {stopped}"], 2
         lines += run_lines
@@ -1137,6 +1162,7 @@ def main():
         commands.add_parser(name, help=summary, add_help=False)
     verify_parser = commands.add_parser("verify", help="run the named sub-features' checks through vf.py run and report their results")
     verify_parser.add_argument("sub_features", nargs="+", metavar="ID", help="sub-feature IDs from the feature map")
+    verify_parser.add_argument("--plan", action="store_true", help="print the selected commands without starting or driving the app")
     verify_parser.add_argument("--start", action="store_true", help="run the Start command when the doctor says the app is not ready")
     commands.add_parser("status", help="compute every behavior's verdict from the evidence and write status.md's Latest results")
     commands.add_parser("tools", help="write tools.md from the tools in harness.json")
@@ -1151,7 +1177,7 @@ def main():
 
     try:
         if args.command == "verify":
-            lines, code = verify(harness_of(SCRIPTS_DIR), list(dict.fromkeys(args.sub_features)), args.start)
+            lines, code = verify(harness_of(SCRIPTS_DIR), list(dict.fromkeys(args.sub_features)), args.start, args.plan)
         elif args.command == "status":
             lines, code = status(harness_of(SCRIPTS_DIR))
         elif args.command == "tools":

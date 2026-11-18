@@ -105,6 +105,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0016: Videos for people come from demo runs](adr/0016-videos-for-people-come-from-demo-runs.md) (proposed)
 - [0017: Breaks behind a switch share one restart](adr/0017-switched-breaks-share-one-restart.md)
 - [0018: Start mounts the switch for an app in a container](adr/0018-start-mounts-the-switch-for-a-container.md)
+- [0019: Selected checks can cover other selected checks](adr/0019-selected-checks-can-cover-other-selected-checks.md)
 
 ## Parked ideas
 

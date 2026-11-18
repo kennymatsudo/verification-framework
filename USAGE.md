@@ -95,6 +95,8 @@ Saved-card change verified on add-saved-cards (storefront 9e1d0b7): 1 Verified, 
 Details: .agents/skills/verify-storefront/status.md
 ```
 
+When a selected journey also checks a focused behavior, a reviewed coverage declaration lets it run once for both. Requesting only the focused behavior keeps its smaller check. Different locale and answer variants stay separate. The replacement run must report the reassigned assertions itself; a declaration alone cannot produce a pass. Inspect the selected commands with `vf.py verify <IDs> --plan`, which starts nothing and spends no shared resources.
+
 Within the scope you agreed to, the agent can build a missing check in the same run, unless you asked for existing checks only.
 
 A check that drives a screen records its run. A failed run keeps the video, and the report links its replay page. Keep a passing run's video by running the check with `VERIFY_KEEP_RECORDING=1`. These recordings are raw and fast, made for diagnosing a run. A video to show people comes from a separate demo run; see [Record a demo](#record-a-demo). Every kept recording is listed on the harness's `recordings.html`, and the report's `Details:` line names it.

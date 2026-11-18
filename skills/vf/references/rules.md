@@ -149,6 +149,8 @@ A check proves one or more sub-features by driving the real entry point and read
 - **Stable step names.** Keep a step's name the same on every run; values that change, such as IDs, go in `detail`.
 - **Exit codes.** 0 passed, and every reported step passed. 1 a step failed. Anything else stopped or could not run; a `stopped` event says why.
 
+A manifest may declare `check_coverage`, mapping an existing check command to additional behavior IDs it judges. The declaration changes selection, never the verdict: `vf.py verify` removes a selected command only when another selected command covers all its requested IDs. It never adds a command through this declaration. The replacement must report actual steps judging every assigned requested ID in this run, or the framework refuses its evidence. Each claimed behavior's required repos must still be recorded. Commands and variants remain distinct unless explicitly covered. Use `vf.py verify <IDs> --plan` to inspect the selection without starting or driving the app.
+
 ## Planned breaks
 
 Read this section before planning or running a break. `scripts/framework/vf.py break --help` says what each command does to the copy, the app, and the session.

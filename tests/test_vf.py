@@ -916,14 +916,131 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(list(self.record()["code"]), ["app"])
         self.assertIn("- app.pay: Not verified. Passed but not break-tested", (self.harness / "status.md").read_text())
 
+    def coverage_map(self, full_judges_refund=True):
+        ids = ["app.pay", *(["app.refund"] if full_judges_refund else [])]
+        events = [{"event": "check", "name": "journey", "sub_features": ids, "reads": "state"},
+                  *[{"event": "step", "name": sub_id, "sub_features": [sub_id],
+                     "passed": True, "at": 1.0} for sub_id in ids]]
+        full = self.check_command(events=events)
+        focused = self.check_command(name="focused")
+        locale = self.check_command(name="locale")
+        write_feature(self.harness, "app", {
+            "app.pay": {"words": "paid", "check": full, "reads": "state", "repos": ["app"]},
+            "app.refund": {"words": "refunded", "check": focused, "reads": "state", "repos": ["app"]},
+            "app.locale": {"words": "translated", "check": locale, "reads": "seen"},
+            "app.unchecked": {"words": "not checked"},
+        }, name="App")
+        edit_manifest(self.harness, lambda d: d.update(check_coverage={full: ["app.refund"]}))
+        return full, focused, locale
+
+    def test_selected_journey_replaces_focused_check_and_preserves_variants(self):
+        full, focused, locale = self.coverage_map()
+        for ids in (("app.pay", "app.refund", "app.locale"), ("app.refund", "app.locale", "app.pay")):
+            with self.subTest(ids=ids):
+                commands, uncovered = vf.proof_commands(self.harness, validate, ids)
+                self.assertEqual(set(commands), {full, locale})
+                self.assertEqual(set(commands[full]), {"app.pay", "app.refund"})
+                self.assertEqual(uncovered, [])
+
+    def test_focused_request_does_not_add_the_unselected_journey(self):
+        full, focused, _locale = self.coverage_map()
+        commands, uncovered = vf.proof_commands(self.harness, validate, ["app.refund", "app.unchecked"])
+        self.assertEqual(commands, {focused: ["app.refund"]})
+        self.assertEqual(uncovered, ["app.unchecked"])
+
+    def test_a_check_stays_when_the_journey_does_not_cover_every_requested_behavior(self):
+        full, focused, _locale = self.coverage_map()
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.locale"].update(check=focused))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund", "app.locale"])
+        self.assertEqual(set(commands), {full, focused})
+        self.assertEqual(set(commands[focused]), {"app.refund", "app.locale"})
+
+    def test_reciprocal_coverage_keeps_one_command(self):
+        full, focused, _locale = self.coverage_map()
+        edit_manifest(self.harness, lambda d: d["check_coverage"].update({focused: ["app.pay"]}))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund"])
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(set(next(iter(commands.values()))), {"app.pay", "app.refund"})
+
+    def test_plan_does_not_run_readiness_start_or_checks(self):
+        full, _focused, _locale = self.coverage_map()
+        edit_manifest(self.harness, lambda d: d["commands"].update(
+            doctor="touch doctor-ran; echo ready", start="touch start-ran"))
+        result = self.framework("verify", "app.pay", "app.refund", "--plan", "--start")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("Would run `"), 1)
+        self.assertIn(full, result.stdout)
+        self.assertFalse((self.project / "doctor-ran").exists())
+        self.assertFalse((self.project / "start-ran").exists())
+        self.assertEqual(list((self.harness / "evidence").glob("*/*.json")), [])
+
+    def test_verify_accepts_the_journeys_actual_assertions_for_reassigned_behaviors(self):
+        self.coverage_map()
+        result = self.framework("verify", "app.pay", "app.refund")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("Running `"), 1)
+        self.assertEqual(result.stdout.count("Accepted evidence/journey/"), 1)
+        self.assertEqual(self.record("journey")["sub_features"], ["app.pay", "app.refund"])
+
+    def test_a_false_coverage_declaration_refuses_the_run(self):
+        self.coverage_map(full_judges_refund=False)
+        result = self.framework("verify", "app.pay", "app.refund")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("did not judge assigned behaviors: app.refund", result.stdout)
+        self.assertNotIn("Accepted evidence/", result.stdout)
+        self.assertEqual(len(list((self.harness / "evidence/journey").glob("*.json.refused"))), 1)
+
+    def test_a_replacement_must_also_judge_its_original_requested_behavior(self):
+        self.coverage_map()
+        events = [{"event": "check", "name": "journey", "sub_features": ["app.refund"], "reads": "state"},
+                  {"event": "step", "name": "refund", "sub_features": ["app.refund"], "passed": True, "at": 1.0}]
+        full = self.check_command(events=events)
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.pay"].update(check=full))
+        edit_manifest(self.harness, lambda d: d.update(check_coverage={full: ["app.refund"]}))
+        result = self.framework("verify", "app.pay", "app.refund")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("did not judge assigned behaviors: app.pay", result.stdout)
+
+    def test_coverage_includes_every_reassigned_behaviors_repository(self):
+        full, _focused, _locale = self.coverage_map()
+        edit_manifest(self.harness, lambda d: d["repos"].update(api="../api"))
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.refund"].update(repos=["api"]))
+        self.assertEqual(vf.needed_repos(self.harness, validate, shlex.split(full)), ["app", "api"])
+
+    def test_invalid_coverage_stops_planning(self):
+        full, _focused, _locale = self.coverage_map()
+        invalid = [[], {"not-a-mapped-check": ["app.refund"]}, {full: []},
+                   {full: ["app.missing"]}, {full: ["app.unchecked"]},
+                   {full: ["app.refund", "app.refund"]}, {full: "app.refund"}, {full: [3]}]
+        for coverage in invalid:
+            with self.subTest(coverage=coverage):
+                edit_manifest(self.harness, lambda d: d.update(check_coverage=coverage))
+                with self.assertRaises(vf.Stopped):
+                    vf.proof_commands(self.harness, validate, ["app.pay", "app.refund"])
+
     def test_verify_runs_each_named_behaviors_check_once_and_reports_its_result(self):
-        self.write_map(self.check_command(name="pay"))
-        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.refund"].update(check=self.check_command(name="pay"), reads="state"))
+        events = [{"event": "check", "name": "pay", "sub_features": ["app.pay", "app.refund"], "reads": "state"},
+                  *[{"event": "step", "name": sub_id, "sub_features": [sub_id], "passed": True, "at": 1.0}
+                    for sub_id in ("app.pay", "app.refund")]]
+        command = self.check_command(events=events)
+        self.write_map(command)
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.refund"].update(check=command, reads="state"))
         result = self.framework("verify", "app.pay", "app.refund", "app.pay")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count("Running `"), 1)
         self.assertEqual(result.stdout.count("Accepted evidence/pay/"), 1)
-        self.assertRegex(result.stdout, r"\n- app\.pay: Not verified\. Passed but not break-tested: no scratch copy yet\. app [0-9a-f]{7}( \(uncommitted [0-9a-f]{8}\))?\. Evidence: evidence/pay/.*\n- app\.refund: Not verified\. No accepted run on this machine\.\n$")
+        self.assertIn("- app.pay: Not verified. Passed but not break-tested", result.stdout)
+        self.assertIn("- app.refund: Not verified. Passed but not break-tested", result.stdout)
+
+    def test_refused_native_check_cannot_fall_back_to_old_verdicts(self):
+        self.coverage_map()
+        with unittest.mock.patch.object(vf, "run_check", return_value=(["REFUSED current run"], 2)) as run, \
+                unittest.mock.patch.object(vf, "mapped_verdicts") as old:
+            lines, code = vf.verify(self.harness, ["app.locale"], False)
+        self.assertEqual(code, 2)
+        self.assertIn("REFUSED current run", lines)
+        self.assertEqual(run.call_args.kwargs["required_ids"], ["app.locale"])
+        old.assert_not_called()
 
     def test_verify_stops_when_the_app_is_not_ready_and_names_a_behavior_the_map_lacks(self):
         self.write_map(self.check_command())

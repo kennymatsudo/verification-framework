@@ -364,7 +364,34 @@ def read_map(harness_dir, project, repos=None):
     seen_ids, behaviors = {}, {}
     for name in sorted(files):
         behaviors.update(check_feature(features_dir / name, project, repos, seen_ids, errors))
+    check_coverage(harness_dir, behaviors, errors)
     return files, seen_ids, behaviors, errors
+
+
+def check_coverage(harness_dir, behaviors, errors):
+    """Check optional declarations of extra behaviors a mapped command judges."""
+    coverage = (manifest(harness_dir) or {}).get("check_coverage", {})
+    if not isinstance(coverage, dict):
+        errors.append("harness.json: check_coverage must be an object of <check command>: <behavior IDs>")
+        return
+    proofs = command_proofs(behaviors)
+    commands = {entry["check"] for entry in proofs.values()}
+    for command, ids in coverage.items():
+        label = f"harness.json check_coverage {command!r}"
+        try:
+            shlex.split(command)
+        except ValueError:
+            errors.append(f"{label}: command has invalid shell quoting")
+        if command not in commands:
+            errors.append(f"{label}: command is not a check in the feature map")
+        if not isinstance(ids, list) or not ids or not all(isinstance(item, str) for item in ids):
+            errors.append(f"{label}: must be a non-empty list of behavior IDs")
+            continue
+        if len(ids) != len(set(ids)):
+            errors.append(f"{label}: behavior IDs must be unique")
+        for sub_id in ids:
+            if sub_id not in proofs:
+                errors.append(f"{label}: {sub_id} has no check in the feature map")
 
 
 def check_repos(repos, errors):

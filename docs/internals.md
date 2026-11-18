@@ -183,6 +183,10 @@ If the command's first word contains a `/`, `validate.py` checks that file exist
 
 An evidence file is the record of one check run: `evidence/<check>/<time>.json`. `vf.py run` writes it. The check never does: it reports what happens, one JSON object per line, to the file named by `VERIFY_REPORT`, and keeps files such as a video in the folder named by `VERIFY_RUN_DIR`. The add-checks mode recommends a few shared lines of code for this, called the reporter, so every check reports the same way ([recommended code layout](../skills/vf-verify/references/harness-code.md)).
 
+`vf.py verify <id>... --plan` prints selected commands and their assigned IDs without running the doctor, starting the app, or writing evidence. Selection groups exact check commands, then applies optional `harness.json` `check_coverage` declarations. A command can replace another selected command only when it covers every requested ID assigned to it. An unselected command is never introduced. A partial overlap keeps both commands; locale and answer variants require their own declarations. `validate.py` checks the declaration's command and behavior references. Coverage also contributes the repositories a command must record.
+
+On execution, `verify` passes every command's assigned IDs to `run_check`. Before accepting evidence, `run_check` checks those IDs against the reported steps under the existing single-behavior scoping rule, not historical results. A missing assertion refuses that run and stops verification with exit 2. Coverage declarations do not create passes or planned-break credit.
+
 Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id>...`, which runs each named behavior's check that way and prints its result lines. `vf.py run`:
 
 1. Runs the doctor from `harness.json` and stops with exit 2 unless it exits 0.
