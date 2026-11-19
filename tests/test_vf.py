@@ -948,6 +948,91 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(commands, {focused: ["app.refund"]})
         self.assertEqual(uncovered, ["app.unchecked"])
 
+    def test_complete_request_reuses_journey_after_all_its_recipes_are_focused(self):
+        full, focused, locale = self.coverage_map()
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.pay"].update(check=locale))
+        edit_manifest(self.harness, lambda d: d["check_coverage"].update({full: ["app.pay", "app.refund"]}))
+        for ids in (("app.pay", "app.refund"), ("app.refund", "app.pay")):
+            with self.subTest(ids=ids):
+                commands, uncovered = vf.proof_commands(self.harness, validate, ids)
+                self.assertEqual(set(commands), {full})
+                self.assertEqual(set(commands[full]), set(ids))
+                self.assertEqual(uncovered, [])
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.refund"])
+        self.assertEqual(commands, {focused: ["app.refund"]})
+
+    def test_complete_alternative_must_replace_multiple_whole_recipes(self):
+        full, focused, locale = self.coverage_map()
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.pay"].update(check=focused))
+        edit_manifest(self.harness, lambda d: d["check_coverage"].update({full: ["app.pay", "app.refund"]}))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund"])
+        self.assertEqual(commands, {focused: ["app.pay", "app.refund"]})
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.pay"].update(check=locale))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund", "app.locale"])
+        self.assertEqual(set(commands), {locale, focused})
+
+    def prerequisite_coverage_map(self):
+        full, focused, other = self.coverage_map()
+        bonus = self.check_command(name="bonus")
+        edit_feature(self.harness, "app", lambda d: (
+            d["behaviors"]["app.pay"].update(check=focused),
+            d["behaviors"]["app.refund"].update(check=other),
+            d["behaviors"]["app.locale"].update(check=bonus),
+        ))
+        edit_manifest(self.harness, lambda d: d.update(check_coverage={
+            full: ["app.pay", "app.refund", "app.locale"], focused: ["app.locale"],
+        }))
+        return full, focused, other, bonus
+
+    def test_complete_alternative_can_reuse_explicitly_declared_prerequisite_coverage(self):
+        full, _focused, _other, _bonus = self.prerequisite_coverage_map()
+        for ids in (("app.pay", "app.refund"), ("app.refund", "app.pay")):
+            with self.subTest(ids=ids):
+                commands, uncovered = vf.proof_commands(self.harness, validate, ids)
+                self.assertEqual(commands, {full: list(ids)})
+                self.assertEqual(uncovered, [])
+
+    def test_prerequisite_coverage_does_not_admit_a_new_unrequested_behavior(self):
+        full, focused, other, bonus = self.prerequisite_coverage_map()
+        edit_feature(self.harness, "app", lambda d: d["behaviors"].update(
+            {"app.extra": {"words": "another behavior", "check": bonus, "reads": "state"}}))
+        edit_manifest(self.harness, lambda d: d["check_coverage"][full].append("app.extra"))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund"])
+        self.assertEqual(commands, {focused: ["app.pay"], other: ["app.refund"]})
+
+    def test_prerequisite_coverage_does_not_infer_an_implicit_mapped_bonus(self):
+        full, focused, other, _bonus = self.prerequisite_coverage_map()
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.locale"].update(check=focused))
+        edit_manifest(self.harness, lambda d: d["check_coverage"].pop(focused))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund"])
+        self.assertEqual(commands, {focused: ["app.pay"], other: ["app.refund"]})
+
+    def test_candidate_mapped_behaviors_must_also_be_requested_or_explicitly_covered(self):
+        full, focused, other, _bonus = self.prerequisite_coverage_map()
+        edit_feature(self.harness, "app", lambda d: d["behaviors"].update(
+            {"app.extra": {"words": "another behavior", "check": full, "reads": "state"}}))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund"])
+        self.assertEqual(commands, {focused: ["app.pay"], other: ["app.refund"]})
+
+    def test_prerequisite_replacement_preserves_an_unrelated_selected_command(self):
+        full, _focused, _other, bonus = self.prerequisite_coverage_map()
+        edit_feature(self.harness, "app", lambda d: d["behaviors"].update(
+            {"app.extra": {"words": "another behavior", "check": bonus, "reads": "state"}}))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund", "app.extra"])
+        self.assertEqual(commands, {bonus: ["app.extra"], full: ["app.pay", "app.refund"]})
+
+    def test_prerequisite_replacement_keeps_every_request_on_a_partially_covered_command(self):
+        _full, focused, other, _bonus = self.prerequisite_coverage_map()
+        edit_feature(self.harness, "app", lambda d: d["behaviors"].update(
+            {"app.extra": {"words": "another behavior", "check": focused, "reads": "state"}}))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund", "app.extra"])
+        self.assertEqual(commands, {focused: ["app.pay", "app.extra"], other: ["app.refund"]})
+
+    def test_declared_prerequisite_alone_does_not_expand_a_smaller_request(self):
+        _full, focused, _other, _bonus = self.prerequisite_coverage_map()
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay"])
+        self.assertEqual(commands, {focused: ["app.pay"]})
+
     def test_a_check_stays_when_the_journey_does_not_cover_every_requested_behavior(self):
         full, focused, _locale = self.coverage_map()
         edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.locale"].update(check=focused))
@@ -1009,7 +1094,7 @@ class HarnessCommands(unittest.TestCase):
 
     def test_invalid_coverage_stops_planning(self):
         full, _focused, _locale = self.coverage_map()
-        invalid = [[], {"not-a-mapped-check": ["app.refund"]}, {full: []},
+        invalid = [[], {"missing/check": ["app.refund"]}, {"''": ["app.refund"]}, {full: []},
                    {full: ["app.missing"]}, {full: ["app.unchecked"]},
                    {full: ["app.refund", "app.refund"]}, {full: "app.refund"}, {full: [3]}]
         for coverage in invalid:

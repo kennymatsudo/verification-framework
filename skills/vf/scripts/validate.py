@@ -225,7 +225,13 @@ def check_entry(checks, path):
 
 def command_path_exists(command, project):
     """Whether a proof command's program exists, when it is named by a path from the project root."""
-    first = command.split()[0]
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return False
+    if not parts or not parts[0]:
+        return False
+    first = parts[0]
     if "/" not in first:
         return True
     return (project / first).exists()
@@ -369,21 +375,24 @@ def read_map(harness_dir, project, repos=None):
 
 
 def check_coverage(harness_dir, behaviors, errors):
-    """Check optional declarations of extra behaviors a mapped command judges."""
+    """Check optional declarations of behaviors a command judges."""
     coverage = (manifest(harness_dir) or {}).get("check_coverage", {})
     if not isinstance(coverage, dict):
         errors.append("harness.json: check_coverage must be an object of <check command>: <behavior IDs>")
         return
     proofs = command_proofs(behaviors)
-    commands = {entry["check"] for entry in proofs.values()}
     for command, ids in coverage.items():
         label = f"harness.json check_coverage {command!r}"
+        if not isinstance(command, str) or not command.strip():
+            errors.append(f"{label}: command must be non-empty text")
+            continue
         try:
             shlex.split(command)
         except ValueError:
             errors.append(f"{label}: command has invalid shell quoting")
-        if command not in commands:
-            errors.append(f"{label}: command is not a check in the feature map")
+            continue
+        if not command_path_exists(command, project_root(harness_dir)):
+            errors.append(f"{label}: command's program does not exist")
         if not isinstance(ids, list) or not ids or not all(isinstance(item, str) for item in ids):
             errors.append(f"{label}: must be a non-empty list of behavior IDs")
             continue

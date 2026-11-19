@@ -173,6 +173,16 @@ class RulesCopyTest(unittest.TestCase):
 
 
 class FeatureFilesTest(unittest.TestCase):
+    def test_command_paths_parse_quoted_executables_and_reject_empty_ones(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            (project / "checks").mkdir()
+            (project / "checks" / "with spaces").touch()
+            self.assertTrue(validate.command_path_exists("'checks/with spaces' --flag", project))
+            for command in ("", "  ", "''", "'unfinished"):
+                with self.subTest(command=command):
+                    self.assertFalse(validate.command_path_exists(command, project))
+
     def test_a_feature_file_counts_its_behaviors_and_a_markdown_file_beside_it_is_ignored(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = make_harness(Path(directory))

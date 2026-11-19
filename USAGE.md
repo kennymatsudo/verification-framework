@@ -95,7 +95,7 @@ Saved-card change verified on add-saved-cards (storefront 9e1d0b7): 1 Verified, 
 Details: .agents/skills/verify-storefront/status.md
 ```
 
-When a selected journey also checks a focused behavior, a reviewed coverage declaration lets it run once for both. Requesting only the focused behavior keeps its smaller check. Different locale and answer variants stay separate. The replacement run must report the reassigned assertions itself; a declaration alone cannot produce a pass. Inspect the selected commands with `vf.py verify <IDs> --plan`, which starts nothing and spends no shared resources.
+When a selected journey also checks a focused behavior, a reviewed coverage declaration lets it run once for both. A complete declared journey can replace multiple focused checks when every behavior it declares or maps is requested or explicitly declared by an initially selected check, even when no behavior names the journey as its default recipe. This includes prerequisites those focused checks already judge; other mapped behaviors alone do not qualify. Requesting only a focused behavior keeps its smaller check. Different locale and answer variants stay separate. The replacement run must report the reassigned assertions itself; a declaration alone cannot produce a pass. Inspect the selected commands with `vf.py verify <IDs> --plan`, which starts nothing and spends no shared resources.
 
 Within the scope you agreed to, the agent can build a missing check in the same run, unless you asked for existing checks only.
 

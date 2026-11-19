@@ -804,6 +804,19 @@ def proof_commands(harness, validate, ids):
             continue
         commands.setdefault(proof["check"], []).append(sub_id)
     declared = (validate.manifest(harness) or {}).get("check_coverage", {})
+    eligible_ids = set(ids)
+    for command in commands:
+        eligible_ids.update(declared.get(command, []))
+    complete = {command: set(group) for command, group in declared.items()}
+    for sub_id, proof in proofs.items():
+        if validate.behavior_kind(proof) == "command" and proof["check"] in complete:
+            complete[proof["check"]].add(sub_id)
+    for command, group in sorted(complete.items(), key=lambda item: -len(item[1])):
+        if command in commands or not group <= eligible_ids:
+            continue
+        replaced = [other for other, requested in commands.items() if set(requested) <= group]
+        if len(replaced) > 1:
+            commands[command] = [sub_id for other in replaced for sub_id in commands.pop(other)]
     coverage = {command: set(group) | set(declared.get(command, [])) for command, group in commands.items()}
     for command in list(commands):
         replacement = next((other for other in commands if other != command
