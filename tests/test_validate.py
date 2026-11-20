@@ -221,6 +221,7 @@ class FeatureFilesTest(unittest.TestCase):
                 ({"words": "x", "unreachable": "no card"}, 'unreachable must be {"blocker": ..., "tried": ...}'),
                 ({"words": "x", "unreachable": {"blocker": "no card"}}, "checkout.pay unreachable: tried is missing"),
                 ({"words": "x", "check": "scripts/missing"}, "check names `scripts/missing`, but scripts/missing does not exist"),
+                ({"words": "x", "check": "'scripts/no such' --flag"}, "but scripts/no such does not exist"),
                 ({"words": "x", "check": "<the command>", "reads": "state"}, "check still has an unfilled slot"),
             )
             for entry, expected in cases:

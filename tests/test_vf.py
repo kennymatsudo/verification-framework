@@ -1047,6 +1047,16 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(len(commands), 1)
         self.assertEqual(set(next(iter(commands.values()))), {"app.pay", "app.refund"})
 
+    def test_a_declaration_spelled_differently_from_the_map_names_the_same_command(self):
+        # Selection and the repos a run records must agree on which command a declaration names.
+        full, focused, _locale = self.coverage_map()
+        respelled = full.replace(" ", "  ", 1)
+        self.assertNotEqual(respelled, full)
+        edit_manifest(self.harness, lambda d: d.update(check_coverage={respelled: ["app.refund"]}))
+        commands, _ = vf.proof_commands(self.harness, validate, ["app.pay", "app.refund"])
+        self.assertEqual(commands, {full: ["app.pay", "app.refund"]})
+        self.assertEqual(vf.mapped_to_command(self.harness, validate, shlex.split(full)), ["app.pay", "app.refund"])
+
     def test_plan_does_not_run_readiness_start_or_checks(self):
         full, _focused, _locale = self.coverage_map()
         edit_manifest(self.harness, lambda d: d["commands"].update(
@@ -1114,8 +1124,9 @@ class HarnessCommands(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count("Running `"), 1)
         self.assertEqual(result.stdout.count("Accepted evidence/pay/"), 1)
-        self.assertIn("- app.pay: Not verified. Passed but not break-tested", result.stdout)
-        self.assertIn("- app.refund: Not verified. Passed but not break-tested", result.stdout)
+        # One result line per named behavior, in the order named, each from the one run.
+        self.assertRegex(result.stdout, r"\n- app\.pay: Not verified\. Passed but not break-tested: [^\n]*Evidence: evidence/pay/[^\n]*\n"
+                                        r"- app\.refund: Not verified\. Passed but not break-tested: [^\n]*Evidence: evidence/pay/[^\n]*\n$")
 
     def test_refused_native_check_cannot_fall_back_to_old_verdicts(self):
         self.coverage_map()

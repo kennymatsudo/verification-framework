@@ -223,15 +223,20 @@ def check_entry(checks, path):
         return None
 
 
-def command_path_exists(command, project):
-    """Whether a proof command's program exists, when it is named by a path from the project root."""
+def command_program(command):
+    """The program a check command runs, as the shell reads it; None when the command names none or its quoting is broken."""
     try:
         parts = shlex.split(command)
     except ValueError:
+        return None
+    return parts[0] if parts and parts[0] else None
+
+
+def command_path_exists(command, project):
+    """Whether a proof command's program exists, when it is named by a path from the project root."""
+    first = command_program(command)
+    if first is None:
         return False
-    if not parts or not parts[0]:
-        return False
-    first = parts[0]
     if "/" not in first:
         return True
     return (project / first).exists()
@@ -313,7 +318,7 @@ def check_feature(path, project, repos, seen_ids, errors):
             continue
         if check:
             if not command_path_exists(check, project):
-                errors.append(f"{label}: check names `{check}`, but {check.split()[0]} does not exist")
+                errors.append(f"{label}: check names `{check}`, but {command_program(check) or 'its program'} does not exist")
             text_field(entry, "reads", label, errors)
             if unreachable:
                 errors.append(f"{label}: has both a check and an unreachable reason")
@@ -374,8 +379,25 @@ def read_map(harness_dir, project, repos=None):
     return files, seen_ids, behaviors, errors
 
 
+def command_words(command):
+    """A check command as the words the shell passes it, so two spellings of one command compare equal."""
+    return tuple(shlex.split(command))
+
+
+def declared_coverage(harness_dir):
+    """harness.json's check_coverage as {command words: behavior IDs}, two spellings of one command pooled.
+
+    Read it only beside a feature map with no errors: check_coverage vets its shape and quoting."""
+    declared = {}
+    for command, ids in ((manifest(harness_dir) or {}).get("check_coverage") or {}).items():
+        pooled = declared.setdefault(command_words(command), [])
+        pooled.extend(sub_id for sub_id in ids if sub_id not in pooled)
+    return declared
+
+
 def check_coverage(harness_dir, behaviors, errors):
-    """Check optional declarations of behaviors a command judges."""
+    """Add an error to errors for each check_coverage entry whose command or behavior IDs are malformed, so every
+    reader of the feature map, which stops on its errors, can trust the declarations' shape."""
     coverage = (manifest(harness_dir) or {}).get("check_coverage", {})
     if not isinstance(coverage, dict):
         errors.append("harness.json: check_coverage must be an object of <check command>: <behavior IDs>")
@@ -383,7 +405,7 @@ def check_coverage(harness_dir, behaviors, errors):
     proofs = command_proofs(behaviors)
     for command, ids in coverage.items():
         label = f"harness.json check_coverage {command!r}"
-        if not isinstance(command, str) or not command.strip():
+        if not command.strip():
             errors.append(f"{label}: command must be non-empty text")
             continue
         try:

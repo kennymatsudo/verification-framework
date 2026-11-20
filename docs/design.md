@@ -22,7 +22,7 @@ A change to a check after its review, including an expectation changed after a f
 - A saved break holds the switch file's path on the machine that made it, so `break replay` on another machine misses. A missed break earns nothing, but the replay is wasted.
 - A gate is more code than a deleted line, so the edit the reviewer reads is longer.
 - Nothing measures where a break session's time goes. Printing restart time against check time at `break end` would say, for the next slow app, whether restarts are still the cost.
-- A gate in a container reads the switch through a mount Start makes ([ADR 0018](adr/0018-start-mounts-the-switch-for-a-container.md)); one harness has, and a session open on two repos at once hands Start only the folder of the session it runs for.
+- A gate in a container reads the switch through a mount Start makes ([ADR 0018](adr/0018-start-mounts-the-switch-for-a-container.md)). One harness has used it so far, and a session open on two repos at once hands Start only the folder of the session it runs for.
 - Each check needs one control run. Time is rarely the issue, since the session's one restart is shared, but a check whose runs spend something scarce, such as tickets in a shared sandbox, spends it on the control too. For a check with one break, that can cost more than the restart it saves.
 
 **What settles it:** the `add-checks-ledger-switched` eval case on more than one model, a practice repo in another language, and one session on the converted app with its real boot time.
@@ -106,6 +106,7 @@ Three parts of the contract came from one Python harness and haven't run anywher
 - [0017: Breaks behind a switch share one restart](adr/0017-switched-breaks-share-one-restart.md)
 - [0018: Start mounts the switch for an app in a container](adr/0018-start-mounts-the-switch-for-a-container.md)
 - [0019: Selected checks can cover other selected checks](adr/0019-selected-checks-can-cover-other-selected-checks.md)
+- [0020: Complete journeys can replace focused groups](adr/0020-complete-journeys-can-replace-focused-groups.md)
 
 ## Parked ideas
 

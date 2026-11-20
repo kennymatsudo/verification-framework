@@ -4,17 +4,17 @@ Status: Accepted. 2026-11-18. Extends ADR 0019's selection rule.
 
 ## Problem
 
-Once every behavior in a feature has a focused recipe, no request selects its complete journey. Verifying all four staff-polling behaviors in the converted app would run two focused journeys and open two sandbox chats, although the full journey checks them with one chat. A negative-case check can also require and declare an ordinary positive case; combining it with another focused check should reuse a complete journey when all of that journey's checks are already required.
+Once every behavior in a feature has its own focused check, no request selects the check that walks the whole journey. Verifying all four staff-polling behaviors in the converted app would run two focused journeys and open two sandbox chats, although the full journey checks them with one chat. A negative-case check can also require and declare an ordinary positive case; combining it with another focused check should reuse a complete journey when all of that journey's checks are already required.
 
 ## Decision
 
-A `check_coverage` command can be a complete alternative without being a behavior's default recipe. It replaces multiple selected commands only when every behavior it declares or maps is requested or explicitly declared by an initially selected command. Those selected checks already judge the declared prerequisites. Other mapped behaviors do not expand eligibility. Each replaced command must be wholly covered. Larger complete groups are considered first. Existing selected-command suppression still applies.
+A command declared in `check_coverage` can replace selected commands even when it is no behavior's check. It replaces two or more of them, each wholly, only when every behavior it judges, by declaration or as a behavior's check in the feature map, is requested or declared for one of the commands first selected. Declaring a prerequisite is enough, because those selected checks already judge it; a behavior mapped to a selected command but not declared for it doesn't count. Larger candidates are tried first, and ADR 0019's rule for dropping a covered command still applies afterward.
 
 The replacement must exercise the assigned assertions in this run and record every required repository. The declaration cannot create a pass. Rules version remains 10: no manifest field, evidence format, or required harness operation changes.
 
 ## Options we passed on
 
-- Keep one arbitrary behavior on the full recipe: single-behavior requests lose their focused path.
+- Keep one behavior's check on the full journey: a request for that behavior alone loses its focused check.
 - Add costs and solve a general scheduling problem: this case needs only complete-group reuse.
 - Introduce any broader declared command: partial requests could add behaviors outside the request and the selected checks' explicit declarations.
 

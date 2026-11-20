@@ -8,7 +8,7 @@ A focused check saves time when a change affects one feature. When a change also
 
 ## Decision
 
-An optional manifest `check_coverage` object declares additional behaviors a mapped command judges. The planner removes a selected command only when another selected command covers all its assigned requested IDs. It never adds a broader command. Every selected run must report steps judging its assigned requested IDs, or its evidence is refused. A refusal stops verification before historical verdicts are read. It records all repos those behaviors require. A read-only `--plan` shows the resulting commands.
+An optional manifest `check_coverage` object declares additional behaviors a mapped command judges. The planner removes a selected command only when another selected command covers all its assigned requested IDs. It never adds a broader command. Every selected run must report steps judging its assigned requested IDs, or its evidence is refused. A refusal stops verification before historical verdicts are read. A command that judges more behaviors records every repo they require. A read-only `--plan` shows the resulting commands.
 
 ## Options we passed on
 

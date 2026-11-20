@@ -192,6 +192,18 @@ def require_session_owner(session, harness_dir):
         )
 
 
+def session_path(session, located, to_copy):
+    """Where a path in the session's Git checkout, given in either the copy or the developer's checkout, sits
+    in the copy (to_copy) or in the developer's checkout; None when it is in neither.
+
+    The copy is tried first, in case it sits inside the developer's checkout. In place both are the same folder."""
+    copy, developer = Path(session["worktree"]), Path(session["top"])
+    for root in (copy, developer):
+        if located.is_relative_to(root):
+            return (copy if to_copy else developer) / located.relative_to(root)
+    return None
+
+
 def session_checkout(name, session, harness_dir, located=None):
     """The checkout this run records while a session is open, or StateError when it may not record one.
 
@@ -202,11 +214,9 @@ def session_checkout(name, session, harness_dir, located=None):
     # break in place is the copy itself, and planned break runs are over.
     ending = session["ending"]
     if os.environ.get("VERIFY_BREAK_SESSION") == session["repo"] or (not ending and os.environ.get("VERIFY_PLANNED_BREAK")):
-        copy = Path(session["top"] if ending else session["worktree"])
-        # The copy first, in case it sits inside the developer's checkout.
-        for top in (Path(session["worktree"]), Path(session["top"])):
-            if located is not None and located.is_relative_to(top):
-                return copy / located.relative_to(top)
+        mapped = session_path(session, located, to_copy=not ending) if located is not None else None
+        if mapped is not None:
+            return mapped
         return Path(session["checkout"] if ending else session["scratch"])
     raise StateError(
         f"{name}: a planned break session is open for {session['repo']}, so the app may be running the scratch copy at "

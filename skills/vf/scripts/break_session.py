@@ -199,7 +199,6 @@ def reloads(harness):
 def session_checkouts(harness, session, scratch):
     """Every settings repo's checkout as the app should see it: inside the scratch worktree for the repos in the
     session's Git checkout when scratch is set, else the developer's."""
-    top, worktree = Path(session["top"]), Path(session["worktree"])
     checkouts = {}
     for name, locator in code_state.listed_repos(harness).items():
         located = validate.repo_checkout(harness, name, locator)
@@ -207,19 +206,15 @@ def session_checkouts(harness, session, scratch):
             # A repo this machine lacks; Start naming its {checkout:<repo>} fails when filled, and a check that runs it stops.
             continue
         located = located.resolve()
-        # A Start may record the checkout it was given in the file an env locator reads, so during a
-        # session the locator can name the copy; map it back, or pointing back would restart on the copy.
-        if located.is_relative_to(worktree.resolve()) and worktree.resolve() != top:
-            located = top / located.relative_to(worktree.resolve())
-        if scratch and located.is_relative_to(top):
-            located = worktree / located.relative_to(top)
-        checkouts[name] = located
+        # A Start may record the checkout it was given in the file an env locator reads, so during a session
+        # the locator can name the copy. session_path maps from either side, so pointing back still leaves the copy.
+        checkouts[name] = code_state.session_path(session, located, to_copy=scratch) or located
     return checkouts
 
 
-def run_command(harness, command, checkouts, repo, switches=None):
+def run_command(harness, command, checkouts, repo, switch_folder=None):
     """Run a harness.json command from the project root with its {checkout:<repo>} placeholders filled; StateError when it fails.
-    switches, the session's switch folder, is passed as VERIFY_BREAK_SWITCH_DIR when the app is pointed at the copy."""
+    switch_folder, the session's switch folder, is passed as VERIFY_BREAK_SWITCH_DIR when the app is pointed at the copy."""
     try:
         text = validate.fill_checkouts(command, checkouts)
     except ValueError as error:
@@ -227,8 +222,8 @@ def run_command(harness, command, checkouts, repo, switches=None):
     print(f"Running: {text}", flush=True)
     env = {**os.environ, "VERIFY_BREAK_SESSION": repo, **code_state.checkout_env(checkouts)}
     env.pop("VERIFY_BREAK_SWITCH_DIR", None)
-    if switches:
-        env["VERIFY_BREAK_SWITCH_DIR"] = str(switches)
+    if switch_folder:
+        env["VERIFY_BREAK_SWITCH_DIR"] = str(switch_folder)
     result = subprocess.run(text, shell=True, cwd=validate.project_root(harness), env=env)
     if result.returncode:
         raise StateError(f"`{text}` exited {result.returncode}")
@@ -244,10 +239,10 @@ def point_app(harness, session, repo, scratch, folder=None):
         return
     checkouts = session_checkouts(harness, session, scratch)
     stop = command_setting(harness, "stop")
-    switches = switch_dir(folder) if scratch and folder else None
+    switch_folder = switch_dir(folder) if scratch and folder else None
     if stop.lower() != "none":
-        run_command(harness, stop, checkouts, repo, switches)
-    run_command(harness, start, checkouts, repo, switches)
+        run_command(harness, stop, checkouts, repo, switch_folder)
+    run_command(harness, start, checkouts, repo, switch_folder)
 
 
 def locate(harness, repo):

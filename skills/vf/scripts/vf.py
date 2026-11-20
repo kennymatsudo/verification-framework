@@ -547,18 +547,10 @@ def mapped_to_command(harness, validate, command):
         return []
     if errors:
         return []
-    mapped = []
-    for sub_id, entry in validate.command_proofs(proofs).items():
-        try:
-            if shlex.split(entry["check"]) == list(command):
-                mapped.append(sub_id)
-        except ValueError:
-            continue
-    coverage = (validate.manifest(harness) or {}).get("check_coverage", {})
-    if isinstance(coverage, dict):
-        for recipe, ids in coverage.items():
-            if shlex.split(recipe) == list(command) and isinstance(ids, list):
-                mapped.extend(sub_id for sub_id in ids if sub_id not in mapped)
+    words = tuple(command)
+    mapped = [sub_id for sub_id, entry in validate.command_proofs(proofs).items()
+              if validate.command_words(entry["check"]) == words]
+    mapped += [sub_id for sub_id in validate.declared_coverage(harness).get(words, []) if sub_id not in mapped]
     return mapped
 
 
@@ -693,8 +685,7 @@ def run_check(command, demo=False, required_ids=()):
         if record["stopped"] is not None or not judged:
             judged += [sub_id for sub_id in mapped_to_command(harness, validate, command) if sub_id not in judged]
         record["sub_features"] = judged
-    scoped_steps = [{**step, "sub_features": validate.judged_by(step, record)} for step in record["steps"]]
-    missing = set(required_ids) - set(judged_by_steps(scoped_steps))
+    missing = {sub_id for sub_id in required_ids if not validate.steps_judging(record, sub_id)}
     if missing:
         problems.append(f"did not judge assigned behaviors: {', '.join(sorted(missing))}")
     record.update(code=code_before, harness_code=harness_before, doctor=doctor, started_at=started.strftime(validate.TIME_FORMAT),
@@ -796,22 +787,29 @@ def proof_commands(harness, validate, ids):
     missing = [sub_id for sub_id in ids if sub_id not in seen_ids]
     if missing:
         raise Stopped(f"not in the feature map: {', '.join(missing)}")
+    # Commands are compared by their words and returned as the feature map spells them; a command only
+    # check_coverage names is returned in the shell's own quoting.
+    spelled = {}
     commands, uncovered = {}, []
     for sub_id in ids:
         proof = proofs.get(sub_id, {})
         if validate.behavior_kind(proof) != "command":
             uncovered.append(sub_id)
             continue
-        commands.setdefault(proof["check"], []).append(sub_id)
-    declared = (validate.manifest(harness) or {}).get("check_coverage", {})
+        command = validate.command_words(proof["check"])
+        spelled.setdefault(command, proof["check"])
+        commands.setdefault(command, []).append(sub_id)
+    declared = validate.declared_coverage(harness)
     eligible_ids = set(ids)
     for command in commands:
         eligible_ids.update(declared.get(command, []))
-    complete = {command: set(group) for command, group in declared.items()}
-    for sub_id, proof in proofs.items():
-        if validate.behavior_kind(proof) == "command" and proof["check"] in complete:
-            complete[proof["check"]].add(sub_id)
-    for command, group in sorted(complete.items(), key=lambda item: -len(item[1])):
+    judged_by_command = {command: set(group) for command, group in declared.items()}
+    for sub_id, proof in validate.command_proofs(proofs).items():
+        command = validate.command_words(proof["check"])
+        if command in judged_by_command:
+            judged_by_command[command].add(sub_id)
+            spelled.setdefault(command, proof["check"])
+    for command, group in sorted(judged_by_command.items(), key=lambda item: -len(item[1])):
         if command in commands or not group <= eligible_ids:
             continue
         replaced = [other for other, requested in commands.items() if set(requested) <= group]
@@ -824,7 +822,7 @@ def proof_commands(harness, validate, ids):
         if replacement is not None:
             commands[replacement].extend(sub_id for sub_id in commands.pop(command)
                                          if sub_id not in commands[replacement])
-    return commands, uncovered
+    return {spelled.get(command) or shlex.join(command): group for command, group in commands.items()}, uncovered
 
 
 def start_app(harness, validate, code_state, env):
