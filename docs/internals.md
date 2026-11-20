@@ -191,7 +191,7 @@ An evidence file is the record of one check run: `evidence/<check>/<time>.json`.
 
 `mapped_to_command` uses the same comparison, so a declared command records the repos of every behavior it judges. `validate.py` checks each declaration's quoting, that its program exists, and that each ID has a check in the feature map.
 
-`verify` passes each command's assigned IDs to `run_check`, which refuses the run unless its steps judge every one of them, counted the way `validate.steps_judging` counts, from this run alone. A refusal stops `verify` with exit 2. A declaration never earns a pass or planned-break credit.
+`verify` passes each command's assigned IDs to `run_check`, which refuses the run unless its steps judge every one of them, counted the way `validate.steps_judging` counts, from this run alone. A refusal, which `run_check` raises as `Refused`, stops `verify` with exit 2. A check that reports it stopped is an accepted run even when it exits 2, so `verify` goes on to the next check and reports the behavior as Run stopped. A declaration never earns a pass or planned-break credit.
 
 Every check runs as `vf.py run -- <check command>`, or through `vf.py verify <id>...`, which runs each named behavior's check that way and prints its result lines. `vf.py run`:
 

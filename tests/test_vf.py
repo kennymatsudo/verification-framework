@@ -1128,9 +1128,27 @@ class HarnessCommands(unittest.TestCase):
         self.assertRegex(result.stdout, r"\n- app\.pay: Not verified\. Passed but not break-tested: [^\n]*Evidence: evidence/pay/[^\n]*\n"
                                         r"- app\.refund: Not verified\. Passed but not break-tested: [^\n]*Evidence: evidence/pay/[^\n]*\n$")
 
+    def test_a_check_that_stops_with_exit_2_is_reported_and_verify_runs_the_next_check(self):
+        # Exit 2 is how a check says it stopped, so only a refused run may end verify early.
+        stopping = self.check_command(events=[
+            {"event": "check", "name": "pay", "sub_features": ["app.pay"], "reads": "state"},
+            {"event": "step", "name": "order is paid", "passed": True, "at": 1.0},
+            {"event": "stopped", "reason": "the daily budget is spent"}], exit=2)
+        self.write_map(stopping)
+        edit_feature(self.harness, "app", lambda d: d["behaviors"]["app.refund"].update(
+            check=self.check_command(events=[
+                {"event": "check", "name": "refund", "sub_features": ["app.refund"], "reads": "state"},
+                {"event": "step", "name": "order is refunded", "passed": True, "at": 1.0}]),
+            reads="state"))
+        result = self.framework("verify", "app.pay", "app.refund")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("Running `"), 2)
+        self.assertIn("- app.pay: Not verified. Run stopped: The daily budget is spent", result.stdout)
+        self.assertIn("- app.refund: ", result.stdout)
+
     def test_refused_native_check_cannot_fall_back_to_old_verdicts(self):
         self.coverage_map()
-        with unittest.mock.patch.object(vf, "run_check", return_value=(["REFUSED current run"], 2)) as run, \
+        with unittest.mock.patch.object(vf, "run_check", side_effect=vf.Refused(["REFUSED current run"])) as run, \
                 unittest.mock.patch.object(vf, "mapped_verdicts") as old:
             lines, code = vf.verify(self.harness, ["app.locale"], False)
         self.assertEqual(code, 2)

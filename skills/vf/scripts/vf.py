@@ -170,6 +170,11 @@ class Stopped(Exception):
     """A command cannot run; the message says why."""
 
 
+class Refused(Exception):
+    """vf.py run refused a check's evidence; args[0] holds the lines to print. Kept apart from the check's own
+    exit code, since a check that stopped exits 2 too and is still an accepted run."""
+
+
 def checkout_env(harness, validate, code_state, only=None, missing="error"):
     """The environment a doctor or check runs in: this process's, plus VERIFY_CHECKOUT_<REPO> for each repo the run
     records (the `only` ones, else every repo); with missing="skip", a repo with no checkout here is left out."""
@@ -611,7 +616,7 @@ def run_check(command, demo=False, required_ids=()):
 
     A demo run sets VERIFY_DEMO=1 and VERIFY_KEEP_RECORDING=1 for the check, is saved under evidence/demos/, and
     leaves status.md alone, since its pacing can hide a race; demo.py makes its video. Returns the lines to print
-    and the exit code.
+    and the check's exit code for an accepted run; raises Refused with the lines to print for a refused one.
     """
     harness = harness_of(SCRIPTS_DIR, "vf.py run")
     validate, code_state = sibling("validate"), sibling("code_state")
@@ -717,7 +722,7 @@ def run_check(command, demo=False, required_ids=()):
         lines.append(f"Wrote it to {refused.relative_to(harness)}; this run doesn't count. Fix the check and run it again.")
         if failure := build_pages("--recordings"):
             lines.append(f"recordings.html was not rebuilt: {failure}")
-        return lines, 2
+        raise Refused(lines)
     record["accepted_by"] = validate.ACCEPTED_BY
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps(record, indent=2) + "\n")
@@ -868,9 +873,9 @@ def verify(harness, ids, start, plan=False):
     for command in commands:
         lines.append(f"Running `{command}` for {', '.join(commands[command])}")
         try:
-            run_lines, code = run_check(shlex.split(command), required_ids=commands[command])
-            if code == 2:
-                return lines + run_lines, 2
+            run_lines, _ = run_check(shlex.split(command), required_ids=commands[command])
+        except Refused as refused:
+            return lines + refused.args[0], 2
         except Stopped as stopped:
             return lines + [f"STOPPED: {stopped}"], 2
         lines += run_lines
@@ -1160,6 +1165,8 @@ def main():
             return 2
         try:
             lines, code = run_check(command, demo="--demo" in options)
+        except Refused as refused:
+            lines, code = refused.args[0], 2
         except Stopped as stopped:
             print(f"STOPPED: {stopped}", file=sys.stderr)
             return 2
